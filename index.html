@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Haxball Web P2P - Custom Deterministic Physics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/ui/styles/haxball.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Top HUD Navigation -->
+    <header class="hud-container">
+      <div class="brand">
+        <span>HAXBALL</span>
+        <span class="brand-badge">P2P ENGINE</span>
+        <span id="roomNameBadge" style="font-size: 0.8rem; color: #94a3b8; font-weight: 600;">Lobby</span>
+      </div>
+
+      <!-- Scoreboard Center -->
+      <div class="scoreboard">
+        <span id="redScore" class="team-score score-red">0</span>
+        <span class="score-divider">:</span>
+        <span id="blueScore" class="team-score score-blue">0</span>
+        <span id="matchTimer" class="match-clock">03:00</span>
+      </div>
+
+      <!-- Live Network & FPS Stats -->
+      <div class="hud-stats">
+        <div class="stat-item">
+          <span class="stat-dot"></span>
+          <span id="pingValue">0ms</span>
+        </div>
+        <div class="stat-item">
+          <span id="fpsValue">60 FPS</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Canvas Gameplay Viewport -->
+    <main class="viewport-container">
+      <canvas id="gameCanvas"></canvas>
+    </main>
+
+    <!-- Bottom Dock: Teams, Controls & Chat -->
+    <footer class="bottom-dock">
+      <!-- Teams List -->
+      <div class="team-lists">
+        <div class="team-box">
+          <div class="team-box-header red">
+            <span>Rojo</span>
+            <button id="joinRedBtn" class="btn btn-red" style="padding: 2px 6px; font-size: 0.7rem;">Unirse</button>
+          </div>
+          <div id="redPlayersList" style="flex: 1; overflow-y: auto;"></div>
+        </div>
+
+        <div class="team-box">
+          <div class="team-box-header blue">
+            <span>Azul</span>
+            <button id="joinBlueBtn" class="btn btn-blue" style="padding: 2px 6px; font-size: 0.7rem;">Unirse</button>
+          </div>
+          <div id="bluePlayersList" style="flex: 1; overflow-y: auto;"></div>
+        </div>
+      </div>
+
+      <!-- Match Controls Center -->
+      <div class="match-controls">
+        <div class="btn-group">
+          <button id="btnStartMatch" class="btn btn-primary">▶ Iniciar Partido</button>
+          <button id="btnStopMatch" class="btn btn-danger">⏹ Detener</button>
+        </div>
+        <div class="btn-group">
+          <button id="joinSpecBtn" class="btn btn-secondary" style="font-size: 0.75rem;">👁 Espectador</button>
+          <button id="btnToggleSound" class="btn btn-secondary" style="font-size: 0.75rem;">🔊 Audio: ON</button>
+        </div>
+        <div style="font-size: 0.7rem; color: #64748b; margin-top: 4px;">
+          Controles: <strong>WASD / Flechas</strong> mover &bull; <strong>Espacio / X</strong> patear
+        </div>
+      </div>
+
+      <!-- Realtime In-Game Chat -->
+      <div class="chat-widget">
+        <div id="chatMessages" class="chat-messages"></div>
+        <form id="chatForm" class="chat-input-form">
+          <input id="chatInput" type="text" class="chat-input" placeholder="Escribe un mensaje y presiona Enter..." autocomplete="off" />
+        </form>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Room Lobby Modal Overlay -->
+  <div id="lobbyModal" class="modal-overlay">
+    <div class="modal-content">
+      <h2 class="modal-title">Haxball P2P Arena</h2>
+
+      <div class="form-group">
+        <label class="form-label" for="lobbyNickname">Tu Nickname</label>
+        <input id="lobbyNickname" class="form-input" type="text" placeholder="Ej. Maradona" maxlength="12" value="Player1" />
+      </div>
+
+      <div class="form-group">
+        <button id="btnPracticeMode" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 1rem;">
+          ⚽ Modo Práctica (Jugar Ahora)
+        </button>
+      </div>
+
+      <div style="text-align: center; color: #64748b; font-size: 0.8rem;">— O MULTIJUGADOR P2P —</div>
+
+      <div class="form-group">
+        <label class="form-label" for="lobbyRoomName">Crear Nueva Sala</label>
+        <div style="display: flex; gap: 6px;">
+          <input id="lobbyRoomName" class="form-input" type="text" placeholder="Nombre de sala" style="flex: 1;" />
+          <button id="btnCreateRoom" class="btn btn-secondary">Crear Sala</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <label class="form-label" for="lobbyRoomId">Unirse por ID o Salones Activos</label>
+          <button id="btnRefreshRooms" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.7rem;">Refrescar</button>
+        </div>
+        <div style="display: flex; gap: 6px;">
+          <input id="lobbyRoomId" class="form-input" type="text" placeholder="Código de sala" style="flex: 1;" />
+          <button id="btnJoinRoom" class="btn btn-secondary">Unirse</button>
+        </div>
+        <div id="lobbyRoomList" class="room-list" style="margin-top: 8px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

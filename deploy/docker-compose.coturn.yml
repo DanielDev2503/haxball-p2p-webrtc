@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  coturn:
+    image: coturn/coturn:latest
+    container_name: haxball-coturn
+    restart: unless-stopped
+    network_mode: "host"
+    environment:
+      - DETECT_EXTERNAL_IP=yes
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --tls-listening-port=5349
+      - --min-port=49152
+      - --max-port=65535
+      - --fingerprint
+      - --lt-cred-mech
+      - --realm=haxball.p2p
+      - --user=haxballuser:haxballpass123
+      - --verbose

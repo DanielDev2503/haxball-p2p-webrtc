@@ -1,0 +1,30 @@
+{
+  "name": "ballhax",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"vite\" \"tsx watch src/server/index.ts\"",
+    "build:client": "vite build --outDir dist/client",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "npm run build:client && npm run build:server",
+    "start": "node dist/server/index.js",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.14.0",
+    "@types/ws": "^8.5.10",
+    "concurrently": "^10.0.5",
+    "localtunnel": "^2.0.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2",
+    "vitest": "^2.0.5"
+  }
+}
