@@ -90,6 +90,16 @@ export class GameEngine {
     this.players.delete(playerId);
   }
 
+  public updateConfig(newConfig: Partial<MatchConfig>): void {
+    if (newConfig.scoreLimit !== undefined) this.config.scoreLimit = newConfig.scoreLimit;
+    if (newConfig.timeLimitSeconds !== undefined) {
+      this.config.timeLimitSeconds = newConfig.timeLimitSeconds;
+      if (this.fsm.currentState === MatchState.WAITING) {
+        this.matchTimerSeconds = this.config.timeLimitSeconds > 0 ? this.config.timeLimitSeconds : 0;
+      }
+    }
+  }
+
   public setPlayerTeam(playerId: string, team: 'red' | 'blue' | 'spec'): void {
     const player = this.players.get(playerId);
     if (!player) return;
@@ -104,22 +114,29 @@ export class GameEngine {
         player.discId = null;
       }
     } else {
+      const isRed = team === 'red';
+      const goalSpawnX = isRed ? -this.stadium.halfWidth : this.stadium.halfWidth;
+      const goalSpawnY = 0;
+
       if (!existingDisc) {
-        this.spawnPlayerDisc(player);
+        this.spawnPlayerDisc(player, goalSpawnX, goalSpawnY);
       } else {
-        existingDisc.cGroup = team === 'red' ? COLLISION_GROUP_RED : COLLISION_GROUP_BLUE;
-        existingDisc.color = team === 'red' ? '#e74c3c' : '#3498db';
+        existingDisc.cGroup = isRed ? COLLISION_GROUP_RED : COLLISION_GROUP_BLUE;
+        existingDisc.color = isRed ? '#e74c3c' : '#3498db';
+        existingDisc.pos.set(goalSpawnX, goalSpawnY);
+        existingDisc.vel.set(0, 0);
       }
     }
   }
 
-  private spawnPlayerDisc(player: Player): Disc {
+  private spawnPlayerDisc(player: Player, spawnX?: number, spawnY?: number): Disc {
     const isRed = player.team === 'red';
     const discId = this.nextDiscId++;
+    const defaultX = isRed ? -this.stadium.halfWidth : this.stadium.halfWidth;
     const disc = new Disc({
       id: discId,
-      x: isRed ? -150 : 150,
-      y: 0,
+      x: spawnX ?? defaultX,
+      y: spawnY ?? 0,
       radius: 15,
       mass: 2,
       damping: 0.96,
@@ -138,7 +155,7 @@ export class GameEngine {
   public startMatch(): void {
     this.redScore = 0;
     this.blueScore = 0;
-    this.matchTimerSeconds = this.config.timeLimitSeconds;
+    this.matchTimerSeconds = this.config.timeLimitSeconds > 0 ? this.config.timeLimitSeconds : 0;
     this.fsm.startMatch();
     this.resetKickoffPositions();
     if (this.onStateChange) {
@@ -205,10 +222,17 @@ export class GameEngine {
 
     if (state === MatchState.PLAYING) {
       // Advance match timer (every 60 ticks = 1 second)
-      if (this.tickCount % 60 === 0 && this.matchTimerSeconds > 0) {
-        this.matchTimerSeconds--;
-        if (this.matchTimerSeconds === 0) {
-          this.checkMatchConclusion();
+      if (this.tickCount % 60 === 0) {
+        if (this.config.timeLimitSeconds > 0) {
+          if (this.matchTimerSeconds > 0) {
+            this.matchTimerSeconds--;
+            if (this.matchTimerSeconds === 0) {
+              this.checkMatchConclusion();
+            }
+          }
+        } else {
+          // Tiempo indefinido: cuenta hacia arriba
+          this.matchTimerSeconds++;
         }
       }
     }
@@ -293,13 +317,18 @@ export class GameEngine {
   }
 
   private checkMatchConclusion(): void {
-    if (this.redScore >= this.config.scoreLimit) {
-      this.fsm.endMatch('red');
-      if (this.onMatchEnd) this.onMatchEnd('red');
-    } else if (this.blueScore >= this.config.scoreLimit) {
-      this.fsm.endMatch('blue');
-      if (this.onMatchEnd) this.onMatchEnd('blue');
-    } else if (this.matchTimerSeconds <= 0) {
+    if (this.config.scoreLimit > 0) {
+      if (this.redScore >= this.config.scoreLimit) {
+        this.fsm.endMatch('red');
+        if (this.onMatchEnd) this.onMatchEnd('red');
+        return;
+      } else if (this.blueScore >= this.config.scoreLimit) {
+        this.fsm.endMatch('blue');
+        if (this.onMatchEnd) this.onMatchEnd('blue');
+        return;
+      }
+    }
+    if (this.config.timeLimitSeconds > 0 && this.matchTimerSeconds <= 0) {
       let winner: 'red' | 'blue' | null = null;
       if (this.redScore > this.blueScore) winner = 'red';
       else if (this.blueScore > this.redScore) winner = 'blue';

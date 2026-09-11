@@ -1,8 +1,18 @@
 import { WebSocketServer, WebSocket } from 'ws';
 
+export interface RoomConfig {
+  name: string;
+  maxPlayers: number; // 2 a 16
+  isPrivate: boolean;
+  password?: string;
+  timeLimit: number; // En minutos; 0 = Indefinido
+  scoreLimit: number; // Goles; 0 = Indefinido
+  teamsLocked: boolean;
+}
+
 export interface Room {
   id: string;
-  name: string;
+  config: RoomConfig;
   hostId: string;
   hostWs: WebSocket;
   peers: Map<string, WebSocket>;
@@ -24,7 +34,7 @@ export function setupSignalingServer(wss: WebSocketServer) {
     ws.on('message', (raw: string) => {
       try {
         const msg = JSON.parse(raw.toString());
-        const { type, peerId, targetId, roomId, roomName, payload } = msg;
+        const { type, peerId, targetId, roomId, roomName, payload, config, password } = msg;
 
         if (peerId) {
           currentPeerId = peerId;
@@ -33,9 +43,18 @@ export function setupSignalingServer(wss: WebSocketServer) {
         switch (type) {
           case 'create_room': {
             const newRoomId = roomId || Math.random().toString(36).substring(2, 8).toUpperCase();
+            const roomConf: RoomConfig = {
+              name: config?.name || roomName || `Room #${newRoomId}`,
+              maxPlayers: Math.max(2, Math.min(16, config?.maxPlayers ?? 12)),
+              isPrivate: Boolean(config?.isPrivate),
+              password: config?.password || '',
+              timeLimit: config?.timeLimit ?? 3,
+              scoreLimit: config?.scoreLimit ?? 3,
+              teamsLocked: Boolean(config?.teamsLocked)
+            };
             const room: Room = {
               id: newRoomId,
-              name: roomName || `Room #${newRoomId}`,
+              config: roomConf,
               hostId: peerId,
               hostWs: ws,
               peers: new Map()
@@ -43,16 +62,21 @@ export function setupSignalingServer(wss: WebSocketServer) {
             rooms.set(newRoomId, room);
             peerToRoom.set(peerId, newRoomId);
 
-            console.log(`[SignalingServer] Room created: ${newRoomId} by ${peerId}`);
-            send(ws, { type: 'room_created', roomId: newRoomId, roomName: room.name });
+            console.log(`[SignalingServer] Room created: ${newRoomId} (${roomConf.name}, max: ${roomConf.maxPlayers}) by ${peerId}`);
+            send(ws, { type: 'room_created', roomId: newRoomId, roomName: roomConf.name, config: roomConf });
             break;
           }
 
           case 'list_rooms': {
             const list = Array.from(rooms.values()).map(r => ({
               id: r.id,
-              name: r.name,
-              playerCount: r.peers.size + 1
+              name: r.config.name,
+              playerCount: r.peers.size + 1,
+              maxPlayers: r.config.maxPlayers,
+              isPrivate: r.config.isPrivate,
+              teamsLocked: r.config.teamsLocked,
+              timeLimit: r.config.timeLimit,
+              scoreLimit: r.config.scoreLimit
             }));
             send(ws, { type: 'room_list', rooms: list });
             break;
@@ -61,17 +85,52 @@ export function setupSignalingServer(wss: WebSocketServer) {
           case 'join_room': {
             const room = rooms.get(roomId);
             if (!room) {
-              send(ws, { type: 'error', message: 'Room not found' });
+              send(ws, { type: 'error', code: 'ROOM_NOT_FOUND', message: 'Sala no encontrada' });
               return;
+            }
+
+            // Capacidad máxima de jugadores
+            if (room.peers.size + 1 >= room.config.maxPlayers) {
+              send(ws, { type: 'error', code: 'ROOM_FULL', message: 'La sala está llena' });
+              return;
+            }
+
+            // Validación de contraseña si es privada
+            if (room.config.isPrivate) {
+              const providedPass = password || '';
+              if (providedPass !== room.config.password) {
+                send(ws, { type: 'error', code: 'INVALID_PASSWORD', message: 'Contraseña incorrecta' });
+                return;
+              }
             }
 
             room.peers.set(peerId, ws);
             peerToRoom.set(peerId, roomId);
 
             console.log(`[SignalingServer] Peer ${peerId} joining room ${roomId}`);
-            // Notify the host that a new peer wants to connect
             send(room.hostWs, { type: 'peer_joined', peerId });
-            send(ws, { type: 'room_joined', roomId: room.id, roomName: room.name, hostId: room.hostId });
+            send(ws, {
+              type: 'room_joined',
+              roomId: room.id,
+              roomName: room.config.name,
+              hostId: room.hostId,
+              config: room.config
+            });
+            break;
+          }
+
+          case 'update_room_config': {
+            const activeRoomId = peerToRoom.get(peerId);
+            if (!activeRoomId) return;
+            const room = rooms.get(activeRoomId);
+            if (!room || room.hostId !== peerId) return;
+
+            if (config) {
+              room.config = { ...room.config, ...config };
+              for (const peerWs of room.peers.values()) {
+                send(peerWs, { type: 'room_config_updated', config: room.config });
+              }
+            }
             break;
           }
 

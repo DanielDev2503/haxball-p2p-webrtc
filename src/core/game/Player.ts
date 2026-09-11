@@ -12,6 +12,8 @@ export interface PlayerData {
   team: TeamType;
   avatar?: string;
   isHost?: boolean;
+  isAdmin?: boolean;
+  joinedAt?: number;
 }
 
 export class Player {
@@ -20,6 +22,8 @@ export class Player {
   public team: TeamType;
   public avatar: string;
   public isHost: boolean;
+  public isAdmin: boolean;
+  public joinedAt: number;
   public inputMask: number = 0;
   public discId: number | null = null;
 
@@ -29,5 +33,7 @@ export class Player {
     this.team = data.team;
     this.avatar = data.avatar ?? data.name.substring(0, 2).toUpperCase();
     this.isHost = data.isHost ?? false;
+    this.isAdmin = data.isAdmin ?? (data.isHost ?? false);
+    this.joinedAt = data.joinedAt ?? Date.now();
   }
 }

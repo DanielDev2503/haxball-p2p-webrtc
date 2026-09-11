@@ -6,8 +6,11 @@ export interface SignalingMessage {
   roomId?: string;
   roomName?: string;
   payload?: any;
-  rooms?: Array<{ id: string; name: string; playerCount: number }>;
+  rooms?: Array<{ id: string; name: string; playerCount: number; maxPlayers: number; isPrivate: boolean; teamsLocked?: boolean; timeLimit?: number; scoreLimit?: number }>;
   message?: string;
+  code?: string;
+  config?: any;
+  password?: string;
 }
 
 export class SignalingClient {
@@ -74,12 +77,20 @@ export class SignalingClient {
     }
   }
 
-  public createRoom(roomName: string, roomId?: string): void {
-    this.send({ type: 'create_room', roomName, roomId });
+  public createRoom(roomConfig: string | { name: string; maxPlayers?: number; isPrivate?: boolean; password?: string; timeLimit?: number; scoreLimit?: number; teamsLocked?: boolean }, roomId?: string): void {
+    if (typeof roomConfig === 'string') {
+      this.send({ type: 'create_room', roomName: roomConfig, roomId });
+    } else {
+      this.send({ type: 'create_room', config: roomConfig, roomName: roomConfig.name, roomId });
+    }
   }
 
-  public joinRoom(roomId: string): void {
-    this.send({ type: 'join_room', roomId });
+  public joinRoom(roomId: string, password?: string): void {
+    this.send({ type: 'join_room', roomId, password });
+  }
+
+  public updateRoomConfig(config: any): void {
+    this.send({ type: 'update_room_config', config });
   }
 
   public requestRoomList(): void {

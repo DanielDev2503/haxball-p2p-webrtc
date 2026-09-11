@@ -1,6 +1,16 @@
+export interface LobbyRoomConfig {
+  name: string;
+  maxPlayers: number;
+  isPrivate: boolean;
+  password?: string;
+  timeLimit: number;
+  scoreLimit: number;
+  teamsLocked: boolean;
+}
+
 export interface LobbyEvents {
-  onCreateRoom: (nickname: string, roomName: string) => void;
-  onJoinRoom: (nickname: string, roomId: string) => void;
+  onCreateRoom: (nickname: string, config: LobbyRoomConfig) => void;
+  onJoinRoom: (nickname: string, roomId: string, password?: string) => void;
   onSinglePlayer: (nickname: string) => void;
   onRefreshRooms: () => void;
 }
@@ -9,6 +19,12 @@ export class RoomLobby {
   private overlayEl: HTMLElement;
   private nicknameInput: HTMLInputElement;
   private roomNameInput: HTMLInputElement;
+  private maxPlayersInput: HTMLInputElement;
+  private timeLimitSelect: HTMLSelectElement;
+  private scoreLimitSelect: HTMLSelectElement;
+  private isPrivateCheckbox: HTMLInputElement;
+  private passwordContainer: HTMLElement;
+  private passwordInput: HTMLInputElement;
   private roomIdInput: HTMLInputElement;
   private roomListContainer: HTMLElement;
   private events: LobbyEvents;
@@ -18,6 +34,12 @@ export class RoomLobby {
     this.overlayEl = document.getElementById('lobbyModal')!;
     this.nicknameInput = document.getElementById('lobbyNickname') as HTMLInputElement;
     this.roomNameInput = document.getElementById('lobbyRoomName') as HTMLInputElement;
+    this.maxPlayersInput = document.getElementById('lobbyMaxPlayers') as HTMLInputElement;
+    this.timeLimitSelect = document.getElementById('lobbyTimeLimit') as HTMLSelectElement;
+    this.scoreLimitSelect = document.getElementById('lobbyScoreLimit') as HTMLSelectElement;
+    this.isPrivateCheckbox = document.getElementById('lobbyIsPrivate') as HTMLInputElement;
+    this.passwordContainer = document.getElementById('lobbyPasswordContainer')!;
+    this.passwordInput = document.getElementById('lobbyPassword') as HTMLInputElement;
     this.roomIdInput = document.getElementById('lobbyRoomId') as HTMLInputElement;
     this.roomListContainer = document.getElementById('lobbyRoomList')!;
 
@@ -30,18 +52,49 @@ export class RoomLobby {
     const practiceBtn = document.getElementById('btnPracticeMode');
     const refreshBtn = document.getElementById('btnRefreshRooms');
 
+    // Toggle password input based on private room checkbox
+    if (this.isPrivateCheckbox && this.passwordContainer) {
+      this.isPrivateCheckbox.addEventListener('change', () => {
+        this.passwordContainer.style.display = this.isPrivateCheckbox.checked ? 'block' : 'none';
+        if (this.isPrivateCheckbox.checked) {
+          this.passwordInput.focus();
+        }
+      });
+    }
+
     if (createBtn) {
       createBtn.addEventListener('click', () => {
         const nick = this.getNickname();
-        const roomName = this.roomNameInput.value.trim() || `${nick}'s Match`;
-        this.events.onCreateRoom(nick, roomName);
+        const roomName = this.roomNameInput?.value.trim() || `${nick}'s Match`;
+        const maxPlayers = parseInt(this.maxPlayersInput?.value || '12', 10);
+        const timeLimit = parseInt(this.timeLimitSelect?.value || '3', 10);
+        const scoreLimit = parseInt(this.scoreLimitSelect?.value || '3', 10);
+        const isPrivate = this.isPrivateCheckbox ? this.isPrivateCheckbox.checked : false;
+        const password = this.passwordInput?.value.trim();
+
+        if (isPrivate && !password) {
+          alert('Debes ingresar una contraseña para crear una sala privada');
+          return;
+        }
+
+        const config: LobbyRoomConfig = {
+          name: roomName,
+          maxPlayers: Math.max(2, Math.min(16, isNaN(maxPlayers) ? 12 : maxPlayers)),
+          timeLimit: isNaN(timeLimit) ? 3 : timeLimit,
+          scoreLimit: isNaN(scoreLimit) ? 3 : scoreLimit,
+          isPrivate,
+          password: isPrivate ? password : '',
+          teamsLocked: false
+        };
+
+        this.events.onCreateRoom(nick, config);
       });
     }
 
     if (joinBtn) {
       joinBtn.addEventListener('click', () => {
         const nick = this.getNickname();
-        const roomId = this.roomIdInput.value.trim();
+        const roomId = this.roomIdInput.value.trim().toUpperCase();
         if (roomId) {
           this.events.onJoinRoom(nick, roomId);
         } else {
@@ -65,7 +118,7 @@ export class RoomLobby {
   }
 
   public getNickname(): string {
-    return this.nicknameInput.value.trim() || `Player_${Math.floor(Math.random() * 900 + 100)}`;
+    return this.nicknameInput?.value.trim() || `Player_${Math.floor(Math.random() * 900 + 100)}`;
   }
 
   public hide(): void {
@@ -80,7 +133,7 @@ export class RoomLobby {
     }
   }
 
-  public setRoomList(rooms: Array<{ id: string; name: string; playerCount: number }>): void {
+  public setRoomList(rooms: Array<{ id: string; name: string; playerCount: number; maxPlayers?: number; isPrivate?: boolean; timeLimit?: number; scoreLimit?: number }>): void {
     if (!this.roomListContainer) return;
     this.roomListContainer.innerHTML = '';
 
@@ -98,16 +151,52 @@ export class RoomLobby {
     for (const r of rooms) {
       const item = document.createElement('div');
       item.className = 'room-item';
+      const lockIcon = r.isPrivate ? '🔒' : '🌐';
+      const maxP = r.maxPlayers ?? 12;
+      const isFull = r.playerCount >= maxP;
+      const timeStr = r.timeLimit === 0 ? 'Indef.' : `${r.timeLimit ?? 3}m`;
+      const scoreStr = r.scoreLimit === 0 ? 'Indef.' : `${r.scoreLimit ?? 3}g`;
+
       item.innerHTML = `
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem;">${r.name}</div>
-          <div style="font-size: 0.75rem; color: #94a3b8;">ID: ${r.id}</div>
+          <div style="font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; gap: 4px;">
+            <span>${lockIcon}</span>
+            <span>${r.name}</span>
+            ${r.isPrivate ? '<span style="font-size: 0.65rem; background: rgba(239, 68, 68, 0.3); color: #ef4444; padding: 1px 4px; border-radius: 4px;">Privada</span>' : ''}
+          </div>
+          <div style="font-size: 0.7rem; color: #94a3b8;">
+            ID: <strong>${r.id}</strong> &bull; ⏱ ${timeStr} &bull; ⚽ ${scoreStr}
+          </div>
         </div>
-        <div style="font-size: 0.8rem; color: #38bdf8;">${r.playerCount} jugador(es)</div>
+        <div style="text-align: right;">
+          <div style="font-size: 0.75rem; font-weight: 600; color: ${isFull ? '#ef4444' : '#38bdf8'};">
+            ${r.playerCount}/${maxP} jugadores
+          </div>
+          <button class="btn btn-secondary btn-join-direct" style="padding: 2px 8px; font-size: 0.7rem; margin-top: 2px;" ${isFull ? 'disabled' : ''}>
+            ${isFull ? 'Llena' : 'Entrar'}
+          </button>
+        </div>
       `;
+
+      item.querySelector('.btn-join-direct')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (isFull) {
+          alert('La sala está llena.');
+          return;
+        }
+        let password = '';
+        if (r.isPrivate) {
+          const passPrompt = prompt(`La sala "${r.name}" es privada. Ingresa la contraseña:`);
+          if (passPrompt === null) return;
+          password = passPrompt.trim();
+        }
+        this.events.onJoinRoom(this.getNickname(), r.id, password);
+      });
+
       item.addEventListener('click', () => {
         this.roomIdInput.value = r.id;
       });
+
       this.roomListContainer.appendChild(item);
     }
   }

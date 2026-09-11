@@ -17,6 +17,7 @@
         <span>HAXBALL</span>
         <span class="brand-badge">P2P ENGINE</span>
         <span id="roomNameBadge" style="font-size: 0.8rem; color: #94a3b8; font-weight: 600;">Lobby</span>
+        <button id="btnLeaveRoom" class="btn btn-danger" style="font-size: 0.75rem; padding: 4px 10px; margin-left: 10px; display: none;">🚪 Salir</button>
       </div>
 
       <!-- Scoreboard Center -->
@@ -46,37 +47,66 @@
 
     <!-- Bottom Dock: Teams, Controls & Chat -->
     <footer class="bottom-dock">
-      <!-- Teams List -->
+      <!-- Teams List: 3 Columns (Red, Blue, Spectators FIFO) -->
       <div class="team-lists">
         <div class="team-box">
           <div class="team-box-header red">
-            <span>Rojo</span>
+            <span>Rojo (<span id="redCount">0</span>)</span>
             <button id="joinRedBtn" class="btn btn-red" style="padding: 2px 6px; font-size: 0.7rem;">Unirse</button>
           </div>
-          <div id="redPlayersList" style="flex: 1; overflow-y: auto;"></div>
+          <div id="redPlayersList" class="team-players-list"></div>
         </div>
 
         <div class="team-box">
           <div class="team-box-header blue">
-            <span>Azul</span>
+            <span>Azul (<span id="blueCount">0</span>)</span>
             <button id="joinBlueBtn" class="btn btn-blue" style="padding: 2px 6px; font-size: 0.7rem;">Unirse</button>
           </div>
-          <div id="bluePlayersList" style="flex: 1; overflow-y: auto;"></div>
+          <div id="bluePlayersList" class="team-players-list"></div>
+        </div>
+
+        <div class="team-box">
+          <div class="team-box-header spec">
+            <span>Espectadores (<span id="specCount">0</span>)</span>
+            <button id="joinSpecBtn" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.7rem;">👁 Unirse</button>
+          </div>
+          <div id="specPlayersList" class="team-players-list"></div>
         </div>
       </div>
 
-      <!-- Match Controls Center -->
+      <!-- Match Controls & Admin Center -->
       <div class="match-controls">
-        <div class="btn-group">
-          <button id="btnStartMatch" class="btn btn-primary">▶ Iniciar Partido</button>
-          <button id="btnStopMatch" class="btn btn-danger">⏹ Detener</button>
+        <!-- Admin Panel Toolbar -->
+        <div id="adminPanel" class="admin-panel" style="display: none;">
+          <div class="admin-panel-title">🛡 PANEL DE ADMINISTRADOR</div>
+          <div class="admin-controls-row">
+            <select id="adminTimeLimit" class="form-select-sm">
+              <option value="0">⏱ Indefinido</option>
+              <option value="3" selected>⏱ 3 min</option>
+              <option value="5">⏱ 5 min</option>
+              <option value="7">⏱ 7 min</option>
+              <option value="10">⏱ 10 min</option>
+            </select>
+            <select id="adminScoreLimit" class="form-select-sm">
+              <option value="0">⚽ Indefinido</option>
+              <option value="1">⚽ 1 gol</option>
+              <option value="3" selected>⚽ 3 goles</option>
+              <option value="5">⚽ 5 goles</option>
+              <option value="10">⚽ 10 goles</option>
+            </select>
+            <button id="btnToggleLockTeams" class="btn btn-secondary" style="font-size: 0.7rem; padding: 2px 6px;">
+              🔓 Equipos Libres
+            </button>
+          </div>
         </div>
+
         <div class="btn-group">
-          <button id="joinSpecBtn" class="btn btn-secondary" style="font-size: 0.75rem;">👁 Espectador</button>
-          <button id="btnToggleSound" class="btn btn-secondary" style="font-size: 0.75rem;">🔊 Audio: ON</button>
+          <button id="btnStartMatch" class="btn btn-primary">▶ Iniciar</button>
+          <button id="btnStopMatch" class="btn btn-danger">⏹ Detener</button>
+          <button id="btnToggleSound" class="btn btn-secondary" style="font-size: 0.75rem;">🔊 Audio</button>
         </div>
         <div style="font-size: 0.7rem; color: #64748b; margin-top: 4px;">
-          Controles: <strong>WASD / Flechas</strong> mover &bull; <strong>Espacio / X</strong> patear
+          <strong>WASD / Flechas</strong> mover &bull; <strong>Espacio / X</strong> patear
         </div>
       </div>
 
@@ -90,6 +120,17 @@
     </footer>
   </div>
 
+  <!-- Context Menu for Player Actions (Admin Moderation) -->
+  <div id="playerContextMenu" class="context-menu" style="display: none;">
+    <div id="menuPlayerName" class="context-menu-header">Jugador</div>
+    <button id="ctxMoveRed" class="context-menu-item">🔴 Mover a Rojo</button>
+    <button id="ctxMoveBlue" class="context-menu-item">🔵 Mover a Azul</button>
+    <button id="ctxMoveSpec" class="context-menu-item">👁 Mover a Espectador</button>
+    <button id="ctxMakeAdmin" class="context-menu-item">⭐ Promover a Admin</button>
+    <button id="ctxKick" class="context-menu-item danger">👢 Expulsar (Kick)</button>
+    <button id="ctxBan" class="context-menu-item danger">🚫 Banear (Ban)</button>
+  </div>
+
   <!-- Room Lobby Modal Overlay -->
   <div id="lobbyModal" class="modal-overlay">
     <div class="modal-content">
@@ -101,31 +142,80 @@
       </div>
 
       <div class="form-group">
-        <button id="btnPracticeMode" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 1rem;">
+        <button id="btnPracticeMode" class="btn btn-primary" style="width: 100%; padding: 10px; font-size: 0.95rem;">
           ⚽ Modo Práctica (Jugar Ahora)
         </button>
       </div>
 
-      <div style="text-align: center; color: #64748b; font-size: 0.8rem;">— O MULTIJUGADOR P2P —</div>
+      <div style="text-align: center; color: #64748b; font-size: 0.75rem; margin: 8px 0;">— SALAS MULTIJUGADOR P2P —</div>
 
-      <div class="form-group">
-        <label class="form-label" for="lobbyRoomName">Crear Nueva Sala</label>
-        <div style="display: flex; gap: 6px;">
-          <input id="lobbyRoomName" class="form-input" type="text" placeholder="Nombre de sala" style="flex: 1;" />
-          <button id="btnCreateRoom" class="btn btn-secondary">Crear Sala</button>
+      <!-- Creación Avanzada de Sala -->
+      <details class="create-room-details" id="createRoomDetails">
+        <summary class="btn btn-secondary" style="width: 100%; text-align: center; cursor: pointer; padding: 8px;">
+          ➕ Configurar y Crear Nueva Sala
+        </summary>
+        <div style="background: rgba(0,0,0,0.25); border-radius: 6px; padding: 10px; margin-top: 6px;">
+          <div class="form-group">
+            <label class="form-label" for="lobbyRoomName">Nombre de la Sala</label>
+            <input id="lobbyRoomName" class="form-input" type="text" placeholder="Mi Partido Épico" />
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div class="form-group">
+              <label class="form-label" for="lobbyMaxPlayers">Máx. Jugadores (2-16)</label>
+              <input id="lobbyMaxPlayers" class="form-input" type="number" min="2" max="16" value="12" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="lobbyTimeLimit">Tiempo Límite</label>
+              <select id="lobbyTimeLimit" class="form-input">
+                <option value="0">Indefinido</option>
+                <option value="3" selected>3 minutos</option>
+                <option value="5">5 minutos</option>
+                <option value="7">7 minutos</option>
+                <option value="10">10 minutos</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="lobbyScoreLimit">Límite de Goles</label>
+            <select id="lobbyScoreLimit" class="form-input">
+              <option value="0">Indefinido</option>
+              <option value="1">1 gol</option>
+              <option value="3" selected>3 goles</option>
+              <option value="5">5 goles</option>
+              <option value="10">10 goles</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-top: 6px;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem; cursor: pointer;">
+              <input type="checkbox" id="lobbyIsPrivate" />
+              <span>🔒 Sala Privada (Requiere Contraseña)</span>
+            </label>
+          </div>
+
+          <div class="form-group" id="lobbyPasswordContainer" style="display: none;">
+            <label class="form-label" for="lobbyPassword">Contraseña de Acceso</label>
+            <input id="lobbyPassword" class="form-input" type="password" placeholder="Contraseña de la sala" />
+          </div>
+
+          <button id="btnCreateRoom" class="btn btn-primary" style="width: 100%; margin-top: 8px;">
+            🚀 Crear y Abrir Sala
+          </button>
         </div>
-      </div>
+      </details>
 
-      <div class="form-group">
+      <div class="form-group" style="margin-top: 12px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <label class="form-label" for="lobbyRoomId">Unirse por ID o Salones Activos</label>
+          <label class="form-label" for="lobbyRoomId">Explorador de Salas Activas</label>
           <button id="btnRefreshRooms" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.7rem;">Refrescar</button>
         </div>
         <div style="display: flex; gap: 6px;">
-          <input id="lobbyRoomId" class="form-input" type="text" placeholder="Código de sala" style="flex: 1;" />
+          <input id="lobbyRoomId" class="form-input" type="text" placeholder="Unirse directo con ID" style="flex: 1;" />
           <button id="btnJoinRoom" class="btn btn-secondary">Unirse</button>
         </div>
-        <div id="lobbyRoomList" class="room-list" style="margin-top: 8px;"></div>
+        <div id="lobbyRoomList" class="room-list" style="margin-top: 8px; max-height: 140px; overflow-y: auto;"></div>
       </div>
     </div>
   </div>
