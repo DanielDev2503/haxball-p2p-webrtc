@@ -11,9 +11,10 @@ export class ChatBox {
   public onSendMessage?: (text: string) => void;
 
   constructor() {
-    this.container = document.getElementById('chatMessages')!;
-    this.inputEl = document.getElementById('chatInput') as HTMLInputElement;
-    this.formEl = document.getElementById('chatForm') as HTMLFormElement;
+    this.container = (document.getElementById('chat-messages') || document.getElementById('chatMessages'))!;
+    this.inputEl = (document.getElementById('chat-input') || document.getElementById('chatInput')) as HTMLInputElement;
+    this.formEl = (document.getElementById('chatForm') || document.getElementById('chat-form')) as HTMLFormElement;
+
 
     if (this.formEl) {
       this.formEl.addEventListener('submit', (e) => {

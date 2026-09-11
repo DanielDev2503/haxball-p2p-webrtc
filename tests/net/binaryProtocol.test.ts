@@ -26,10 +26,11 @@ describe('Binary Protocol Serialization', () => {
   it('correctly encodes and decodes a complex SnapshotPacket via DataView', () => {
     const snapshot: GameSnapshot = {
       tick: 12054,
-      matchState: MatchState.PLAYING,
+      matchState: 'PLAYING',
       matchTimerSeconds: 165,
       redScore: 2,
       blueScore: 1,
+
       discs: [
         {
           id: 0,
@@ -74,8 +75,9 @@ describe('Binary Protocol Serialization', () => {
     const decoded = SnapshotPacket.decode(buffer);
     expect(decoded).not.toBeNull();
     expect(decoded!.tick).toBe(12054);
-    expect(decoded!.matchState).toBe(MatchState.PLAYING);
+    expect(decoded!.matchState).toBe('PLAYING');
     expect(decoded!.matchTimerSeconds).toBe(165);
+
     expect(decoded!.redScore).toBe(2);
     expect(decoded!.blueScore).toBe(1);
     expect(decoded!.discs.length).toBe(3);

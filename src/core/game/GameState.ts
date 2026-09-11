@@ -19,7 +19,9 @@ export interface GameSnapshot {
   redScore: number;
   blueScore: number;
   discs: DiscSnapshot[];
+  countdownSeconds?: number;
 }
+
 
 export interface MatchConfig {
   scoreLimit: number;

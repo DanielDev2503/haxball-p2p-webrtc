@@ -83,26 +83,14 @@ export class CanvasRenderer {
   private renderOverlayState(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot): void {
     ctx.save();
 
-    if (snapshot.matchState === MatchState.WAITING) {
-      this.drawPillBanner(ctx, 'WAITING FOR PLAYERS', '#94a3b8');
-    } else if (snapshot.matchState === MatchState.COUNTDOWN) {
-      this.drawBigText(ctx, 'READY!', '#facc15');
-    } else if (snapshot.matchState === MatchState.GOAL_SCORED) {
-      this.drawBigText(ctx, 'GOOOOOAL!', '#ef4444');
-    } else if (snapshot.matchState === MatchState.GAME_OVER) {
-      let msg = 'GAME OVER';
-      let color = '#ffffff';
-      if (snapshot.redScore > snapshot.blueScore) {
-        msg = 'RED TEAM WINS!';
-        color = '#ef4444';
-      } else if (snapshot.blueScore > snapshot.redScore) {
-        msg = 'BLUE TEAM WINS!';
-        color = '#38bdf8';
-      } else {
-        msg = 'DRAW!';
-        color = '#facc15';
-      }
-      this.drawBigText(ctx, msg, color);
+    if (snapshot.matchState === 'STOPPED') {
+      this.drawPillBanner(ctx, 'PARTIDO DETENIDO', '#94a3b8');
+    } else if (snapshot.matchState === 'PAUSED') {
+      this.drawBigText(ctx, 'PAUSA', '#f59e0b');
+    } else if (snapshot.matchState === 'COUNTDOWN') {
+      const count = snapshot.countdownSeconds ?? 3;
+      const text = count > 0 ? count.toString() : '¡PLAY!';
+      this.drawBigText(ctx, text, '#facc15');
     }
 
     ctx.restore();
@@ -110,23 +98,25 @@ export class CanvasRenderer {
 
   private drawBigText(ctx: CanvasRenderingContext2D, text: string, color: string): void {
     ctx.save();
-    ctx.font = '900 52px "Inter", "Segoe UI", sans-serif';
+    ctx.font = '900 72px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     // Shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.fillText(text, 0, -20 + 3);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillText(text, 0, -20 + 4);
+
+    // Black stroke outline for high contrast
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 6;
+    ctx.strokeText(text, 0, -20);
 
     // Text fill
     ctx.fillStyle = color;
     ctx.fillText(text, 0, -20);
-
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
-    ctx.strokeText(text, 0, -20);
     ctx.restore();
   }
+
 
   private drawPillBanner(ctx: CanvasRenderingContext2D, text: string, color: string): void {
     ctx.save();

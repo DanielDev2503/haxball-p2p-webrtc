@@ -146,33 +146,159 @@ canvas#gameCanvas {
   display: block;
 }
 
-/* BOTTOM CONTROLS & CHAT DOCK */
-.bottom-dock {
-  display: grid;
-  grid-template-columns: 440px 1fr 280px;
-  gap: 14px;
-  padding: 10px 18px;
-  background: var(--bg-panel);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid var(--border-color);
-  max-height: 200px;
+/* TOP BAR RIGHT CONTROLS */
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
 }
 
-/* TEAM LISTS (3 COLUMNS: RED, BLUE, SPEC) */
-.team-lists {
+.icon-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.menu-btn {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+}
+.menu-btn:hover {
+  background: rgba(56, 189, 248, 0.25);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+/* IN-GAME COLLAPSIBLE OVERLAY MENU */
+.ingame-menu-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 15, 26, 0.75);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 150;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+.ingame-menu-overlay.hidden {
+  display: none !important;
+}
+
+.menu-modal-card {
+  background: #1e293b;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  width: 680px;
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+}
+.menu-header h3 {
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+.icon-btn-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.icon-btn-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ADMIN CONTROLS */
+.admin-controls {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.admin-controls-title {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #f59e0b;
+  letter-spacing: 0.5px;
+}
+.admin-buttons-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.admin-config-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.form-input-inline {
+  width: 60px;
+  background: #0f172a;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: #fff;
+  padding: 3px 6px;
+  font-size: 0.8rem;
+  margin-left: 4px;
+}
+
+/* TEAMS CONTAINER & DRAG AND DROP */
+.teams-container {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
-  overflow-y: auto;
+  gap: 10px;
+  min-height: 180px;
 }
-
-.team-box {
+.team-col {
   background: rgba(15, 23, 42, 0.6);
   border-radius: 8px;
-  padding: 8px;
+  padding: 10px;
   border: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  min-height: 180px;
+  transition: all 0.15s ease;
+}
+.team-col.drag-over {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.15);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
 }
 
 .team-box-header {
@@ -185,35 +311,49 @@ canvas#gameCanvas {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-
 .team-box-header.red { color: var(--red-team); }
 .team-box-header.blue { color: var(--blue-team); }
+.team-box-header.spec { color: #94a3b8; }
+
+.team-players-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 140px;
+}
 
 .player-item {
-  font-size: 0.8rem;
-  padding: 2px 4px;
+  font-size: 0.75rem;
+  padding: 4px 6px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.05);
   margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* CENTER MATCH CONTROLS */
-.match-controls {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.player-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.player-item[draggable="true"] {
+  cursor: grab;
+}
+.player-item[draggable="true"]:active {
+  cursor: grabbing;
 }
 
-.btn-group {
-  display: flex;
-  gap: 8px;
+.menu-footer-hint {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  padding-top: 2px;
 }
 
+/* BUTTONS */
 .btn {
   padding: 8px 16px;
   border: none;
@@ -227,7 +367,10 @@ canvas#gameCanvas {
   justify-content: center;
   gap: 6px;
 }
-
+.btn-xs {
+  padding: 2px 8px !important;
+  font-size: 0.7rem !important;
+}
 .btn-primary {
   background: #10b981;
   color: #fff;
@@ -236,7 +379,6 @@ canvas#gameCanvas {
   background: #059669;
   box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
 }
-
 .btn-danger {
   background: #ef4444;
   color: #fff;
@@ -245,7 +387,6 @@ canvas#gameCanvas {
   background: #dc2626;
   box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
 }
-
 .btn-secondary {
   background: rgba(255, 255, 255, 0.1);
   color: #f8fafc;
@@ -253,7 +394,6 @@ canvas#gameCanvas {
 .btn-secondary:hover {
   background: rgba(255, 255, 255, 0.2);
 }
-
 .btn-red {
   background: rgba(239, 68, 68, 0.2);
   color: #ef4444;
@@ -263,7 +403,6 @@ canvas#gameCanvas {
   background: var(--red-team);
   color: #fff;
 }
-
 .btn-blue {
   background: rgba(56, 189, 248, 0.2);
   color: #38bdf8;
@@ -274,25 +413,51 @@ canvas#gameCanvas {
   color: #fff;
 }
 
-/* CHAT WIDGET */
-.chat-widget {
-  display: flex;
-  flex-direction: column;
-  background: rgba(15, 23, 42, 0.6);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  padding: 8px;
-  height: 100%;
+/* DISABLED STYLING FOR NON-ADMINS */
+button:disabled, input:disabled, select:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  filter: grayscale(80%);
 }
 
-.chat-messages {
+/* CHAT WIDGET - FIXED BOTTOM LEFT OVERLAY */
+#chat-container {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  width: 320px;
+  max-height: 180px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  z-index: 50;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+#chat-messages {
   flex: 1;
+  max-height: 140px;
   overflow-y: auto;
-  font-size: 0.8rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.4) transparent;
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-bottom: 6px;
+  font-size: 0.8rem;
+}
+
+#chat-messages::-webkit-scrollbar {
+  width: 5px;
+}
+#chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
 }
 
 .chat-msg {
@@ -327,6 +492,7 @@ canvas#gameCanvas {
 .chat-input:focus {
   border-color: #38bdf8;
 }
+
 
 /* MODAL OVERLAY */
 .modal-overlay {

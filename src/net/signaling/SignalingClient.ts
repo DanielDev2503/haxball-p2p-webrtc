@@ -5,6 +5,7 @@ export interface SignalingMessage {
   targetId?: string;
   roomId?: string;
   roomName?: string;
+  nickname?: string;
   payload?: any;
   rooms?: Array<{ id: string; name: string; playerCount: number; maxPlayers: number; isPrivate: boolean; teamsLocked?: boolean; timeLimit?: number; scoreLimit?: number }>;
   message?: string;
@@ -12,6 +13,7 @@ export interface SignalingMessage {
   config?: any;
   password?: string;
 }
+
 
 export class SignalingClient {
   public ws: WebSocket | null = null;
@@ -77,17 +79,18 @@ export class SignalingClient {
     }
   }
 
-  public createRoom(roomConfig: string | { name: string; maxPlayers?: number; isPrivate?: boolean; password?: string; timeLimit?: number; scoreLimit?: number; teamsLocked?: boolean }, roomId?: string): void {
+  public createRoom(roomConfig: string | { name: string; maxPlayers?: number; isPrivate?: boolean; password?: string; timeLimit?: number; scoreLimit?: number; teamsLocked?: boolean }, roomId?: string, nickname?: string): void {
     if (typeof roomConfig === 'string') {
-      this.send({ type: 'create_room', roomName: roomConfig, roomId });
+      this.send({ type: 'create_room', roomName: roomConfig, roomId, nickname });
     } else {
-      this.send({ type: 'create_room', config: roomConfig, roomName: roomConfig.name, roomId });
+      this.send({ type: 'create_room', config: roomConfig, roomName: roomConfig.name, roomId, nickname });
     }
   }
 
-  public joinRoom(roomId: string, password?: string): void {
-    this.send({ type: 'join_room', roomId, password });
+  public joinRoom(roomId: string, password?: string, nickname?: string): void {
+    this.send({ type: 'join_room', roomId, password, nickname });
   }
+
 
   public updateRoomConfig(config: any): void {
     this.send({ type: 'update_room_config', config });

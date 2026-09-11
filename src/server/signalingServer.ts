@@ -34,7 +34,7 @@ export function setupSignalingServer(wss: WebSocketServer) {
     ws.on('message', (raw: string) => {
       try {
         const msg = JSON.parse(raw.toString());
-        const { type, peerId, targetId, roomId, roomName, payload, config, password } = msg;
+        const { type, peerId, targetId, roomId, roomName, payload, config, password, nickname } = msg;
 
         if (peerId) {
           currentPeerId = peerId;
@@ -107,8 +107,9 @@ export function setupSignalingServer(wss: WebSocketServer) {
             room.peers.set(peerId, ws);
             peerToRoom.set(peerId, roomId);
 
-            console.log(`[SignalingServer] Peer ${peerId} joining room ${roomId}`);
-            send(room.hostWs, { type: 'peer_joined', peerId });
+            console.log(`[SignalingServer] Peer ${peerId} joining room ${roomId} (nickname: ${nickname})`);
+            send(room.hostWs, { type: 'peer_joined', peerId, nickname });
+
             send(ws, {
               type: 'room_joined',
               roomId: room.id,

@@ -25,10 +25,10 @@
         <span id="redScore" class="team-score score-red">0</span>
         <span class="score-divider">:</span>
         <span id="blueScore" class="team-score score-blue">0</span>
-        <span id="matchTimer" class="match-clock">03:00</span>
+        <span id="matchTimer" class="match-clock">00:00</span>
       </div>
 
-      <!-- Live Network & FPS Stats -->
+      <!-- Live Network Stats, Audio & Menu Toggle -->
       <div class="hud-stats">
         <div class="stat-item">
           <span class="stat-dot"></span>
@@ -37,87 +37,83 @@
         <div class="stat-item">
           <span id="fpsValue">60 FPS</span>
         </div>
+        <div class="top-bar-right">
+          <button id="audio-toggle-btn" class="icon-btn" title="Audio (Mute / Unmute)">🔊</button>
+          <button id="menu-toggle-btn" class="icon-btn menu-btn" title="Menú (Esc)">☰ Menú (Esc)</button>
+        </div>
       </div>
     </header>
 
     <!-- Canvas Gameplay Viewport -->
     <main class="viewport-container">
       <canvas id="gameCanvas"></canvas>
-    </main>
 
-    <!-- Bottom Dock: Teams, Controls & Chat -->
-    <footer class="bottom-dock">
-      <!-- Teams List: 3 Columns (Red, Blue, Spectators FIFO) -->
-      <div class="team-lists">
-        <div class="team-box">
-          <div class="team-box-header red">
-            <span>Rojo (<span id="redCount">0</span>)</span>
-            <button id="joinRedBtn" class="btn btn-red" style="padding: 2px 6px; font-size: 0.7rem;">Unirse</button>
+      <!-- In-Game Collapsible Overlay Menu (Toggled with Escape or Menu button) -->
+      <div id="ingame-menu" class="ingame-menu-overlay hidden">
+        <div class="menu-modal-card">
+          <div class="menu-header">
+            <h3>⚙️ Controles de Partido & Equipos</h3>
+            <button id="menu-close-btn" class="icon-btn-close">✕</button>
           </div>
-          <div id="redPlayersList" class="team-players-list"></div>
-        </div>
 
-        <div class="team-box">
-          <div class="team-box-header blue">
-            <span>Azul (<span id="blueCount">0</span>)</span>
-            <button id="joinBlueBtn" class="btn btn-blue" style="padding: 2px 6px; font-size: 0.7rem;">Unirse</button>
+          <!-- Admin Controls (Rendered disabled if not admin) -->
+          <div class="admin-controls">
+            <div class="admin-controls-title">🛡 PANEL DE ADMINISTRADOR</div>
+            <div class="admin-buttons-row">
+              <button id="btn-start-stop" class="btn btn-primary">▶ Iniciar / Detener</button>
+              <button id="btn-pause-resume" class="btn btn-secondary">⏸ Pausar</button>
+              <button id="btn-lock-teams" class="btn btn-secondary">🔓 Equipos Libres</button>
+            </div>
+            <div class="admin-config-row">
+              <label>⏱ Tiempo (min): <input type="number" id="time-limit" min="0" max="60" value="3" class="form-input-inline" /></label>
+              <label>⚽ Goles: <input type="number" id="score-limit" min="0" max="50" value="3" class="form-input-inline" /></label>
+            </div>
           </div>
-          <div id="bluePlayersList" class="team-players-list"></div>
-        </div>
 
-        <div class="team-box">
-          <div class="team-box-header spec">
-            <span>Espectadores (<span id="specCount">0</span>)</span>
-            <button id="joinSpecBtn" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.7rem;">👁 Unirse</button>
+          <!-- Teams Container: 3 Columns with Drag & Drop -->
+          <div class="teams-container">
+            <!-- Red Team Column -->
+            <div class="team-col" data-team="red">
+              <div class="team-box-header red">
+                <span>Rojo (<span id="redCount">0</span>)</span>
+                <button id="joinRedBtn" class="btn btn-red btn-xs">Unirse</button>
+              </div>
+              <div id="redPlayersList" class="team-players-list"></div>
+            </div>
+
+            <!-- Spectators Column -->
+            <div class="team-col" data-team="spectators">
+              <div class="team-box-header spec">
+                <span>Espectadores (<span id="specCount">0</span>)</span>
+                <button id="joinSpecBtn" class="btn btn-secondary btn-xs">👁 Unirse</button>
+              </div>
+              <div id="specPlayersList" class="team-players-list"></div>
+            </div>
+
+            <!-- Blue Team Column -->
+            <div class="team-col" data-team="blue">
+              <div class="team-box-header blue">
+                <span>Azul (<span id="blueCount">0</span>)</span>
+                <button id="joinBlueBtn" class="btn btn-blue btn-xs">Unirse</button>
+              </div>
+              <div id="bluePlayersList" class="team-players-list"></div>
+            </div>
           </div>
-          <div id="specPlayersList" class="team-players-list"></div>
+
+          <div class="menu-footer-hint">
+            <span>Presiona <strong>Escape</strong> para abrir o cerrar este menú en cualquier momento.</span>
+          </div>
         </div>
       </div>
 
-      <!-- Match Controls & Admin Center -->
-      <div class="match-controls">
-        <!-- Admin Panel Toolbar -->
-        <div id="adminPanel" class="admin-panel" style="display: none;">
-          <div class="admin-panel-title">🛡 PANEL DE ADMINISTRADOR</div>
-          <div class="admin-controls-row">
-            <select id="adminTimeLimit" class="form-select-sm">
-              <option value="0">⏱ Indefinido</option>
-              <option value="3" selected>⏱ 3 min</option>
-              <option value="5">⏱ 5 min</option>
-              <option value="7">⏱ 7 min</option>
-              <option value="10">⏱ 10 min</option>
-            </select>
-            <select id="adminScoreLimit" class="form-select-sm">
-              <option value="0">⚽ Indefinido</option>
-              <option value="1">⚽ 1 gol</option>
-              <option value="3" selected>⚽ 3 goles</option>
-              <option value="5">⚽ 5 goles</option>
-              <option value="10">⚽ 10 goles</option>
-            </select>
-            <button id="btnToggleLockTeams" class="btn btn-secondary" style="font-size: 0.7rem; padding: 2px 6px;">
-              🔓 Equipos Libres
-            </button>
-          </div>
-        </div>
-
-        <div class="btn-group">
-          <button id="btnStartMatch" class="btn btn-primary">▶ Iniciar</button>
-          <button id="btnStopMatch" class="btn btn-danger">⏹ Detener</button>
-          <button id="btnToggleSound" class="btn btn-secondary" style="font-size: 0.75rem;">🔊 Audio</button>
-        </div>
-        <div style="font-size: 0.7rem; color: #64748b; margin-top: 4px;">
-          <strong>WASD / Flechas</strong> mover &bull; <strong>Espacio / X</strong> patear
-        </div>
-      </div>
-
-      <!-- Realtime In-Game Chat -->
-      <div class="chat-widget">
-        <div id="chatMessages" class="chat-messages"></div>
+      <!-- Realtime In-Game Chat (Fixed at bottom left overlay) -->
+      <div id="chat-container">
+        <div id="chat-messages" class="chat-messages"></div>
         <form id="chatForm" class="chat-input-form">
-          <input id="chatInput" type="text" class="chat-input" placeholder="Escribe un mensaje y presiona Enter..." autocomplete="off" />
+          <input id="chat-input" type="text" class="chat-input" placeholder="Presiona Enter para chatear..." autocomplete="off" />
         </form>
       </div>
-    </footer>
+    </main>
   </div>
 
   <!-- Context Menu for Player Actions (Admin Moderation) -->
@@ -125,11 +121,30 @@
     <div id="menuPlayerName" class="context-menu-header">Jugador</div>
     <button id="ctxMoveRed" class="context-menu-item">🔴 Mover a Rojo</button>
     <button id="ctxMoveBlue" class="context-menu-item">🔵 Mover a Azul</button>
-    <button id="ctxMoveSpec" class="context-menu-item">👁 Mover a Espectador</button>
-    <button id="ctxMakeAdmin" class="context-menu-item">⭐ Promover a Admin</button>
+    <button id="ctxMoveSpec" class="context-menu-item">👁 Mover a Espectadores</button>
+    <button id="ctxMakeAdmin" class="context-menu-item">⭐ Hacer Admin</button>
     <button id="ctxKick" class="context-menu-item danger">👢 Expulsar (Kick)</button>
     <button id="ctxBan" class="context-menu-item danger">🚫 Banear (Ban)</button>
   </div>
+
+  <!-- Nickname Gatekeeper Modal (Blocking until valid nickname entered) -->
+  <div id="nicknameGatekeeperModal" class="modal-overlay" style="display: none; z-index: 300;">
+    <div class="modal-content" style="max-width: 380px;">
+      <h2 class="modal-title">⚽ Bienvenido a BallHax</h2>
+      <p style="color: #94a3b8; font-size: 0.85rem; text-align: center;">
+        Por favor ingresa tu nickname para comenzar a jugar.
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="gatekeeperNicknameInput">Tu Nickname (2 a 15 caracteres)</label>
+        <input id="gatekeeperNicknameInput" class="form-input" type="text" placeholder="Ej. Maradona" maxlength="15" autofocus />
+        <div id="gatekeeperError" style="display: none; color: #ef4444; font-size: 0.75rem; margin-top: 4px;"></div>
+      </div>
+      <button id="btnSaveNickname" class="btn btn-primary" style="width: 100%; padding: 10px; font-size: 0.95rem;">
+        Guardar y Continuar
+      </button>
+    </div>
+  </div>
+
 
   <!-- Room Lobby Modal Overlay -->
   <div id="lobbyModal" class="modal-overlay">

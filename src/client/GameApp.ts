@@ -9,6 +9,7 @@ import { ScoreboardHUD } from '../ui/components/ScoreboardHUD';
 import { ChatBox } from '../ui/components/ChatBox';
 import { TeamSelectModal } from '../ui/components/TeamSelectModal';
 import { RoomLobby, LobbyRoomConfig } from '../ui/components/RoomLobby';
+import { NicknameGatekeeper } from '../ui/components/NicknameGatekeeper';
 import { SignalingClient, SignalingMessage } from '../net/signaling/SignalingClient';
 import { PeerConnection } from '../net/transport/PeerConnection';
 import { InputPacket } from '../net/protocol/InputPacket';
@@ -30,6 +31,7 @@ export class GameApp {
   public chat: ChatBox;
   public teamSelect: TeamSelectModal;
   public lobby: RoomLobby;
+  public gatekeeper: NicknameGatekeeper;
 
   // Networking
   public signaling: SignalingClient;
@@ -39,6 +41,7 @@ export class GameApp {
   public clientInputSequence: number = 0;
   public bannedPeers: Set<string> = new Set();
   public currentRoomId: string = '';
+
 
   // Room & Admin state
   public roomConfig: RoomConfig = {
@@ -61,19 +64,24 @@ export class GameApp {
 
   // UI elements
   private btnLeaveRoom: HTMLElement | null;
-  private adminPanel: HTMLElement | null;
-  private adminTimeLimit: HTMLSelectElement | null;
-  private adminScoreLimit: HTMLSelectElement | null;
-  private btnToggleLockTeams: HTMLElement | null;
+  private btnStartStop: HTMLButtonElement | null;
+  private btnPauseResume: HTMLButtonElement | null;
+  private btnLockTeams: HTMLButtonElement | null;
+  private inputTimeLimit: HTMLInputElement | null;
+  private inputScoreLimit: HTMLInputElement | null;
   private contextMenu: HTMLElement | null;
   private menuPlayerName: HTMLElement | null;
   private roomNameBadge: HTMLElement | null;
 
   constructor() {
     const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
+    this.gatekeeper = new NicknameGatekeeper();
+    const storedNick = this.gatekeeper.checkOrPrompt();
+    const initialNick = storedNick || 'Player';
+
     this.localPlayer = new Player({
       id: 'local_' + Math.random().toString(36).substring(2, 7),
-      name: 'Player',
+      name: initialNick,
       team: 'red',
       isHost: true,
       isAdmin: true
@@ -105,10 +113,11 @@ export class GameApp {
 
     // UI Cache
     this.btnLeaveRoom = document.getElementById('btnLeaveRoom');
-    this.adminPanel = document.getElementById('adminPanel');
-    this.adminTimeLimit = document.getElementById('adminTimeLimit') as HTMLSelectElement;
-    this.adminScoreLimit = document.getElementById('adminScoreLimit') as HTMLSelectElement;
-    this.btnToggleLockTeams = document.getElementById('btnToggleLockTeams');
+    this.btnStartStop = document.getElementById('btn-start-stop') as HTMLButtonElement | null;
+    this.btnPauseResume = document.getElementById('btn-pause-resume') as HTMLButtonElement | null;
+    this.btnLockTeams = document.getElementById('btn-lock-teams') as HTMLButtonElement | null;
+    this.inputTimeLimit = document.getElementById('time-limit') as HTMLInputElement | null;
+    this.inputScoreLimit = document.getElementById('score-limit') as HTMLInputElement | null;
     this.contextMenu = document.getElementById('playerContextMenu');
     this.menuPlayerName = document.getElementById('menuPlayerName');
     this.roomNameBadge = document.getElementById('roomNameBadge');
@@ -119,6 +128,24 @@ export class GameApp {
       onSinglePlayer: (nick) => this.startPracticeMode(nick),
       onRefreshRooms: () => this.signaling.requestRoomList()
     });
+    if (storedNick) {
+      this.lobby.setNickname(storedNick);
+    }
+
+    this.gatekeeper.onNicknameConfirmed = (nick: string) => {
+      this.localPlayer.name = nick;
+      this.localPlayer.avatar = nick.substring(0, 2).toUpperCase();
+      this.lobby.setNickname(nick);
+      if (this.engine) {
+        const p = this.engine.players.get(this.localPlayer.id);
+        if (p) {
+          p.name = nick;
+          p.avatar = this.localPlayer.avatar;
+        }
+        this.updateTeamLists();
+        this.syncPlayersWithClients();
+      }
+    };
 
     this.setupUIEvents();
     this.startRenderLoop();
@@ -131,20 +158,14 @@ export class GameApp {
       this.broadcastChat(this.localPlayer.name, text, this.localPlayer.team);
     };
 
-    // Team Selection
+    // Team Selection (Botones de unirse)
     this.teamSelect.onSelectTeam = (team) => {
-      if (this.roomConfig.teamsLocked && !this.localPlayer.isAdmin) {
-        alert('🔒 Los equipos están bloqueados por el administrador.');
-        return;
-      }
       this.handleTeamChange(this.localPlayer.id, team);
-      if (this.mode === 'client' && this.hostPeer) {
-        this.hostPeer.sendReliable(JSON.stringify({
-          type: 'change_team',
-          playerId: this.localPlayer.id,
-          team
-        }));
-      }
+    };
+
+    // Team Selection (HTML5 Drag & Drop)
+    this.teamSelect.onTeamChangeRequest = (playerId, team) => {
+      this.handleTeamChange(playerId, team);
     };
 
     // Context Menu on player click for Admins
@@ -204,65 +225,98 @@ export class GameApp {
       }
     });
 
-    // Leave Room / Practice Button
+    // In-game menu overlay toggle (Button & Escape key)
+    const ingameMenu = document.getElementById('ingame-menu');
+    const menuToggleBtn = document.getElementById('menu-toggle-btn');
+    const menuCloseBtn = document.getElementById('menu-close-btn');
+
+    const toggleMenu = () => {
+      if (ingameMenu) {
+        ingameMenu.classList.toggle('hidden');
+        this.updateAdminControlsUI();
+      }
+    };
+
+    if (menuToggleBtn) menuToggleBtn.addEventListener('click', toggleMenu);
+    if (menuCloseBtn) menuCloseBtn.addEventListener('click', toggleMenu);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        toggleMenu();
+      }
+    });
+
+    // Audio Toggle Button en la barra superior derecha
+    const audioToggleBtn = document.getElementById('audio-toggle-btn');
+    if (audioToggleBtn) {
+      audioToggleBtn.addEventListener('click', () => {
+        this.audioManager.isMuted = !this.audioManager.isMuted;
+        audioToggleBtn.textContent = this.audioManager.isMuted ? '🔇' : '🔊';
+        audioToggleBtn.title = this.audioManager.isMuted ? 'Audio Silenciado' : 'Audio Activado';
+      });
+    }
+
+    // Leave Room Button
     if (this.btnLeaveRoom) {
       this.btnLeaveRoom.addEventListener('click', () => {
         this.leaveCurrentRoom();
       });
     }
 
-    // Host match buttons
-    const btnStart = document.getElementById('btnStartMatch');
-    const btnStop = document.getElementById('btnStopMatch');
-    const btnSound = document.getElementById('btnToggleSound');
-
-    if (btnStart) {
-      btnStart.addEventListener('click', () => {
+    // Match Iniciar / Detener
+    const btnStartStop = document.getElementById('btn-start-stop');
+    if (btnStartStop) {
+      btnStartStop.addEventListener('click', () => {
         if (!this.localPlayer.isAdmin) return;
         if (this.engine) {
-          this.engine.startMatch();
-          this.audioManager.playCountdown(false);
-          this.broadcastMatchEvent('start');
+          if (this.engine.fsm.currentState === 'STOPPED') {
+            this.engine.startMatch();
+          } else {
+            this.engine.stopMatch();
+          }
+          this.updateAdminControlsUI();
+          this.broadcastGameState();
         }
       });
     }
 
-    if (btnStop) {
-      btnStop.addEventListener('click', () => {
+    // Match Pausar / Reanudar
+    const btnPauseResume = document.getElementById('btn-pause-resume');
+    if (btnPauseResume) {
+      btnPauseResume.addEventListener('click', () => {
         if (!this.localPlayer.isAdmin) return;
         if (this.engine) {
-          this.engine.stopMatch();
-          this.broadcastMatchEvent('stop');
+          this.engine.togglePause();
+          this.updateAdminControlsUI();
+          this.broadcastGameState();
         }
       });
     }
 
-    if (btnSound) {
-      btnSound.addEventListener('click', () => {
-        this.audioManager.isMuted = !this.audioManager.isMuted;
-        btnSound.textContent = this.audioManager.isMuted ? '🔇 Audio: OFF' : '🔊 Audio: ON';
-      });
-    }
-
-    // Admin Panel Controls
-    if (this.adminTimeLimit) {
-      this.adminTimeLimit.addEventListener('change', () => {
+    // Admin Time Limit Input
+    const inputTimeLimit = document.getElementById('time-limit') as HTMLInputElement | null;
+    if (inputTimeLimit) {
+      inputTimeLimit.addEventListener('change', () => {
         if (!this.localPlayer.isAdmin) return;
-        const mins = parseInt(this.adminTimeLimit!.value, 10);
-        this.updateRoomConfig({ timeLimit: mins });
+        const mins = parseInt(inputTimeLimit.value, 10);
+        this.updateRoomConfig({ timeLimit: isNaN(mins) ? 3 : mins });
       });
     }
 
-    if (this.adminScoreLimit) {
-      this.adminScoreLimit.addEventListener('change', () => {
+    // Admin Score Limit Input
+    const inputScoreLimit = document.getElementById('score-limit') as HTMLInputElement | null;
+    if (inputScoreLimit) {
+      inputScoreLimit.addEventListener('change', () => {
         if (!this.localPlayer.isAdmin) return;
-        const goals = parseInt(this.adminScoreLimit!.value, 10);
-        this.updateRoomConfig({ scoreLimit: goals });
+        const goals = parseInt(inputScoreLimit.value, 10);
+        this.updateRoomConfig({ scoreLimit: isNaN(goals) ? 3 : goals });
       });
     }
 
-    if (this.btnToggleLockTeams) {
-      this.btnToggleLockTeams.addEventListener('click', () => {
+    // Admin Lock Teams Button
+    const btnLockTeams = document.getElementById('btn-lock-teams');
+    if (btnLockTeams) {
+      btnLockTeams.addEventListener('click', () => {
         if (!this.localPlayer.isAdmin) return;
         const newLock = !this.roomConfig.teamsLocked;
         this.updateRoomConfig({ teamsLocked: newLock });
@@ -317,7 +371,7 @@ export class GameApp {
               console.log(`[Host] Rechazando conexión de peer baneado: ${msg.peerId}`);
               return;
             }
-            this.handlePeerJoinedAsHost(msg.peerId);
+            this.handlePeerJoinedAsHost(msg.peerId, msg.nickname);
           }
           break;
         }
@@ -447,7 +501,7 @@ export class GameApp {
       }
     }
 
-    this.signaling.createRoom(this.roomConfig);
+    this.signaling.createRoom(this.roomConfig, undefined, this.localPlayer.name);
     this.lobby.hide();
     this.updateTeamLists();
   }
@@ -474,7 +528,7 @@ export class GameApp {
       }
     }
 
-    this.signaling.joinRoom(roomId, password);
+    this.signaling.joinRoom(roomId, password, this.localPlayer.name);
     this.lobby.hide();
   }
 
@@ -530,10 +584,12 @@ export class GameApp {
       } else if (state === MatchState.PLAYING) {
         this.audioManager.playCountdown(true);
       }
+      this.updateAdminControlsUI();
+      this.broadcastGameState();
     };
   }
 
-  private async handlePeerJoinedAsHost(peerId: string): Promise<void> {
+  private async handlePeerJoinedAsHost(peerId: string, initialNick?: string): Promise<void> {
     const peer = new PeerConnection(peerId, true);
     this.peers.set(peerId, peer);
 
@@ -541,11 +597,26 @@ export class GameApp {
       this.signaling.sendIceCandidate(peerId, candidate);
     };
 
+    peer.onDataChannelOpen = () => {
+      peer.sendReliable(JSON.stringify({
+        type: 'room_config_sync',
+        config: this.roomConfig
+      }));
+      peer.sendReliable(JSON.stringify({
+        type: 'set_game_state',
+        state: this.engine?.fsm.currentState || 'STOPPED',
+        countdownSeconds: this.engine?.fsm.countdownSeconds
+      }));
+      this.syncPlayersWithClients();
+    };
+
     peer.onConnected = () => {
       console.log(`[Host] Conexión P2P establecida con ${peerId}`);
+      const nick = initialNick || `Guest_${peerId.substring(0, 4)}`;
       const newPlayer = new Player({
         id: peerId,
-        name: `Guest_${peerId.substring(0, 4)}`,
+        name: nick,
+        avatar: nick.substring(0, 2).toUpperCase(),
         team: 'spec',
         isHost: false,
         isAdmin: false
@@ -573,12 +644,27 @@ export class GameApp {
         if (msg.type === 'chat') {
           this.chat.addMessage({ author: msg.author, text: msg.text, team: msg.team });
           this.broadcastReliable(data, peerId);
+        } else if (msg.type === 'peer_handshake') {
+          const p = this.engine?.players.get(peerId);
+          if (p && msg.nickname) {
+            p.name = msg.nickname;
+            p.avatar = msg.avatar || msg.nickname.substring(0, 2).toUpperCase();
+            this.updateTeamLists();
+            this.syncPlayersWithClients();
+          }
         } else if (msg.type === 'change_team') {
-          const p = this.engine?.players.get(msg.playerId);
-          if (this.roomConfig.teamsLocked && !p?.isAdmin && p?.id !== this.localPlayer.id) {
+          const requester = this.engine?.players.get(peerId);
+          const isAdmin = requester?.isAdmin || false;
+          const isSelf = peerId === msg.playerId;
+          if (!isAdmin && (!isSelf || this.roomConfig.teamsLocked)) {
+            // Rechazo silencioso
             return;
           }
-          this.handleTeamChange(msg.playerId, msg.team);
+          if (this.engine) {
+            this.engine.setPlayerTeam(msg.playerId, msg.team);
+            this.updateTeamLists();
+            this.syncPlayersWithClients();
+          }
         }
       } catch (e) {}
     };
@@ -595,6 +681,14 @@ export class GameApp {
       this.signaling.sendIceCandidate(senderId, candidate);
     };
 
+    peer.onDataChannelOpen = () => {
+      peer.sendReliable(JSON.stringify({
+        type: 'peer_handshake',
+        nickname: this.localPlayer.name,
+        avatar: this.localPlayer.avatar
+      }));
+    };
+
     peer.onUnreliableMessage = (data: ArrayBuffer) => {
       const snap = SnapshotPacket.decode(data);
       if (snap) {
@@ -608,13 +702,15 @@ export class GameApp {
         if (msg.type === 'chat') {
           this.chat.addMessage({ author: msg.author, text: msg.text, team: msg.team });
         } else if (msg.type === 'team_sync') {
-          this.teamSelect.updateLists(msg.players);
           const self = msg.players.find((p: any) => p.id === this.localPlayer.id);
           if (self) {
             this.localPlayer.isAdmin = Boolean(self.isAdmin);
             this.localPlayer.team = self.team;
-            this.updateAdminPanelVisibility();
           }
+          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin);
+          this.updateAdminControlsUI();
+        } else if (msg.type === 'set_game_state') {
+          this.updateAdminControlsUI();
         } else if (msg.type === 'room_config_sync') {
           this.roomConfig = { ...this.roomConfig, ...msg.config };
           this.updateAdminControlsUI();
@@ -664,10 +760,26 @@ export class GameApp {
   }
 
   private handleTeamChange(playerId: string, team: TeamType): void {
-    if (this.engine) {
-      this.engine.setPlayerTeam(playerId, team);
-      this.updateTeamLists();
-      this.syncPlayersWithClients();
+    const isSelf = playerId === this.localPlayer.id;
+    const isAdmin = this.localPlayer.isAdmin;
+
+    if (!isAdmin && (!isSelf || this.roomConfig.teamsLocked)) {
+      // Rechazo silencioso
+      return;
+    }
+
+    if (this.mode === 'host' || this.mode === 'practice') {
+      if (this.engine) {
+        this.engine.setPlayerTeam(playerId, team);
+        this.updateTeamLists();
+        this.syncPlayersWithClients();
+      }
+    } else if (this.mode === 'client' && this.hostPeer) {
+      this.hostPeer.sendReliable(JSON.stringify({
+        type: 'change_team',
+        playerId,
+        team
+      }));
     }
   }
 
@@ -683,21 +795,13 @@ export class GameApp {
 
   private updateTeamLists(): void {
     if (this.engine) {
-      this.teamSelect.updateLists(Array.from(this.engine.players.values()));
+      this.teamSelect.updateLists(Array.from(this.engine.players.values()), this.localPlayer.isAdmin);
     }
   }
 
   // --- Moderation & Admin actions ---
   public transferPlayer(playerId: string, newTeam: TeamType): void {
-    if (this.mode === 'host') {
-      this.handleTeamChange(playerId, newTeam);
-    } else if (this.mode === 'client' && this.hostPeer) {
-      this.hostPeer.sendReliable(JSON.stringify({
-        type: 'change_team',
-        playerId,
-        team: newTeam
-      }));
-    }
+    this.handleTeamChange(playerId, newTeam);
   }
 
   public promotePlayerToAdmin(playerId: string): void {
@@ -763,21 +867,59 @@ export class GameApp {
   }
 
   private updateAdminPanelVisibility(): void {
-    if (this.adminPanel) {
-      this.adminPanel.style.display = this.localPlayer.isAdmin ? 'flex' : 'none';
-    }
+    this.updateAdminControlsUI();
   }
 
   private updateAdminControlsUI(): void {
-    if (this.adminTimeLimit) {
-      this.adminTimeLimit.value = this.roomConfig.timeLimit.toString();
+    const isAdmin = this.localPlayer.isAdmin;
+    const currentState = this.engine?.fsm.currentState || 'STOPPED';
+
+    if (this.btnStartStop) {
+      this.btnStartStop.disabled = !isAdmin;
+      if (currentState === 'STOPPED') {
+        this.btnStartStop.textContent = '▶ Iniciar Partido';
+        this.btnStartStop.className = 'btn btn-primary';
+      } else {
+        this.btnStartStop.textContent = '⏹ Detener Partido';
+        this.btnStartStop.className = 'btn btn-danger';
+      }
     }
-    if (this.adminScoreLimit) {
-      this.adminScoreLimit.value = this.roomConfig.scoreLimit.toString();
+
+    if (this.btnPauseResume) {
+      this.btnPauseResume.disabled = !isAdmin || currentState === 'STOPPED';
+      if (currentState === 'PAUSED') {
+        this.btnPauseResume.textContent = '▶ Reanudar';
+        this.btnPauseResume.className = 'btn btn-primary';
+      } else {
+        this.btnPauseResume.textContent = '⏸ Pausar';
+        this.btnPauseResume.className = 'btn btn-secondary';
+      }
     }
-    if (this.btnToggleLockTeams) {
-      this.btnToggleLockTeams.textContent = this.roomConfig.teamsLocked ? '🔒 Equipos Bloqueados' : '🔓 Equipos Libres';
-      this.btnToggleLockTeams.className = this.roomConfig.teamsLocked ? 'btn btn-danger' : 'btn btn-secondary';
+
+    if (this.btnLockTeams) {
+      this.btnLockTeams.disabled = !isAdmin;
+      this.btnLockTeams.textContent = this.roomConfig.teamsLocked ? '🔒 Equipos Bloqueados' : '🔓 Equipos Libres';
+      this.btnLockTeams.className = this.roomConfig.teamsLocked ? 'btn btn-danger' : 'btn btn-secondary';
+    }
+
+    if (this.inputTimeLimit) {
+      this.inputTimeLimit.disabled = !isAdmin;
+      this.inputTimeLimit.value = this.roomConfig.timeLimit.toString();
+    }
+
+    if (this.inputScoreLimit) {
+      this.inputScoreLimit.disabled = !isAdmin;
+      this.inputScoreLimit.value = this.roomConfig.scoreLimit.toString();
+    }
+  }
+
+  private broadcastGameState(): void {
+    if (this.mode === 'host' && this.engine) {
+      this.broadcastReliable(JSON.stringify({
+        type: 'set_game_state',
+        state: this.engine.fsm.currentState,
+        countdownSeconds: this.engine.fsm.countdownSeconds
+      }));
     }
   }
 

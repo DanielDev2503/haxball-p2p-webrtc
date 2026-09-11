@@ -94,7 +94,7 @@ export class GameEngine {
     if (newConfig.scoreLimit !== undefined) this.config.scoreLimit = newConfig.scoreLimit;
     if (newConfig.timeLimitSeconds !== undefined) {
       this.config.timeLimitSeconds = newConfig.timeLimitSeconds;
-      if (this.fsm.currentState === MatchState.WAITING) {
+      if (this.fsm.currentState === 'STOPPED') {
         this.matchTimerSeconds = this.config.timeLimitSeconds > 0 ? this.config.timeLimitSeconds : 0;
       }
     }
@@ -124,6 +124,7 @@ export class GameEngine {
         existingDisc.cGroup = isRed ? COLLISION_GROUP_RED : COLLISION_GROUP_BLUE;
         existingDisc.color = isRed ? '#e74c3c' : '#3498db';
         existingDisc.pos.set(goalSpawnX, goalSpawnY);
+        existingDisc.prevPos.set(goalSpawnX, goalSpawnY);
         existingDisc.vel.set(0, 0);
       }
     }
@@ -156,16 +157,40 @@ export class GameEngine {
     this.redScore = 0;
     this.blueScore = 0;
     this.matchTimerSeconds = this.config.timeLimitSeconds > 0 ? this.config.timeLimitSeconds : 0;
-    this.fsm.startMatch();
     this.resetKickoffPositions();
+    this.fsm.startMatch();
     if (this.onStateChange) {
       this.onStateChange(this.fsm.currentState);
     }
   }
 
   public stopMatch(): void {
-    this.fsm.resetToWaiting();
+    this.redScore = 0;
+    this.blueScore = 0;
+    this.matchTimerSeconds = 0;
+    this.fsm.stopMatch();
     this.resetKickoffPositions();
+    if (this.onStateChange) {
+      this.onStateChange(this.fsm.currentState);
+    }
+  }
+
+  public togglePause(): void {
+    this.fsm.togglePause();
+    if (this.onStateChange) {
+      this.onStateChange(this.fsm.currentState);
+    }
+  }
+
+  public pauseMatch(): void {
+    this.fsm.pauseMatch();
+    if (this.onStateChange) {
+      this.onStateChange(this.fsm.currentState);
+    }
+  }
+
+  public resumeMatch(): void {
+    this.fsm.resumeMatch();
     if (this.onStateChange) {
       this.onStateChange(this.fsm.currentState);
     }
@@ -204,128 +229,125 @@ export class GameEngine {
    * Deterministic 60Hz tick update.
    */
   public tick(inputs: Map<string, number>): void {
-    this.tickCount++;
+    // Si el partido está detenido o pausado, la física y el reloj permanecen completamente congelados
+    if (this.fsm.currentState === 'STOPPED' || this.fsm.currentState === 'PAUSED') {
+      return;
+    }
 
-    const prevState = this.fsm.currentState;
-    const transitioned = this.fsm.tick();
-
-    if (transitioned) {
-      if (this.fsm.currentState === MatchState.COUNTDOWN && prevState === MatchState.GOAL_SCORED) {
-        this.resetKickoffPositions();
-      }
-      if (this.onStateChange) {
+    // Si está en cuenta regresiva (3, 2, 1), avanza la cuenta pero congela la física
+    if (this.fsm.currentState === 'COUNTDOWN') {
+      const transitioned = this.fsm.tick();
+      if (transitioned && this.onStateChange) {
         this.onStateChange(this.fsm.currentState);
       }
+      return;
     }
 
-    const state = this.fsm.currentState;
+    // Estado PLAYING:
+    this.tickCount++;
 
-    if (state === MatchState.PLAYING) {
-      // Advance match timer (every 60 ticks = 1 second)
-      if (this.tickCount % 60 === 0) {
-        if (this.config.timeLimitSeconds > 0) {
-          if (this.matchTimerSeconds > 0) {
-            this.matchTimerSeconds--;
-            if (this.matchTimerSeconds === 0) {
-              this.checkMatchConclusion();
-            }
+    // Advance match timer (every 60 ticks = 1 second)
+    if (this.tickCount % 60 === 0) {
+      if (this.config.timeLimitSeconds > 0) {
+        if (this.matchTimerSeconds > 0) {
+          this.matchTimerSeconds--;
+          if (this.matchTimerSeconds === 0) {
+            this.checkMatchConclusion();
           }
-        } else {
-          // Tiempo indefinido: cuenta hacia arriba
-          this.matchTimerSeconds++;
+        }
+      } else {
+        // Tiempo indefinido: cuenta hacia arriba
+        this.matchTimerSeconds++;
+      }
+    }
+
+    // Apply player movement and kicking in PLAYING
+    const accel = 7.5;
+    const kickStrength = 320.0;
+    const kickReach = 15 + 10 + 6; // player radius (15) + ball radius (10) + reach margin (6)
+
+    for (const [playerId, player] of this.players.entries()) {
+      const disc = this.playerDiscs.get(playerId);
+      if (!disc) continue;
+
+      const mask = inputs.get(playerId) ?? player.inputMask;
+      player.inputMask = mask;
+
+      // Movement input
+      let dirX = 0;
+      let dirY = 0;
+      if (mask & INPUT_UP) dirY -= 1;
+      if (mask & INPUT_DOWN) dirY += 1;
+      if (mask & INPUT_LEFT) dirX -= 1;
+      if (mask & INPUT_RIGHT) dirX += 1;
+
+      if (dirX !== 0 || dirY !== 0) {
+        const len = Math.sqrt(dirX * dirX + dirY * dirY);
+        disc.vel.x += (dirX / len) * accel;
+        disc.vel.y += (dirY / len) * accel;
+      }
+
+      // Kicking mechanic
+      const isKicking = (mask & INPUT_KICK) !== 0;
+      disc.kicking = isKicking;
+
+      if (isKicking) {
+        const diffX = this.ball.pos.x - disc.pos.x;
+        const diffY = this.ball.pos.y - disc.pos.y;
+        const distSq = diffX * diffX + diffY * diffY;
+
+        if (distSq <= kickReach * kickReach) {
+          const dist = Math.sqrt(distSq);
+          const kickDirX = dist > 1e-6 ? diffX / dist : 1;
+          const kickDirY = dist > 1e-6 ? diffY / dist : 0;
+
+          this.ball.vel.x += kickDirX * kickStrength;
+          this.ball.vel.y += kickDirY * kickStrength;
+
+          if (this.onKick) {
+            this.onKick(disc, this.ball);
+          }
         }
       }
     }
 
-    // Apply player movement and kicking in COUNTDOWN or PLAYING
-    if (state === MatchState.COUNTDOWN || state === MatchState.PLAYING) {
-      const accel = 7.5;
-      const kickStrength = 320.0;
-      const kickReach = 15 + 10 + 6; // player radius (15) + ball radius (10) + reach margin (6)
+    // Step physics simulation
+    this.physicsWorld.step();
 
-      for (const [playerId, player] of this.players.entries()) {
-        const disc = this.playerDiscs.get(playerId);
-        if (!disc) continue;
-
-        const mask = inputs.get(playerId) ?? player.inputMask;
-        player.inputMask = mask;
-
-        // Movement input
-        let dirX = 0;
-        let dirY = 0;
-        if (mask & INPUT_UP) dirY -= 1;
-        if (mask & INPUT_DOWN) dirY += 1;
-        if (mask & INPUT_LEFT) dirX -= 1;
-        if (mask & INPUT_RIGHT) dirX += 1;
-
-        if (dirX !== 0 || dirY !== 0) {
-          const len = Math.sqrt(dirX * dirX + dirY * dirY);
-          disc.vel.x += (dirX / len) * accel;
-          disc.vel.y += (dirY / len) * accel;
-        }
-
-        // Kicking mechanic
-        const isKicking = (mask & INPUT_KICK) !== 0;
-        disc.kicking = isKicking;
-
-        if (isKicking && state === MatchState.PLAYING) {
-          const diffX = this.ball.pos.x - disc.pos.x;
-          const diffY = this.ball.pos.y - disc.pos.y;
-          const distSq = diffX * diffX + diffY * diffY;
-
-          if (distSq <= kickReach * kickReach) {
-            const dist = Math.sqrt(distSq);
-            const kickDirX = dist > 1e-6 ? diffX / dist : 1;
-            const kickDirY = dist > 1e-6 ? diffY / dist : 0;
-
-            this.ball.vel.x += kickDirX * kickStrength;
-            this.ball.vel.y += kickDirY * kickStrength;
-
-            if (this.onKick) {
-              this.onKick(disc, this.ball);
-            }
-          }
-        }
+    // Check for goal
+    const goalScored = this.stadium.checkGoal(this.ball.pos.x, this.ball.pos.y);
+    if (goalScored) {
+      if (goalScored === 'red') {
+        this.redScore++;
+      } else {
+        this.blueScore++;
       }
 
-      // Step physics simulation
-      this.physicsWorld.step();
+      if (this.onGoal) {
+        this.onGoal(goalScored, this.redScore, this.blueScore);
+      }
 
-      // Check for goal
-      if (state === MatchState.PLAYING) {
-        const goalScored = this.stadium.checkGoal(this.ball.pos.x, this.ball.pos.y);
-        if (goalScored) {
-          if (goalScored === 'red') {
-            this.redScore++;
-          } else {
-            this.blueScore++;
-          }
-
-          this.fsm.scoreGoal(goalScored);
-          if (this.onGoal) {
-            this.onGoal(goalScored, this.redScore, this.blueScore);
-          }
-
-          if (this.onStateChange) {
-            this.onStateChange(this.fsm.currentState);
-          }
-
-          this.checkMatchConclusion();
+      const matchEnded = this.checkMatchConclusion();
+      if (!matchEnded) {
+        this.resetKickoffPositions();
+        this.fsm.startResumeCountdown();
+        if (this.onStateChange) {
+          this.onStateChange(this.fsm.currentState);
         }
       }
     }
   }
 
-  private checkMatchConclusion(): void {
+  private checkMatchConclusion(): boolean {
     if (this.config.scoreLimit > 0) {
       if (this.redScore >= this.config.scoreLimit) {
         this.fsm.endMatch('red');
         if (this.onMatchEnd) this.onMatchEnd('red');
-        return;
+        return true;
       } else if (this.blueScore >= this.config.scoreLimit) {
         this.fsm.endMatch('blue');
         if (this.onMatchEnd) this.onMatchEnd('blue');
-        return;
+        return true;
       }
     }
     if (this.config.timeLimitSeconds > 0 && this.matchTimerSeconds <= 0) {
@@ -334,7 +356,9 @@ export class GameEngine {
       else if (this.blueScore > this.redScore) winner = 'blue';
       this.fsm.endMatch(winner);
       if (this.onMatchEnd) this.onMatchEnd(winner);
+      return true;
     }
+    return false;
   }
 
   public getSnapshot(): GameSnapshot {
@@ -377,7 +401,9 @@ export class GameEngine {
       matchTimerSeconds: this.matchTimerSeconds,
       redScore: this.redScore,
       blueScore: this.blueScore,
-      discs: discSnapshots
+      discs: discSnapshots,
+      countdownSeconds: this.fsm.countdownSeconds
     };
   }
 }
+

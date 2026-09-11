@@ -1,5 +1,15 @@
 import { OP_SNAPSHOT } from './BinaryProtocol';
 import { GameSnapshot, DiscSnapshot } from '../../core/game/GameState';
+import { MatchState } from '../../core/game/GameFSM';
+
+const STATE_TO_NUM: Record<MatchState, number> = {
+  STOPPED: 0,
+  PAUSED: 1,
+  COUNTDOWN: 2,
+  PLAYING: 3
+};
+
+const NUM_TO_STATE: MatchState[] = ['STOPPED', 'PAUSED', 'COUNTDOWN', 'PLAYING'];
 
 export class SnapshotPacket {
   public static readonly HEADER_LENGTH = 11;
@@ -14,11 +24,12 @@ export class SnapshotPacket {
     // Header
     view.setUint8(0, OP_SNAPSHOT);
     view.setUint32(1, snapshot.tick, false);
-    view.setUint8(5, snapshot.matchState);
+    view.setUint8(5, STATE_TO_NUM[snapshot.matchState] ?? 0);
     view.setUint16(6, snapshot.matchTimerSeconds, false);
     view.setUint8(8, snapshot.redScore);
     view.setUint8(9, snapshot.blueScore);
     view.setUint8(10, discCount);
+
 
     // Disc records
     let offset = SnapshotPacket.HEADER_LENGTH;
@@ -58,11 +69,13 @@ export class SnapshotPacket {
     if (view.getUint8(0) !== OP_SNAPSHOT) return null;
 
     const tick = view.getUint32(1, false);
-    const matchState = view.getUint8(5);
+    const stateNum = view.getUint8(5);
+    const matchState: MatchState = NUM_TO_STATE[stateNum] ?? 'STOPPED';
     const matchTimerSeconds = view.getUint16(6, false);
     const redScore = view.getUint8(8);
     const blueScore = view.getUint8(9);
     const discCount = view.getUint8(10);
+
 
     const expectedLength = SnapshotPacket.HEADER_LENGTH + discCount * SnapshotPacket.DISC_LENGTH;
     if (view.byteLength < expectedLength) return null;

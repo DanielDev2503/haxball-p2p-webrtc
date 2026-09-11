@@ -118,7 +118,15 @@ export class RoomLobby {
   }
 
   public getNickname(): string {
+    const fromStorage = localStorage.getItem('haxball_player_name')?.trim();
+    if (fromStorage) return fromStorage;
     return this.nicknameInput?.value.trim() || `Player_${Math.floor(Math.random() * 900 + 100)}`;
+  }
+
+  public setNickname(nick: string): void {
+    if (this.nicknameInput) {
+      this.nicknameInput.value = nick;
+    }
   }
 
   public hide(): void {
@@ -126,6 +134,7 @@ export class RoomLobby {
       this.overlayEl.style.display = 'none';
     }
   }
+
 
   public show(): void {
     if (this.overlayEl) {

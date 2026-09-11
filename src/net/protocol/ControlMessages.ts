@@ -1,4 +1,5 @@
 import { MatchConfig } from '../../core/game/GameState';
+import { MatchState } from '../../core/game/GameFSM';
 
 export type ControlMessageType =
   | 'kick_player'
@@ -7,7 +8,12 @@ export type ControlMessageType =
   | 'lock_teams'
   | 'update_room_config'
   | 'change_team'
-  | 'sync_players';
+  | 'sync_players'
+  | 'set_game_state'
+  | 'peer_handshake'
+  | 'team_sync'
+  | 'kicked'
+  | 'banned';
 
 export interface RoomConfig {
   name: string;
@@ -52,3 +58,21 @@ export interface ChangeTeamMessage {
   playerId: string;
   team: 'red' | 'blue' | 'spec';
 }
+
+export interface SetGameStateMessage {
+  type: 'set_game_state';
+  state: MatchState;
+}
+
+export interface PeerHandshakeMessage {
+  type: 'peer_handshake';
+  playerId: string;
+  name: string;
+  avatar?: string;
+}
+
+export interface TeamSyncMessage {
+  type: 'team_sync';
+  players: any[];
+}
+

@@ -1,49 +1,89 @@
-export enum MatchState {
-  WAITING = 0,
-  COUNTDOWN = 1,
-  PLAYING = 2,
-  GOAL_SCORED = 3,
-  GAME_OVER = 4
-}
+export const MatchState = {
+  STOPPED: 'STOPPED',
+  PAUSED: 'PAUSED',
+  COUNTDOWN: 'COUNTDOWN',
+  PLAYING: 'PLAYING',
+} as const;
+
+export type MatchState = (typeof MatchState)[keyof typeof MatchState];
 
 export interface FSMConfig {
   countdownDurationTicks?: number; // default 180 (3s at 60Hz)
-  goalCelebrationTicks?: number;   // default 120 (2s at 60Hz)
 }
 
 export class GameFSM {
-  public currentState: MatchState = MatchState.WAITING;
+  public currentState: MatchState = 'STOPPED';
+  public countdownSeconds: number = 3;
   public stateTicksRemaining: number = 0;
   public countdownDurationTicks: number;
-  public goalCelebrationTicks: number;
   public winningTeam: 'red' | 'blue' | null = null;
+
+  public onStateChange?: (newState: MatchState) => void;
 
   constructor(config: FSMConfig = {}) {
     this.countdownDurationTicks = config.countdownDurationTicks ?? 180;
-    this.goalCelebrationTicks = config.goalCelebrationTicks ?? 120;
+  }
+
+  public get state(): MatchState {
+    return this.currentState;
+  }
+
+  public set state(val: MatchState) {
+    this.currentState = val;
   }
 
   public startMatch(): void {
-    this.currentState = MatchState.COUNTDOWN;
-    this.stateTicksRemaining = this.countdownDurationTicks;
+    this.startResumeCountdown();
     this.winningTeam = null;
   }
 
-  public scoreGoal(_scoringTeam: 'red' | 'blue'): void {
-    this.currentState = MatchState.GOAL_SCORED;
-    this.stateTicksRemaining = this.goalCelebrationTicks;
+  public stopMatch(): void {
+    this.currentState = 'STOPPED';
+    this.stateTicksRemaining = 0;
+    this.countdownSeconds = 0;
+    this.winningTeam = null;
+    if (this.onStateChange) this.onStateChange(this.currentState);
+  }
+
+  public pauseMatch(): void {
+    if (this.currentState === 'PLAYING') {
+      this.currentState = 'PAUSED';
+      this.stateTicksRemaining = 0;
+      if (this.onStateChange) this.onStateChange(this.currentState);
+    }
+  }
+
+  public resumeMatch(): void {
+    if (this.currentState === 'PAUSED' || this.currentState === 'STOPPED') {
+      this.startResumeCountdown();
+    }
+  }
+
+  public togglePause(): void {
+    if (this.currentState === 'PLAYING') {
+      this.pauseMatch();
+    } else if (this.currentState === 'PAUSED') {
+      this.resumeMatch();
+    }
+  }
+
+  public startResumeCountdown(): void {
+    this.currentState = 'COUNTDOWN';
+    this.stateTicksRemaining = this.countdownDurationTicks;
+    this.countdownSeconds = Math.ceil(this.stateTicksRemaining / 60);
+    if (this.onStateChange) this.onStateChange(this.currentState);
   }
 
   public endMatch(winner: 'red' | 'blue' | null): void {
-    this.currentState = MatchState.GAME_OVER;
+    this.currentState = 'STOPPED';
     this.winningTeam = winner;
     this.stateTicksRemaining = 0;
+    this.countdownSeconds = 0;
+    if (this.onStateChange) this.onStateChange(this.currentState);
   }
 
   public resetToWaiting(): void {
-    this.currentState = MatchState.WAITING;
-    this.stateTicksRemaining = 0;
-    this.winningTeam = null;
+    this.stopMatch();
   }
 
   /**
@@ -51,19 +91,21 @@ export class GameFSM {
    * Returns true if a state transition occurred.
    */
   public tick(): boolean {
-    if (this.stateTicksRemaining > 0) {
+    if (this.currentState === 'COUNTDOWN' && this.stateTicksRemaining > 0) {
       this.stateTicksRemaining--;
+      this.countdownSeconds = Math.max(1, Math.ceil(this.stateTicksRemaining / 60));
+
       if (this.stateTicksRemaining === 0) {
-        if (this.currentState === MatchState.COUNTDOWN) {
-          this.currentState = MatchState.PLAYING;
-          return true;
-        } else if (this.currentState === MatchState.GOAL_SCORED) {
-          this.currentState = MatchState.COUNTDOWN;
-          this.stateTicksRemaining = this.countdownDurationTicks;
-          return true;
-        }
+        this.currentState = 'PLAYING';
+        this.countdownSeconds = 0;
+        if (this.onStateChange) this.onStateChange(this.currentState);
+        return true;
       }
     }
     return false;
   }
 }
+
+export const MatchManager = GameFSM;
+export type MatchManager = GameFSM;
+

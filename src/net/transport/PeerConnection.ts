@@ -14,6 +14,8 @@ export class PeerConnection {
   public onIceCandidate?: (candidate: RTCIceCandidate) => void;
   public onConnected?: () => void;
   public onDisconnected?: () => void;
+  public onDataChannelOpen?: () => void;
+
 
   constructor(remotePeerId: string, isInitiator: boolean, config: PeerConnectionConfig = {}) {
     this.remotePeerId = remotePeerId;
@@ -66,12 +68,18 @@ export class PeerConnection {
 
   private setupReliableChannel(channel: RTCDataChannel): void {
     this.reliableChannel = channel;
+    channel.onopen = () => {
+      if (this.onDataChannelOpen) {
+        this.onDataChannelOpen();
+      }
+    };
     channel.onmessage = (event) => {
       if (typeof event.data === 'string' && this.onReliableMessage) {
         this.onReliableMessage(event.data);
       }
     };
   }
+
 
   private setupUnreliableChannel(channel: RTCDataChannel): void {
     this.unreliableChannel = channel;
