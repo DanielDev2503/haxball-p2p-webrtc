@@ -233,8 +233,29 @@ export class GameApp {
       this.selectedPlayerForAction = targetPlayer;
       if (this.contextMenu && this.menuPlayerName) {
         this.menuPlayerName.textContent = `${targetPlayer.name} (${targetPlayer.team})`;
-        this.contextMenu.style.left = `${Math.min(e.clientX, window.innerWidth - 180)}px`;
-        this.contextMenu.style.top = `${Math.min(e.clientY, window.innerHeight - 200)}px`;
+        const ctxMakeAdmin = document.getElementById('ctxMakeAdmin');
+        if (ctxMakeAdmin) {
+          ctxMakeAdmin.textContent = targetPlayer.isAdmin ? '⭐ Quitar Admin' : '⭐ Hacer Admin';
+        }
+
+        let left = e.clientX;
+        let top = e.clientY;
+        const targetEl = (e.target as HTMLElement | null)?.closest('button, .player-item') as HTMLElement | null;
+        if (targetEl && typeof targetEl.getBoundingClientRect === 'function') {
+          const rect = targetEl.getBoundingClientRect();
+          left = rect.left;
+          top = rect.bottom + 4;
+        }
+
+        const menuWidth = 200;
+        const menuHeight = 240;
+        const adjustedLeft = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
+        const adjustedTop = Math.max(8, Math.min(top, window.innerHeight - menuHeight - 8));
+
+        this.contextMenu.style.position = 'fixed';
+        this.contextMenu.style.zIndex = '10000';
+        this.contextMenu.style.left = `${adjustedLeft}px`;
+        this.contextMenu.style.top = `${adjustedTop}px`;
         this.contextMenu.style.display = 'block';
       }
     };
@@ -242,7 +263,7 @@ export class GameApp {
     // Close context menu on outside click
     window.addEventListener('click', (e) => {
       if (this.contextMenu && !this.contextMenu.contains(e.target as Node)) {
-        this.contextMenu.style.display = 'none';
+        this.closeContextMenu();
       }
     });
 
@@ -267,7 +288,7 @@ export class GameApp {
     });
     document.getElementById('ctxMakeAdmin')?.addEventListener('click', () => {
       if (this.selectedPlayerForAction) {
-        this.promotePlayerToAdmin(this.selectedPlayerForAction.id);
+        this.togglePlayerAdmin(this.selectedPlayerForAction.id);
         this.closeContextMenu();
       }
     });
@@ -284,17 +305,24 @@ export class GameApp {
       }
     });
 
+    // Botón de salir de sala en la cabecera del menú in-game
+    document.getElementById('btn-leave-room')?.addEventListener('click', () => {
+      this.leaveCurrentRoom();
+    });
+
+    // Notificar salida de sala al cerrar pestaña o recargar
+    window.addEventListener('beforeunload', () => {
+      if (this.currentRoomId) {
+        this.signaling.leaveRoom(this.currentRoomId);
+      }
+    });
+
     // In-game menu overlay toggle (Button & Escape/Menu key)
     const ingameMenu = document.getElementById('ingame-menu');
     const menuToggleBtn = document.getElementById('menu-toggle-btn');
     const menuCloseBtn = document.getElementById('menu-close-btn');
 
     const toggleMenu = () => {
-      const currentState = this.engine?.fsm.currentState || this.currentMatchState;
-      if (currentState === 'STOPPED') {
-        // En STOPPED el modal debe permanecer visible de manera forzada hasta el saque inicial
-        return;
-      }
       if (ingameMenu) {
         const isHidden = ingameMenu.classList.contains('hidden') || ingameMenu.classList.contains('u-hidden') || ingameMenu.style.display === 'none';
         if (isHidden) {
@@ -675,6 +703,11 @@ export class GameApp {
   }
 
   public leaveCurrentRoom(): void {
+    // Notificar al signaling server que abandonamos la sala
+    if (this.currentRoomId) {
+      this.signaling.leaveRoom(this.currentRoomId);
+    }
+
     // Cerrar conexiones P2P
     for (const peer of this.peers.values()) {
       peer.close();
@@ -695,6 +728,15 @@ export class GameApp {
     this.currentRoomId = '';
     this.localPlayer.team = 'red';
     this.localPlayer.isAdmin = true;
+
+    // Ocultar menú in-game y menú contextual
+    const ingameMenu = document.getElementById('ingame-menu');
+    if (ingameMenu) {
+      ingameMenu.classList.remove('is-forced-open');
+      ingameMenu.classList.add('hidden', 'u-hidden');
+      ingameMenu.style.display = 'none';
+    }
+    this.closeContextMenu();
 
     if (this.btnLeaveRoom) this.btnLeaveRoom.style.display = 'none';
     if (this.roomNameBadge) this.roomNameBadge.textContent = 'Lobby';
@@ -853,6 +895,21 @@ export class GameApp {
             this.engine.setPlayerTeam(msg.playerId, msg.team);
             this.updateTeamLists();
             this.syncPlayersWithClients();
+          }
+        } else if (msg.type === 'set_admin') {
+          const requester = this.engine?.players.get(peerId);
+          if (requester?.isAdmin) {
+            this.setPlayerAdmin(msg.targetId, Boolean(msg.isAdmin));
+          }
+        } else if (msg.type === 'kick_player') {
+          const requester = this.engine?.players.get(peerId);
+          if (requester?.isAdmin) {
+            this.kickPlayer(msg.targetId);
+          }
+        } else if (msg.type === 'ban_player') {
+          const requester = this.engine?.players.get(peerId);
+          if (requester?.isAdmin) {
+            this.banPlayer(msg.targetId);
           }
         } else if (msg.type === 'toggle_pause') {
           const requester = this.engine?.players.get(peerId);
@@ -1025,16 +1082,43 @@ export class GameApp {
     this.handleTeamChange(playerId, newTeam);
   }
 
-  public promotePlayerToAdmin(playerId: string): void {
+  public togglePlayerAdmin(playerId: string): void {
     if (this.mode === 'host' && this.engine) {
       const p = this.engine.players.get(playerId);
       if (p) {
-        p.isAdmin = true;
+        this.setPlayerAdmin(playerId, !p.isAdmin);
+      }
+    } else if (this.mode === 'client' && this.hostPeer && this.localPlayer.isAdmin) {
+      const targetIsAdmin = Boolean(this.selectedPlayerForAction?.isAdmin);
+      this.hostPeer.sendReliable(JSON.stringify({
+        type: 'set_admin',
+        targetId: playerId,
+        isAdmin: !targetIsAdmin
+      }));
+    }
+  }
+
+  public setPlayerAdmin(playerId: string, isAdmin: boolean): void {
+    if (this.mode === 'host' && this.engine) {
+      const p = this.engine.players.get(playerId);
+      if (p) {
+        p.isAdmin = isAdmin;
         this.updateTeamLists();
         this.syncPlayersWithClients();
-        this.chat.addMessage({ author: 'Admin', text: `${p.name} ahora es Administrador.`, team: 'sys' });
+        const actionMsg = p.isAdmin ? `${p.name} ahora es Administrador.` : `${p.name} ya no es Administrador.`;
+        this.chat.addMessage({ author: 'Admin', text: actionMsg, team: 'sys' });
+        this.broadcastReliable(JSON.stringify({
+          type: 'chat',
+          author: 'Admin',
+          text: actionMsg,
+          team: 'sys'
+        }));
       }
     }
+  }
+
+  public promotePlayerToAdmin(playerId: string): void {
+    this.setPlayerAdmin(playerId, true);
   }
 
   public kickPlayer(playerId: string): void {
@@ -1047,6 +1131,11 @@ export class GameApp {
         }, 100);
         this.chat.addMessage({ author: 'Admin', text: `Un jugador ha sido expulsado.`, team: 'sys' });
       }
+    } else if (this.mode === 'client' && this.hostPeer && this.localPlayer.isAdmin) {
+      this.hostPeer.sendReliable(JSON.stringify({
+        type: 'kick_player',
+        targetId: playerId
+      }));
     }
   }
 
@@ -1061,6 +1150,11 @@ export class GameApp {
         }, 100);
         this.chat.addMessage({ author: 'Admin', text: `Un jugador ha sido baneado de la sala.`, team: 'sys' });
       }
+    } else if (this.mode === 'client' && this.hostPeer && this.localPlayer.isAdmin) {
+      this.hostPeer.sendReliable(JSON.stringify({
+        type: 'ban_player',
+        targetId: playerId
+      }));
     }
   }
 

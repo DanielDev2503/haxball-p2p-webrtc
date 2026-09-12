@@ -44,6 +44,7 @@ export class ChatBox {
     this.inputEl?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
+        e.stopPropagation();
         submitMessage();
       } else if (e.key === 'Escape') {
         e.preventDefault();
@@ -54,7 +55,9 @@ export class ChatBox {
   }
 
   public focus(): void {
-    this.inputEl?.focus();
+    if (this.inputEl) {
+      this.inputEl.focus();
+    }
   }
 
   public blur(): void {

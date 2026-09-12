@@ -101,45 +101,21 @@ export class TeamSelectModal {
     const renderPlayer = (p: Player, container: HTMLElement) => {
       const el = document.createElement('div');
       el.className = 'player-item';
-      el.draggable = false;
 
-      let startX = 0;
-      let startY = 0;
-      let hasMovedBeyondThreshold = false;
-
+      // 1-click drag & drop si el usuario local es Admin
       if (isLocalAdmin) {
+        el.draggable = true;
+        el.setAttribute('draggable', 'true');
         el.addEventListener('dragstart', (e: DragEvent) => {
-          if (!hasMovedBeyondThreshold) {
-            e.preventDefault();
-            return;
-          }
           if (e.dataTransfer) {
             e.dataTransfer.setData('text/plain', p.id);
             e.dataTransfer.effectAllowed = 'move';
           }
         });
-
-        el.addEventListener('dragend', () => {
-          el.draggable = false;
-          hasMovedBeyondThreshold = false;
-        });
+      } else {
+        el.draggable = false;
+        el.setAttribute('draggable', 'false');
       }
-
-      el.addEventListener('mousedown', (e: MouseEvent) => {
-        startX = e.clientX;
-        startY = e.clientY;
-        hasMovedBeyondThreshold = false;
-      });
-
-      el.addEventListener('mousemove', (e: MouseEvent) => {
-        if (e.buttons === 1 && isLocalAdmin) {
-          const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
-          if (dist >= 5) {
-            hasMovedBeyondThreshold = true;
-            el.draggable = true;
-          }
-        }
-      });
 
       const hostIcon = p.isHost ? '👑 ' : '';
       const adminIcon = (!p.isHost && p.isAdmin) ? '⭐ ' : '';
@@ -152,27 +128,27 @@ export class TeamSelectModal {
           </span>
           ${adminRoleText ? `<span style="font-size: 0.65rem; color: #64748b;">${adminRoleText}</span>` : ''}
         </div>
-        ${isLocalAdmin ? `<button class="btn-player-options" title="Acciones de Jugador" style="background: transparent; border: none; color: #94a3b8; font-size: 1rem; cursor: pointer; padding: 0 4px; border-radius: 4px; line-height: 1;">⋮</button>` : ''}
+        ${isLocalAdmin ? `<button class="btn-player-options player-menu-btn" draggable="false" title="Acciones de Jugador" style="background: transparent; border: none; color: #94a3b8; font-size: 1.1rem; cursor: pointer; padding: 0 6px; border-radius: 4px; line-height: 1;">⋮</button>` : ''}
       `;
 
       // Botón de 3 puntos exclusivo para opciones de moderación
-      const optionsBtn = el.querySelector('.btn-player-options');
+      const optionsBtn = el.querySelector<HTMLButtonElement>('.player-menu-btn');
       if (optionsBtn) {
-        optionsBtn.addEventListener('click', (e) => {
+        optionsBtn.draggable = false;
+        optionsBtn.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+        });
+        optionsBtn.addEventListener('click', (e: MouseEvent) => {
           e.stopPropagation();
           e.preventDefault();
           if (this.onPlayerClick) {
-            this.onPlayerClick(p, e as MouseEvent);
+            this.onPlayerClick(p, e);
           }
         });
       }
 
-      // Clic en el elemento entero (siempre que no haya sido arrastre)
+      // Clic en la fila del jugador
       el.addEventListener('click', (e: MouseEvent) => {
-        if (hasMovedBeyondThreshold) {
-          hasMovedBeyondThreshold = false;
-          return;
-        }
         e.stopPropagation();
         if (this.onPlayerClick) {
           this.onPlayerClick(p, e);

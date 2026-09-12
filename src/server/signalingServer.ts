@@ -28,6 +28,63 @@ export function setupSignalingServer(wss: WebSocketServer) {
     }
   }
 
+  function getRoomList() {
+    return Array.from(rooms.values()).map(r => ({
+      id: r.id,
+      name: r.config.name,
+      playerCount: r.peers.size + 1,
+      maxPlayers: r.config.maxPlayers,
+      isPrivate: r.config.isPrivate,
+      teamsLocked: r.config.teamsLocked,
+      timeLimit: r.config.timeLimit,
+      scoreLimit: r.config.scoreLimit
+    }));
+  }
+
+  function broadcastRoomList(): void {
+    const list = getRoomList();
+    const payload = JSON.stringify({ type: 'room_list', rooms: list });
+    for (const client of wss.clients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(payload);
+      }
+    }
+  }
+
+  function handleDisconnect(peerId: string, closingWs?: WebSocket): void {
+    let activeRoomId = peerId ? peerToRoom.get(peerId) : undefined;
+    if (!activeRoomId && closingWs) {
+      for (const [rId, r] of rooms.entries()) {
+        if (r.hostWs === closingWs || (peerId && r.peers.has(peerId))) {
+          activeRoomId = rId;
+          break;
+        }
+      }
+    }
+
+    if (activeRoomId) {
+      const room = rooms.get(activeRoomId);
+      if (room) {
+        const isHost = room.hostId === peerId || (closingWs && room.hostWs === closingWs);
+        if (isHost) {
+          console.log(`[SignalingServer] Host left. Closing room ${activeRoomId}`);
+          for (const peerWs of room.peers.values()) {
+            send(peerWs, { type: 'host_left' });
+          }
+          rooms.delete(activeRoomId);
+          broadcastRoomList();
+        } else {
+          room.peers.delete(peerId);
+          send(room.hostWs, { type: 'peer_left', peerId });
+          broadcastRoomList();
+        }
+      }
+      if (peerId) {
+        peerToRoom.delete(peerId);
+      }
+    }
+  }
+
   wss.on('connection', (ws: WebSocket) => {
     let currentPeerId = '';
 
@@ -64,21 +121,12 @@ export function setupSignalingServer(wss: WebSocketServer) {
 
             console.log(`[SignalingServer] Room created: ${newRoomId} (${roomConf.name}, max: ${roomConf.maxPlayers}) by ${peerId}`);
             send(ws, { type: 'room_created', roomId: newRoomId, roomName: roomConf.name, config: roomConf });
+            broadcastRoomList();
             break;
           }
 
           case 'list_rooms': {
-            const list = Array.from(rooms.values()).map(r => ({
-              id: r.id,
-              name: r.config.name,
-              playerCount: r.peers.size + 1,
-              maxPlayers: r.config.maxPlayers,
-              isPrivate: r.config.isPrivate,
-              teamsLocked: r.config.teamsLocked,
-              timeLimit: r.config.timeLimit,
-              scoreLimit: r.config.scoreLimit
-            }));
-            send(ws, { type: 'room_list', rooms: list });
+            send(ws, { type: 'room_list', rooms: getRoomList() });
             break;
           }
 
@@ -117,6 +165,12 @@ export function setupSignalingServer(wss: WebSocketServer) {
               hostId: room.hostId,
               config: room.config
             });
+            broadcastRoomList();
+            break;
+          }
+
+          case 'leave_room': {
+            handleDisconnect(peerId || currentPeerId, ws);
             break;
           }
 
@@ -131,6 +185,7 @@ export function setupSignalingServer(wss: WebSocketServer) {
               for (const peerWs of room.peers.values()) {
                 send(peerWs, { type: 'room_config_updated', config: room.config });
               }
+              broadcastRoomList();
             }
             break;
           }
@@ -166,25 +221,7 @@ export function setupSignalingServer(wss: WebSocketServer) {
     });
 
     ws.on('close', () => {
-      if (currentPeerId) {
-        const activeRoomId = peerToRoom.get(currentPeerId);
-        if (activeRoomId) {
-          const room = rooms.get(activeRoomId);
-          if (room) {
-            if (room.hostId === currentPeerId) {
-              console.log(`[SignalingServer] Host left. Closing room ${activeRoomId}`);
-              for (const peerWs of room.peers.values()) {
-                send(peerWs, { type: 'host_left' });
-              }
-              rooms.delete(activeRoomId);
-            } else {
-              room.peers.delete(currentPeerId);
-              send(room.hostWs, { type: 'peer_left', peerId: currentPeerId });
-            }
-          }
-          peerToRoom.delete(currentPeerId);
-        }
-      }
+      handleDisconnect(currentPeerId, ws);
     });
   });
 

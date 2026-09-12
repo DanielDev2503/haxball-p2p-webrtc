@@ -92,6 +92,10 @@ export class SignalingClient {
     this.send({ type: 'join_room', roomId, password, nickname });
   }
 
+  public leaveRoom(roomId?: string): void {
+    this.send({ type: 'leave_room', roomId });
+  }
+
 
   public updateRoomConfig(config: any): void {
     this.send({ type: 'update_room_config', config });
