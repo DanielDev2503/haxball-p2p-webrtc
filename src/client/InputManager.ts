@@ -29,13 +29,24 @@ export class InputManager {
   public currentMask: number = 0;
   public onInputChanged?: (mask: number) => void;
   public keyBinds: KeyBinds;
+  public isEnabled: boolean = false;
 
   constructor() {
     this.keyBinds = this.loadKeyBinds();
     this.setupListeners();
   }
 
+  public setEnabled(enabled: boolean): void {
+    this.isEnabled = enabled;
+    if (!enabled) {
+      this.resetMovement();
+    }
+  }
+
   public loadKeyBinds(): KeyBinds {
+    if (typeof localStorage === 'undefined') {
+      return JSON.parse(JSON.stringify(DEFAULT_KEYBINDS));
+    }
     try {
       const saved = localStorage.getItem(KEYBIND_STORAGE_KEY);
       if (saved) {
@@ -59,6 +70,7 @@ export class InputManager {
 
   public saveKeyBinds(binds: KeyBinds): void {
     this.keyBinds = binds;
+    if (typeof localStorage === 'undefined') return;
     try {
       localStorage.setItem(KEYBIND_STORAGE_KEY, JSON.stringify(binds));
     } catch (e) {
@@ -87,7 +99,11 @@ export class InputManager {
   }
 
   private setupListeners(): void {
+    if (typeof window === 'undefined') return;
+
     window.addEventListener('keydown', (e) => {
+      if (!this.isEnabled) return;
+
       // Si el foco está en un input/textarea, no capturamos controles de juego
       if (
         document.activeElement instanceof HTMLInputElement ||
@@ -107,6 +123,8 @@ export class InputManager {
     });
 
     window.addEventListener('keyup', (e) => {
+      if (!this.isEnabled) return;
+
       if (this.keyStates.get(e.code)) {
         this.keyStates.set(e.code, false);
         this.updateMask();

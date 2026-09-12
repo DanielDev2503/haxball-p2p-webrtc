@@ -10,14 +10,14 @@
   <link rel="stylesheet" href="/src/ui/styles/haxball.css">
 </head>
 <body>
-  <div id="app-root" style="display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: #1a1a1a;">
+  <div id="app-root" class="ui-screen-hidden" style="display: none; flex-direction: column; height: 100vh; overflow: hidden; background: #1a1a1a;">
     <!-- Top HUD Navigation -->
     <header class="hud-container">
       <div class="brand">
         <span>HAXBALL</span>
         <span class="brand-badge">P2P ENGINE</span>
         <span id="roomNameBadge" style="font-size: 0.8rem; color: #94a3b8; font-weight: 600;">Lobby</span>
-        <button id="btnLeaveRoom" class="btn btn-danger" style="font-size: 0.75rem; padding: 4px 10px; margin-left: 10px; display: none;">🚪 Salir</button>
+        <button id="btnLeaveRoom" class="btn btn-danger" style="font-size: 0.75rem; padding: 4px 10px; margin-left: 10px; display: none;">🚪 Salir al Lobby</button>
       </div>
 
       <!-- Scoreboard Center -->
@@ -151,7 +151,7 @@
   </div>
 
   <!-- Nickname Gatekeeper Modal (Blocking until valid nickname entered) -->
-  <div id="nicknameGatekeeperModal" class="modal-overlay" style="display: none; z-index: 300;">
+  <div id="nicknameGatekeeperModal" class="modal-overlay ui-screen-hidden" style="display: none; z-index: 300;">
     <div class="modal-content" style="max-width: 380px;">
       <h2 class="modal-title">⚽ Bienvenido a BallHax</h2>
       <p style="color: #94a3b8; font-size: 0.85rem; text-align: center;">
@@ -170,13 +170,29 @@
 
 
   <!-- Room Lobby Modal Overlay -->
-  <div id="lobbyModal" class="modal-overlay">
-    <div class="modal-content">
-      <h2 class="modal-title">Haxball P2P Arena</h2>
+  <div id="lobbyModal" class="modal-overlay ui-screen-hidden" style="display: none; z-index: 250;">
+    <div class="modal-content" style="position: relative;">
+      <h2 class="modal-title" style="margin-bottom: 4px;">Haxball P2P Arena</h2>
 
-      <div class="form-group">
-        <label class="form-label" for="lobbyNickname">Tu Nickname</label>
-        <input id="lobbyNickname" class="form-input" type="text" placeholder="Ej. Maradona" maxlength="12" value="Player1" />
+      <!-- Barra Superior de Usuario y Estado de Señalización -->
+      <div class="lobby-user-bar">
+        <div class="lobby-user-info">
+          <div class="lobby-user-avatar" id="lobbyUserAvatar">⚽</div>
+          <span class="lobby-user-name" id="lobbyCurrentNick">Player</span>
+          <button id="btnEditNickname" class="btn btn-secondary btn-xs" title="Cambiar Nickname" type="button">✏️ Cambiar</button>
+        </div>
+        <div class="lobby-signaling-status" id="lobbySignalingStatus">
+          <span class="status-dot-connecting" id="lobbySignalingDot"></span>
+          <span id="lobbySignalingText">Conectando...</span>
+        </div>
+      </div>
+      <input id="lobbyNickname" type="hidden" value="Player" />
+
+      <!-- Overlay Transitorio de Conexión P2P -->
+      <div id="lobbyLoadingOverlay" class="lobby-loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <span id="lobbyLoadingText" class="loading-text">Conectando P2P...</span>
+        <button id="btnCancelConnecting" class="btn btn-danger btn-xs" type="button" style="margin-top: 6px;">Cancelar</button>
       </div>
 
       <div class="form-group">

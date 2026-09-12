@@ -13,11 +13,22 @@ export interface LobbyEvents {
   onJoinRoom: (nickname: string, roomId: string, password?: string) => void;
   onSinglePlayer: (nickname: string) => void;
   onRefreshRooms: () => void;
+  onEditNickname?: () => void;
+  onCancelConnecting?: () => void;
 }
 
 export class RoomLobby {
   private overlayEl: HTMLElement;
   private nicknameInput: HTMLInputElement;
+  private userAvatarEl: HTMLElement | null;
+  private currentNickEl: HTMLElement | null;
+  private editNickBtn: HTMLButtonElement | null;
+  private signalingDotEl: HTMLElement | null;
+  private signalingTextEl: HTMLElement | null;
+  private loadingOverlayEl: HTMLElement | null;
+  private loadingTextEl: HTMLElement | null;
+  private cancelConnectingBtn: HTMLButtonElement | null;
+
   private roomNameInput: HTMLInputElement;
   private maxPlayersInput: HTMLInputElement;
   private timeLimitSelect: HTMLSelectElement;
@@ -33,6 +44,15 @@ export class RoomLobby {
     this.events = events;
     this.overlayEl = document.getElementById('lobbyModal')!;
     this.nicknameInput = document.getElementById('lobbyNickname') as HTMLInputElement;
+    this.userAvatarEl = document.getElementById('lobbyUserAvatar');
+    this.currentNickEl = document.getElementById('lobbyCurrentNick');
+    this.editNickBtn = document.getElementById('btnEditNickname') as HTMLButtonElement | null;
+    this.signalingDotEl = document.getElementById('lobbySignalingDot');
+    this.signalingTextEl = document.getElementById('lobbySignalingText');
+    this.loadingOverlayEl = document.getElementById('lobbyLoadingOverlay');
+    this.loadingTextEl = document.getElementById('lobbyLoadingText');
+    this.cancelConnectingBtn = document.getElementById('btnCancelConnecting') as HTMLButtonElement | null;
+
     this.roomNameInput = document.getElementById('lobbyRoomName') as HTMLInputElement;
     this.maxPlayersInput = document.getElementById('lobbyMaxPlayers') as HTMLInputElement;
     this.timeLimitSelect = document.getElementById('lobbyTimeLimit') as HTMLSelectElement;
@@ -115,6 +135,68 @@ export class RoomLobby {
         this.events.onRefreshRooms();
       });
     }
+
+    if (this.editNickBtn) {
+      this.editNickBtn.addEventListener('click', () => {
+        if (this.events.onEditNickname) {
+          this.events.onEditNickname();
+        }
+      });
+    }
+
+    if (this.cancelConnectingBtn) {
+      this.cancelConnectingBtn.addEventListener('click', () => {
+        this.hideConnecting();
+        if (this.events.onCancelConnecting) {
+          this.events.onCancelConnecting();
+        }
+      });
+    }
+  }
+
+  public updateUserBar(nick: string): void {
+    const trimmed = nick.trim();
+    if (this.currentNickEl) {
+      this.currentNickEl.textContent = trimmed || 'Player';
+    }
+    if (this.userAvatarEl) {
+      this.userAvatarEl.textContent = (trimmed || 'PL').substring(0, 2).toUpperCase();
+    }
+    if (this.nicknameInput) {
+      this.nicknameInput.value = trimmed;
+    }
+  }
+
+  public setSignalingStatus(status: 'connected' | 'connecting' | 'disconnected', text?: string): void {
+    if (this.signalingDotEl) {
+      this.signalingDotEl.className =
+        status === 'connected' ? 'status-dot-connected' :
+        status === 'connecting' ? 'status-dot-connecting' : 'status-dot-disconnected';
+    }
+    if (this.signalingTextEl) {
+      if (text) {
+        this.signalingTextEl.textContent = text;
+      } else {
+        this.signalingTextEl.textContent =
+          status === 'connected' ? 'Conectado' :
+          status === 'connecting' ? 'Conectando...' : 'Desconectado';
+      }
+    }
+  }
+
+  public showConnecting(message: string = 'Conectando P2P...'): void {
+    if (this.loadingTextEl) {
+      this.loadingTextEl.textContent = message;
+    }
+    if (this.loadingOverlayEl) {
+      this.loadingOverlayEl.style.display = 'flex';
+    }
+  }
+
+  public hideConnecting(): void {
+    if (this.loadingOverlayEl) {
+      this.loadingOverlayEl.style.display = 'none';
+    }
   }
 
   public getNickname(): string {
@@ -124,20 +206,19 @@ export class RoomLobby {
   }
 
   public setNickname(nick: string): void {
-    if (this.nicknameInput) {
-      this.nicknameInput.value = nick;
-    }
+    this.updateUserBar(nick);
   }
 
   public hide(): void {
     if (this.overlayEl) {
+      this.overlayEl.classList.add('ui-screen-hidden');
       this.overlayEl.style.display = 'none';
     }
   }
 
-
   public show(): void {
     if (this.overlayEl) {
+      this.overlayEl.classList.remove('ui-screen-hidden');
       this.overlayEl.style.display = 'flex';
     }
   }

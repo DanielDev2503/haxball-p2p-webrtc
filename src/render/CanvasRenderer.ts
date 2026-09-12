@@ -51,6 +51,15 @@ export class CanvasRenderer {
     this.activeBanner = null;
   }
 
+  public clear(): void {
+    this.ctx.fillStyle = '#1a2332';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  public resize(): void {
+    this.handleResize();
+  }
+
   public handleResize(): void {
     const dpr = window.devicePixelRatio || 1;
     const displayWidth = this.canvas.clientWidth || window.innerWidth;

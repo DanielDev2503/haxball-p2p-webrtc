@@ -64,9 +64,19 @@ export class NicknameGatekeeper {
     }
   }
 
+  public setInputValue(val: string): void {
+    if (this.inputEl) {
+      this.inputEl.value = val;
+    }
+  }
+
   public show(): void {
     if (this.modalEl) {
+      this.modalEl.classList.remove('ui-screen-hidden');
       this.modalEl.style.display = 'flex';
+      if (this.errorEl) {
+        this.errorEl.style.display = 'none';
+      }
       setTimeout(() => {
         if (this.inputEl) {
           this.inputEl.focus();
@@ -78,6 +88,7 @@ export class NicknameGatekeeper {
 
   public hide(): void {
     if (this.modalEl) {
+      this.modalEl.classList.add('ui-screen-hidden');
       this.modalEl.style.display = 'none';
     }
   }

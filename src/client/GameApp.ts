@@ -20,6 +20,7 @@ import { RoomConfig } from '../server/signalingServer';
 import { MatchConfig } from '../core/game/GameState';
 import { MatchStatePayload } from '../net/protocol/ControlMessages';
 import { KeyBinds } from './InputManager';
+import { UIStateMachine, UIState } from '../ui/UIStateMachine';
 
 export function canChangeTeam(
   senderPeerId: string,
@@ -47,6 +48,7 @@ export class GameApp {
   public teamSelect: TeamSelectModal;
   public lobby: RoomLobby;
   public gatekeeper: NicknameGatekeeper;
+  public uiStateMachine: UIStateMachine;
 
   // Networking
   public signaling: SignalingClient;
@@ -56,7 +58,6 @@ export class GameApp {
   public clientInputSequence: number = 0;
   public bannedPeers: Set<string> = new Set();
   public currentRoomId: string = '';
-
 
   // Room & Admin state
   public roomConfig: RoomConfig = {
@@ -91,8 +92,8 @@ export class GameApp {
   constructor() {
     const canvas = (document.getElementById('gameCanvas') || document.getElementById('game-canvas')) as HTMLCanvasElement;
     this.gatekeeper = new NicknameGatekeeper();
-    const storedNick = this.gatekeeper.checkOrPrompt();
-    const initialNick = storedNick || 'Player';
+    const savedNick = NicknameGatekeeper.getSavedNickname();
+    const initialNick = savedNick || 'Player';
 
     this.localPlayer = new Player({
       id: 'local_' + Math.random().toString(36).substring(2, 7),
@@ -141,10 +142,17 @@ export class GameApp {
       onCreateRoom: (nick, config) => this.startAsHost(nick, config),
       onJoinRoom: (nick, roomId, password) => this.startAsClient(nick, roomId, password),
       onSinglePlayer: (nick) => this.startPracticeMode(nick),
-      onRefreshRooms: () => this.signaling.requestRoomList()
+      onRefreshRooms: () => this.signaling.requestRoomList(),
+      onEditNickname: () => {
+        this.gatekeeper.setInputValue(this.localPlayer.name);
+        this.uiStateMachine.transitionTo('STATE_NICKNAME');
+      },
+      onCancelConnecting: () => {
+        this.lobby.hideConnecting();
+      }
     });
-    if (storedNick) {
-      this.lobby.setNickname(storedNick);
+    if (savedNick) {
+      this.lobby.setNickname(savedNick);
     }
 
     this.gatekeeper.onNicknameConfirmed = (nick: string) => {
@@ -160,13 +168,44 @@ export class GameApp {
         this.updateTeamLists();
         this.syncPlayersWithClients();
       }
+      this.uiStateMachine.transitionTo('STATE_LOBBY');
     };
+
+    // UI State Machine
+    const initialUIState: UIState = savedNick ? 'STATE_LOBBY' : 'STATE_NICKNAME';
+    this.uiStateMachine = new UIStateMachine(initialUIState, {
+      onStateChange: (newState, prevState) => this.handleUIStateChange(newState, prevState)
+    });
 
     this.setupUIEvents();
     this.setupKeybindsModal();
-    this.enforceMenuState(this.engine ? this.engine.fsm.currentState : 'STOPPED');
     this.startRenderLoop();
-    this.physicsTicker.start();
+    this.handleUIStateChange(initialUIState, initialUIState);
+  }
+
+  private handleUIStateChange(newState: UIState, prevState: UIState): void {
+    if (newState === 'STATE_IN_GAME') {
+      this.inputManager.setEnabled(true);
+      this.physicsTicker.start();
+      const ingameMenu = document.getElementById('ingame-menu');
+      if (ingameMenu) {
+        ingameMenu.classList.add('hidden');
+        ingameMenu.classList.remove('is-forced-open');
+        ingameMenu.style.display = 'none';
+      }
+      this.canvasRenderer.resize();
+    } else {
+      this.inputManager.setEnabled(false);
+      this.physicsTicker.stop();
+      this.canvasRenderer.clear();
+      if (newState === 'STATE_LOBBY') {
+        this.lobby.updateUserBar(this.localPlayer.name);
+        this.signaling.requestRoomList();
+      } else if (newState === 'STATE_NICKNAME') {
+        this.gatekeeper.setInputValue(this.localPlayer.name || '');
+        this.gatekeeper.show();
+      }
+    }
   }
 
   private setupUIEvents(): void {
@@ -247,18 +286,17 @@ export class GameApp {
     const menuToggleBtn = document.getElementById('menu-toggle-btn');
     const menuCloseBtn = document.getElementById('menu-close-btn');
 
-    const isMatchStopped = () => {
-      return (this.engine ? this.engine.fsm.currentState : this.currentMatchState) === 'STOPPED';
-    };
-
     const toggleMenu = () => {
-      if (isMatchStopped()) {
-        // En STOPPED el menú es forzado e inescapable
-        return;
-      }
       if (ingameMenu) {
-        ingameMenu.classList.toggle('hidden');
-        this.updateAdminControlsUI();
+        const isHidden = ingameMenu.classList.contains('hidden') || ingameMenu.style.display === 'none';
+        if (isHidden) {
+          ingameMenu.classList.remove('hidden');
+          ingameMenu.style.display = 'flex';
+          this.updateAdminControlsUI();
+        } else {
+          ingameMenu.classList.add('hidden');
+          ingameMenu.style.display = 'none';
+        }
       }
     };
 
@@ -266,13 +304,40 @@ export class GameApp {
     if (menuCloseBtn) menuCloseBtn.addEventListener('click', toggleMenu);
 
     window.addEventListener('keydown', (e) => {
+      // Si no estamos en STATE_IN_GAME, no procesar atajos de partido
+      if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') {
+        return;
+      }
+
+      // Escape o atajo de menú
+      if (e.key === 'Escape' || this.inputManager.isActionKey('menu', e.code)) {
+        // Si el chat está enfocado, primero desenfocar el chat y NO cerrar/abrir el menú
+        if (this.chat.isFocused()) {
+          e.preventDefault();
+          this.chat.blur();
+          return;
+        }
+
+        // Si el modal de teclas está abierto, cerrarlo
+        const settingsModal = document.getElementById('settingsModal');
+        if (settingsModal && settingsModal.style.display !== 'none' && !settingsModal.classList.contains('ui-screen-hidden')) {
+          settingsModal.style.display = 'none';
+          return;
+        }
+
+        toggleMenu();
+        return;
+      }
+
       // Tecla Enter para enfocar el chat sin movimiento residual
       if (e.code === 'Enter') {
         if (!this.chat.isFocused()) {
-          e.preventDefault();
-          this.chat.focus();
-          this.inputManager.resetMovement();
-          return;
+          if (!(document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement)) {
+            e.preventDefault();
+            this.chat.focus();
+            this.inputManager.resetMovement();
+            return;
+          }
         }
       }
 
@@ -281,12 +346,6 @@ export class GameApp {
         document.activeElement instanceof HTMLInputElement ||
         document.activeElement instanceof HTMLTextAreaElement
       ) {
-        return;
-      }
-
-      // Menú / Escape con tecla configurable
-      if (this.inputManager.isActionKey('menu', e.code) || e.key === 'Escape') {
-        toggleMenu();
         return;
       }
 
@@ -378,6 +437,14 @@ export class GameApp {
   }
 
   private setupSignaling(): void {
+    this.signaling.onOpen = () => {
+      this.lobby.setSignalingStatus('connected');
+    };
+
+    this.signaling.onClose = () => {
+      this.lobby.setSignalingStatus('disconnected');
+    };
+
     this.signaling.onMessage = (msg: SignalingMessage) => {
       switch (msg.type) {
         case 'room_created': {
@@ -391,6 +458,8 @@ export class GameApp {
           this.chat.addMessage({ author: 'Lobby', text: `Sala "${this.roomConfig.name}" creada. ID: ${this.currentRoomId}`, team: 'sys' });
           this.applyRoomConfigToEngine();
           this.updateAdminPanelVisibility();
+          this.lobby.hideConnecting();
+          this.uiStateMachine.transitionTo('STATE_IN_GAME');
           break;
         }
 
@@ -404,8 +473,9 @@ export class GameApp {
             this.roomNameBadge.textContent = `${this.roomConfig.name} [${this.currentRoomId}]`;
           }
           this.chat.addMessage({ author: 'Lobby', text: `Conectado a la sala: ${this.roomConfig.name}`, team: 'sys' });
-          this.enforceMenuState(this.currentMatchState);
           this.updateAdminPanelVisibility();
+          this.lobby.hideConnecting();
+          this.uiStateMachine.transitionTo('STATE_IN_GAME');
           break;
         }
 
@@ -475,6 +545,7 @@ export class GameApp {
         }
 
         case 'error': {
+          this.lobby.hideConnecting();
           console.warn('[Signaling Error]', msg);
           if (msg.code === 'INVALID_PASSWORD') {
             alert('❌ Contraseña incorrecta para esta sala privada.');
@@ -485,16 +556,19 @@ export class GameApp {
           } else {
             alert(`Error: ${msg.message || 'Ocurrió un error de conexión'}`);
           }
-          this.lobby.show();
+          this.uiStateMachine.transitionTo('STATE_LOBBY');
           if (this.btnLeaveRoom) this.btnLeaveRoom.style.display = 'none';
           break;
         }
       }
     };
 
+    this.lobby.setSignalingStatus('connecting');
     this.signaling.connect().then(() => {
+      this.lobby.setSignalingStatus('connected');
       this.signaling.requestRoomList();
     }).catch(() => {
+      this.lobby.setSignalingStatus('disconnected', 'Modo offline');
       console.log('Servidor de señalización no disponible, listo para modo práctica.');
     });
   }
@@ -517,7 +591,7 @@ export class GameApp {
     if (this.btnLeaveRoom) this.btnLeaveRoom.style.display = 'inline-block';
     this.updateAdminPanelVisibility();
 
-    this.lobby.hide();
+    this.uiStateMachine.transitionTo('STATE_IN_GAME');
     this.chat.addMessage({ author: 'Sistema', text: '¡Modo de práctica activo! Usa WASD/Flechas para moverte y Espacio/X para patear.', team: 'sys' });
     this.updateTeamLists();
   }
@@ -542,10 +616,14 @@ export class GameApp {
     this.updateAdminPanelVisibility();
     this.updateAdminControlsUI();
 
+    this.lobby.showConnecting(`Creando sala "${this.roomConfig.name}"...`);
+
     if (!this.signaling.isConnected) {
       try {
         await this.signaling.connect();
+        this.lobby.setSignalingStatus('connected');
       } catch (err) {
+        this.lobby.hideConnecting();
         console.error('[Signaling] Failed to connect:', err);
         alert('No se pudo conectar al servidor de señalización.');
         return;
@@ -553,7 +631,6 @@ export class GameApp {
     }
 
     this.signaling.createRoom(this.roomConfig, undefined, this.localPlayer.name);
-    this.lobby.hide();
     this.updateTeamLists();
   }
 
@@ -567,15 +644,18 @@ export class GameApp {
     this.localPlayer.isAdmin = false;
     this.currentRoomId = roomId;
     this.currentMatchState = 'STOPPED';
-    this.enforceMenuState('STOPPED');
 
     if (this.btnLeaveRoom) this.btnLeaveRoom.style.display = 'inline-block';
     this.updateAdminPanelVisibility();
 
+    this.lobby.showConnecting(`Conectando a la sala ${roomId}...`);
+
     if (!this.signaling.isConnected) {
       try {
         await this.signaling.connect();
+        this.lobby.setSignalingStatus('connected');
       } catch (err) {
+        this.lobby.hideConnecting();
         console.error('[Signaling] Failed to connect:', err);
         alert('No se pudo conectar al servidor de señalización.');
         return;
@@ -583,7 +663,6 @@ export class GameApp {
     }
 
     this.signaling.joinRoom(roomId, password, this.localPlayer.name);
-    this.lobby.hide();
   }
 
   public leaveCurrentRoom(): void {
@@ -612,7 +691,8 @@ export class GameApp {
     if (this.roomNameBadge) this.roomNameBadge.textContent = 'Lobby';
     this.updateAdminPanelVisibility();
 
-    this.lobby.show();
+    this.canvasRenderer.clear();
+    this.uiStateMachine.transitionTo('STATE_LOBBY');
     this.signaling.requestRoomList();
     this.chat.addMessage({ author: 'Sistema', text: 'Has salido de la sala.', team: 'sys' });
   }
@@ -1073,12 +1153,13 @@ export class GameApp {
     const ingameMenu = document.getElementById('ingame-menu');
     if (!ingameMenu) return;
 
-    if (state === 'STOPPED') {
-      ingameMenu.classList.add('is-forced-open');
-      ingameMenu.classList.remove('hidden');
-    } else {
+    if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') {
+      ingameMenu.classList.add('hidden');
       ingameMenu.classList.remove('is-forced-open');
+      ingameMenu.style.display = 'none';
+      return;
     }
+    this.updateAdminControlsUI();
   }
 
   private setupKeybindsModal(): void {
@@ -1256,7 +1337,7 @@ export class GameApp {
     const loop = (now: number) => {
       if (!this.isRunning) return;
 
-      if (!document.hidden) {
+      if (!document.hidden && this.uiStateMachine.getState() === 'STATE_IN_GAME') {
         let activeSnapshot: GameSnapshot | null = null;
         let localDiscId: number | null = null;
 
