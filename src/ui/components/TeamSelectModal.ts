@@ -14,19 +14,43 @@ export class TeamSelectModal {
 
   constructor() {
     this.redListEl = document.getElementById('redPlayersList');
+    if (!this.redListEl) console.warn('[TeamSelectModal] Element "#redPlayersList" was not found in DOM.');
+
     this.blueListEl = document.getElementById('bluePlayersList');
+    if (!this.blueListEl) console.warn('[TeamSelectModal] Element "#bluePlayersList" was not found in DOM.');
+
     this.specListEl = document.getElementById('specPlayersList');
+    if (!this.specListEl) console.warn('[TeamSelectModal] Element "#specPlayersList" was not found in DOM.');
+
     this.redCountEl = document.getElementById('redCount');
+    if (!this.redCountEl) console.warn('[TeamSelectModal] Element "#redCount" was not found in DOM.');
+
     this.blueCountEl = document.getElementById('blueCount');
+    if (!this.blueCountEl) console.warn('[TeamSelectModal] Element "#blueCount" was not found in DOM.');
+
     this.specCountEl = document.getElementById('specCount');
+    if (!this.specCountEl) console.warn('[TeamSelectModal] Element "#specCount" was not found in DOM.');
 
     const joinRedBtn = document.getElementById('joinRedBtn');
-    const joinBlueBtn = document.getElementById('joinBlueBtn');
-    const joinSpecBtn = document.getElementById('joinSpecBtn');
+    if (joinRedBtn) {
+      joinRedBtn.addEventListener('click', () => this.onSelectTeam?.('red'));
+    } else {
+      console.warn('[TeamSelectModal] Element "#joinRedBtn" was not found in DOM.');
+    }
 
-    if (joinRedBtn) joinRedBtn.addEventListener('click', () => this.onSelectTeam?.('red'));
-    if (joinBlueBtn) joinBlueBtn.addEventListener('click', () => this.onSelectTeam?.('blue'));
-    if (joinSpecBtn) joinSpecBtn.addEventListener('click', () => this.onSelectTeam?.('spec'));
+    const joinBlueBtn = document.getElementById('joinBlueBtn');
+    if (joinBlueBtn) {
+      joinBlueBtn.addEventListener('click', () => this.onSelectTeam?.('blue'));
+    } else {
+      console.warn('[TeamSelectModal] Element "#joinBlueBtn" was not found in DOM.');
+    }
+
+    const joinSpecBtn = document.getElementById('joinSpecBtn');
+    if (joinSpecBtn) {
+      joinSpecBtn.addEventListener('click', () => this.onSelectTeam?.('spec'));
+    } else {
+      console.warn('[TeamSelectModal] Element "#joinSpecBtn" was not found in DOM.');
+    }
 
     this.setupDragAndDropColumns();
   }
@@ -158,9 +182,18 @@ export class TeamSelectModal {
       container.appendChild(el);
     };
 
-    if (this.redListEl) red.forEach(p => renderPlayer(p, this.redListEl!));
-    if (this.blueListEl) blue.forEach(p => renderPlayer(p, this.blueListEl!));
-    if (this.specListEl) spec.forEach(p => renderPlayer(p, this.specListEl!));
+    if (this.redListEl) {
+      const el = this.redListEl;
+      red.forEach(p => renderPlayer(p, el));
+    }
+    if (this.blueListEl) {
+      const el = this.blueListEl;
+      blue.forEach(p => renderPlayer(p, el));
+    }
+    if (this.specListEl) {
+      const el = this.specListEl;
+      spec.forEach(p => renderPlayer(p, el));
+    }
   }
 }
 

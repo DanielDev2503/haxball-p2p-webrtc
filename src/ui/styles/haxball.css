@@ -28,9 +28,16 @@ body, html {
 }
 
 /* STRICT UI STATE MACHINE SCREEN VISIBILITY */
+.u-hidden {
+  display: none !important;
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
 .ui-screen-hidden {
   display: none !important;
   pointer-events: none !important;
+  user-select: none !important;
 }
 
 #app, #app-root {
@@ -450,7 +457,7 @@ button:disabled, input:disabled, select:disabled {
   flex-shrink: 0;
   width: 100%;
   position: relative;
-  z-index: 60;
+  z-index: 160; /* Prioridad superior para accesibilidad continua */
 }
 
 #chat-container {
@@ -472,7 +479,7 @@ button:disabled, input:disabled, select:disabled {
 
 #chat-messages {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: scroll; /* Scrollbar interna visible y funcional */
   overflow-x: hidden;
   padding: 6px;
   scrollbar-width: thin;

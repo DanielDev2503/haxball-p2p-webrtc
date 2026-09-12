@@ -8,7 +8,7 @@ export class UIStateMachine {
   private currentState: UIState;
   private onStateChange?: ((newState: UIState, prevState: UIState) => void) | undefined;
 
-  // DOM Elements
+  // DOM Elements cache
   private elNicknameModal: HTMLElement | null = null;
   private elLobbyModal: HTMLElement | null = null;
   private elAppRoot: HTMLElement | null = null;
@@ -25,16 +25,16 @@ export class UIStateMachine {
 
     if (typeof document !== 'undefined') {
       this.cacheElements();
-      this.applyStateDOM(this.currentState);
+      this.applyDOMVisibility(this.currentState);
     }
   }
 
   public cacheElements(): void {
     if (typeof document === 'undefined') return;
 
-    this.elNicknameModal = document.getElementById('nicknameGatekeeperModal');
-    this.elLobbyModal = document.getElementById('lobbyModal');
-    this.elAppRoot = document.getElementById('app-root');
+    this.elNicknameModal = document.querySelector('.modal-nickname') || document.getElementById('nicknameGatekeeperModal');
+    this.elLobbyModal = document.querySelector('.lobby-container') || document.getElementById('lobbyModal');
+    this.elAppRoot = document.querySelector('.game-container') || document.getElementById('app-root');
     this.elHud = document.querySelector('.hud-container');
     this.elGameView = document.getElementById('game-view');
     this.elChatSection = document.getElementById('chat-section');
@@ -53,7 +53,7 @@ export class UIStateMachine {
     const prevState = this.currentState;
     this.currentState = nextState;
 
-    this.applyStateDOM(nextState);
+    this.applyDOMVisibility(nextState);
 
     if (this.onStateChange) {
       this.onStateChange(nextState, prevState);
@@ -61,32 +61,33 @@ export class UIStateMachine {
   }
 
   /**
-   * Aplica clases .ui-screen-hidden estrictas asegurando que sólo la pantalla activa
-   * esté visible y reciba eventos de ratón/teclado.
+   * Aplica o retira la clase utilitaria .u-hidden de los contenedores
+   * de forma determinista para evitar pantallas en blanco o elementos superpuestos.
    */
-  public applyStateDOM(state: UIState): void {
+  public applyDOMVisibility(state?: UIState): void {
     if (typeof document === 'undefined') return;
 
-    // Asegurar caché de elementos
-    if (!this.elLobbyModal && document.getElementById('lobbyModal')) {
+    const targetState = state ?? this.currentState;
+
+    if (!this.elNicknameModal && (document.getElementById('nicknameGatekeeperModal') || document.querySelector('.modal-nickname'))) {
       this.cacheElements();
     }
 
     const hide = (el: HTMLElement | null) => {
       if (!el) return;
-      el.classList.add('ui-screen-hidden');
+      el.classList.add('u-hidden', 'ui-screen-hidden');
       el.style.display = 'none';
     };
 
     const show = (el: HTMLElement | null, displayStyle: string = 'flex') => {
       if (!el) return;
-      el.classList.remove('ui-screen-hidden');
+      el.classList.remove('u-hidden', 'ui-screen-hidden');
       el.style.display = displayStyle;
     };
 
-    switch (state) {
+    switch (targetState) {
       case 'STATE_NICKNAME': {
-        // Exclusivamente el modal de bienvenida
+        // Modal de alias activo; canvas y lobby apagados
         show(this.elNicknameModal, 'flex');
         hide(this.elLobbyModal);
         hide(this.elAppRoot);
@@ -100,7 +101,7 @@ export class UIStateMachine {
       }
 
       case 'STATE_LOBBY': {
-        // Exclusivamente la pantalla del Lobby
+        // Lobby activo; modal de alias y juego (canvas/HUD) apagados
         hide(this.elNicknameModal);
         show(this.elLobbyModal, 'flex');
         hide(this.elAppRoot);
@@ -114,7 +115,7 @@ export class UIStateMachine {
       }
 
       case 'STATE_IN_GAME': {
-        // Pantalla de juego activa (Canvas, HUD, Chat)
+        // Juego activo: Canvas visible, marcador HUD visible y Chat Box visible
         hide(this.elNicknameModal);
         hide(this.elLobbyModal);
         show(this.elAppRoot, 'flex');
@@ -122,16 +123,19 @@ export class UIStateMachine {
         show(this.elGameView, 'flex');
         show(this.elChatSection, 'flex');
 
-        // Menú in-game: oculto por defecto
-        if (this.elIngameMenu) {
-          this.elIngameMenu.classList.add('hidden');
-          this.elIngameMenu.classList.remove('is-forced-open');
-          this.elIngameMenu.style.display = 'none';
+        // TeamSelect / In-game menu: no mostrar automáticamente a menos que esté forzado
+        if (this.elIngameMenu && !this.elIngameMenu.classList.contains('is-forced-open')) {
+          hide(this.elIngameMenu);
         }
         hide(this.elSettingsModal);
         hide(this.elContextMenu);
         break;
       }
     }
+  }
+
+  // Alias para mantener compatibilidad con código existente
+  public applyStateDOM(state: UIState): void {
+    this.applyDOMVisibility(state);
   }
 }

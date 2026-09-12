@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { InputPacket } from '../../src/net/protocol/InputPacket';
 import { SnapshotPacket } from '../../src/net/protocol/SnapshotPacket';
 import { GameSnapshot } from '../../src/core/game/GameState';
-import { MatchState } from '../../src/core/game/GameFSM';
 import { INPUT_UP, INPUT_KICK } from '../../src/core/game/Player';
 
 describe('Binary Protocol Serialization', () => {

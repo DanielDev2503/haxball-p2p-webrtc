@@ -1,12 +1,11 @@
 import { Stadium } from '../core/entities/Stadium';
 import { GameSnapshot } from '../core/game/GameState';
-import { MatchState } from '../core/game/GameFSM';
 import { PitchRenderer } from './PitchRenderer';
 import { DiscRenderer } from './DiscRenderer';
 
 export interface CanvasBanner {
   text: string;
-  subtext?: string;
+  subtext?: string | undefined;
   color: string;
   expiresAt: number;
 }

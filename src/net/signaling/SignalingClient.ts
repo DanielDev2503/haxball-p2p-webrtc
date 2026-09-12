@@ -80,7 +80,7 @@ export class SignalingClient {
     }
   }
 
-  public createRoom(roomConfig: string | { name: string; maxPlayers?: number; isPrivate?: boolean; password?: string; timeLimit?: number; scoreLimit?: number; teamsLocked?: boolean }, roomId?: string, nickname?: string): void {
+  public createRoom(roomConfig: string | { name: string; maxPlayers?: number; isPrivate?: boolean; password?: string | undefined; timeLimit?: number; scoreLimit?: number; teamsLocked?: boolean }, roomId?: string, nickname?: string): void {
     if (typeof roomConfig === 'string') {
       this.send({ type: 'create_room', roomName: roomConfig, roomId, nickname });
     } else {

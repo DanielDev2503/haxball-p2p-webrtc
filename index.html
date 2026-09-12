@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/src/ui/styles/haxball.css">
 </head>
 <body>
-  <div id="app-root" class="ui-screen-hidden" style="display: none; flex-direction: column; height: 100vh; overflow: hidden; background: #1a1a1a;">
+  <div id="app-root" class="game-container u-hidden" style="flex-direction: column; height: 100vh; overflow: hidden; background: #1a1a1a;">
     <!-- Top HUD Navigation -->
     <header class="hud-container">
       <div class="brand">
@@ -151,7 +151,7 @@
   </div>
 
   <!-- Nickname Gatekeeper Modal (Blocking until valid nickname entered) -->
-  <div id="nicknameGatekeeperModal" class="modal-overlay ui-screen-hidden" style="display: none; z-index: 300;">
+  <div id="nicknameGatekeeperModal" class="modal-overlay modal-nickname u-hidden" style="z-index: 300;">
     <div class="modal-content" style="max-width: 380px;">
       <h2 class="modal-title">⚽ Bienvenido a BallHax</h2>
       <p style="color: #94a3b8; font-size: 0.85rem; text-align: center;">
@@ -170,7 +170,7 @@
 
 
   <!-- Room Lobby Modal Overlay -->
-  <div id="lobbyModal" class="modal-overlay ui-screen-hidden" style="display: none; z-index: 250;">
+  <div id="lobbyModal" class="modal-overlay lobby-container u-hidden" style="z-index: 250;">
     <div class="modal-content" style="position: relative;">
       <h2 class="modal-title" style="margin-bottom: 4px;">Haxball P2P Arena</h2>
 

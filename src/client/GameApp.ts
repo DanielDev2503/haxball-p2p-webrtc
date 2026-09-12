@@ -17,7 +17,6 @@ import { SnapshotPacket } from '../net/protocol/SnapshotPacket';
 import { JitterBuffer } from '../net/transport/JitterBuffer';
 import { PhysicsTicker } from '../core/physics/PhysicsTicker';
 import { RoomConfig } from '../server/signalingServer';
-import { MatchConfig } from '../core/game/GameState';
 import { MatchStatePayload } from '../net/protocol/ControlMessages';
 import { KeyBinds } from './InputManager';
 import { UIStateMachine, UIState } from '../ui/UIStateMachine';
@@ -91,7 +90,11 @@ export class GameApp {
   private roomNameBadge: HTMLElement | null;
 
   constructor() {
-    const canvas = (document.getElementById('gameCanvas') || document.getElementById('game-canvas')) as HTMLCanvasElement;
+    let canvas = (document.getElementById('gameCanvas') || document.getElementById('game-canvas')) as HTMLCanvasElement | null;
+    if (!canvas) {
+      console.warn('[GameApp] Canvas element "#gameCanvas" was not found in DOM. Creating fallback canvas.');
+      canvas = document.createElement('canvas');
+    }
     this.gatekeeper = new NicknameGatekeeper();
     const savedNick = NicknameGatekeeper.getSavedNickname();
     const initialNick = savedNick || 'Player';
@@ -185,16 +188,12 @@ export class GameApp {
     this.setupSignaling();
   }
 
-  private handleUIStateChange(newState: UIState, prevState: UIState): void {
+  private handleUIStateChange(newState: UIState, _prevState: UIState): void {
     if (newState === 'STATE_IN_GAME') {
       this.inputManager.setEnabled(true);
       this.physicsTicker.start();
-      const ingameMenu = document.getElementById('ingame-menu');
-      if (ingameMenu) {
-        ingameMenu.classList.add('hidden');
-        ingameMenu.classList.remove('is-forced-open');
-        ingameMenu.style.display = 'none';
-      }
+      const matchState = this.engine?.fsm.currentState || this.currentMatchState;
+      this.enforceMenuState(matchState);
       this.canvasRenderer.resize();
       this.startRenderLoop();
     } else {
@@ -291,14 +290,19 @@ export class GameApp {
     const menuCloseBtn = document.getElementById('menu-close-btn');
 
     const toggleMenu = () => {
+      const currentState = this.engine?.fsm.currentState || this.currentMatchState;
+      if (currentState === 'STOPPED') {
+        // En STOPPED el modal debe permanecer visible de manera forzada hasta el saque inicial
+        return;
+      }
       if (ingameMenu) {
-        const isHidden = ingameMenu.classList.contains('hidden') || ingameMenu.style.display === 'none';
+        const isHidden = ingameMenu.classList.contains('hidden') || ingameMenu.classList.contains('u-hidden') || ingameMenu.style.display === 'none';
         if (isHidden) {
-          ingameMenu.classList.remove('hidden');
+          ingameMenu.classList.remove('hidden', 'u-hidden');
           ingameMenu.style.display = 'flex';
           this.updateAdminControlsUI();
         } else {
-          ingameMenu.classList.add('hidden');
+          ingameMenu.classList.add('hidden', 'u-hidden');
           ingameMenu.style.display = 'none';
         }
       }
@@ -324,8 +328,9 @@ export class GameApp {
 
         // Si el modal de teclas está abierto, cerrarlo
         const settingsModal = document.getElementById('settingsModal');
-        if (settingsModal && settingsModal.style.display !== 'none' && !settingsModal.classList.contains('ui-screen-hidden')) {
+        if (settingsModal && settingsModal.style.display !== 'none' && !settingsModal.classList.contains('ui-screen-hidden') && !settingsModal.classList.contains('u-hidden')) {
           settingsModal.style.display = 'none';
+          settingsModal.classList.add('u-hidden');
           return;
         }
 
@@ -1143,7 +1148,7 @@ export class GameApp {
       redScore,
       blueScore,
       countdown,
-      banner
+      ...(banner ? { banner } : {})
     };
 
     if (banner) {
@@ -1178,10 +1183,22 @@ export class GameApp {
     if (!ingameMenu) return;
 
     if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') {
-      ingameMenu.classList.add('hidden');
+      ingameMenu.classList.add('hidden', 'u-hidden');
       ingameMenu.classList.remove('is-forced-open');
       ingameMenu.style.display = 'none';
       return;
+    }
+
+    if (state === 'STOPPED') {
+      ingameMenu.classList.remove('hidden', 'u-hidden');
+      ingameMenu.classList.add('is-forced-open');
+      ingameMenu.style.display = 'flex';
+    } else {
+      ingameMenu.classList.remove('is-forced-open');
+      if (state === 'COUNTDOWN' || state === 'PLAYING') {
+        ingameMenu.classList.add('hidden', 'u-hidden');
+        ingameMenu.style.display = 'none';
+      }
     }
     this.updateAdminControlsUI();
   }
@@ -1291,10 +1308,6 @@ export class GameApp {
     });
   }
 
-  private broadcastGameState(): void {
-    this.broadcastMatchStateSync();
-  }
-
   private broadcastReliable(text: string, excludePeerId?: string): void {
     for (const [id, peer] of this.peers.entries()) {
       if (id !== excludePeerId) {
@@ -1312,10 +1325,6 @@ export class GameApp {
     } else if (this.mode === 'client' && this.hostPeer) {
       this.hostPeer.sendReliable(payload);
     }
-  }
-
-  private broadcastMatchEvent(event: string): void {
-    this.broadcastReliable(JSON.stringify({ type: 'match_event', event }));
   }
 
   /**

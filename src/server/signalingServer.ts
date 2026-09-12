@@ -4,7 +4,7 @@ export interface RoomConfig {
   name: string;
   maxPlayers: number; // 2 a 16
   isPrivate: boolean;
-  password?: string;
+  password?: string | undefined;
   timeLimit: number; // En minutos; 0 = Indefinido
   scoreLimit: number; // Goles; 0 = Indefinido
   teamsLocked: boolean;

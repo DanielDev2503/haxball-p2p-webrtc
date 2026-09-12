@@ -5,18 +5,29 @@ export interface ChatMessage {
 }
 
 export class ChatBox {
-  private container: HTMLElement;
-  private inputEl: HTMLInputElement;
-  private formEl: HTMLFormElement;
+  private container: HTMLElement | null = null;
+  private inputEl: HTMLInputElement | null = null;
+  private formEl: HTMLFormElement | null = null;
   public onSendMessage?: (text: string) => void;
 
   constructor() {
-    this.container = (document.getElementById('chat-messages') || document.getElementById('chatMessages'))!;
-    this.inputEl = (document.getElementById('chat-input') || document.getElementById('chatInput')) as HTMLInputElement;
-    this.formEl = (document.getElementById('chatForm') || document.getElementById('chat-form')) as HTMLFormElement;
+    this.container = document.getElementById('chat-messages') || document.getElementById('chatMessages');
+    if (!this.container) {
+      console.warn('[ChatBox] Element "#chat-messages" was not found in DOM.');
+    }
 
+    this.inputEl = (document.getElementById('chat-input') || document.getElementById('chatInput')) as HTMLInputElement | null;
+    if (!this.inputEl) {
+      console.warn('[ChatBox] Element "#chat-input" was not found in DOM.');
+    }
+
+    this.formEl = (document.getElementById('chatForm') || document.getElementById('chat-form')) as HTMLFormElement | null;
+    if (!this.formEl) {
+      console.warn('[ChatBox] Element "#chatForm" was not found in DOM.');
+    }
 
     const submitMessage = () => {
+      if (!this.inputEl) return;
       const text = this.inputEl.value.trim();
       if (text && this.onSendMessage) {
         this.onSendMessage(text);
@@ -25,25 +36,21 @@ export class ChatBox {
       this.inputEl.blur(); // Return focus to gameplay
     };
 
-    if (this.formEl) {
-      this.formEl.addEventListener('submit', (e) => {
+    this.formEl?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitMessage();
+    });
+
+    this.inputEl?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
         e.preventDefault();
         submitMessage();
-      });
-    }
-
-    if (this.inputEl) {
-      this.inputEl.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          submitMessage();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          this.blur();
-        }
-      });
-    }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.blur();
+      }
+    });
   }
 
   public focus(): void {
@@ -55,7 +62,7 @@ export class ChatBox {
   }
 
   public isFocused(): boolean {
-    return document.activeElement === this.inputEl;
+    return Boolean(this.inputEl && document.activeElement === this.inputEl);
   }
 
   public addMessage(msg: ChatMessage): void {

@@ -20,7 +20,7 @@ export interface RoomConfig {
   name: string;
   maxPlayers: number; // 2 a 16
   isPrivate: boolean;
-  password?: string;
+  password?: string | undefined;
   timeLimit: number; // En minutos; 0 = Indefinido
   scoreLimit: number; // Goles; 0 = Indefinido
   teamsLocked: boolean;
@@ -85,10 +85,10 @@ export interface MatchStatePayload {
   countdown: number; // 3, 2, 1 o 0
   banner?: {
     text: string;
-    subtext?: string;
+    subtext?: string | undefined;
     color: string;
     duration: number;
-  };
+  } | undefined;
 }
 
 export interface MatchStateSyncMessage {
