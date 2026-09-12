@@ -856,7 +856,7 @@ button:disabled, input:disabled, select:disabled {
 
 .context-menu {
   position: fixed;
-  z-index: 1000 !important;
+  z-index: 20000 !important;
   pointer-events: auto !important;
   background: #1e293b;
   border: 1px solid var(--border-color);
@@ -864,6 +864,13 @@ button:disabled, input:disabled, select:disabled {
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   padding: 4px 0;
   min-width: 160px;
+}
+
+/* Override u-hidden when context menu is opened programmatically by GameApp.
+   GameApp removes these classes before showing, but as a safety net: */
+#playerContextMenu.ctx-open {
+  display: block !important;
+  pointer-events: auto !important;
 }
 
 .context-menu-header {

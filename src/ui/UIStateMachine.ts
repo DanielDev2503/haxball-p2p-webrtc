@@ -128,7 +128,7 @@ export class UIStateMachine {
           hide(this.elIngameMenu);
         }
         hide(this.elSettingsModal);
-        hide(this.elContextMenu);
+        // NOTE: Do NOT hide elContextMenu here — it is managed by GameApp
         break;
       }
     }

@@ -68,6 +68,7 @@ export class GameApp {
     teamsLocked: false
   };
   private selectedPlayerForAction: Player | null = null;
+  private isMenuManuallyOpen: boolean = false;
 
   // Loop & timing
   private physicsTicker: PhysicsTicker;
@@ -79,7 +80,7 @@ export class GameApp {
   private currentPing: number = 0;
 
   // UI elements
-  private btnLeaveRoom: HTMLElement | null;
+  // btnLeaveRoom removed from HUD header — only #btn-leave-room inside the menu exists
   private btnStartStop: HTMLButtonElement | null;
   private btnPauseResume: HTMLButtonElement | null;
   private btnLockTeams: HTMLButtonElement | null;
@@ -133,7 +134,7 @@ export class GameApp {
     this.signaling = new SignalingClient(signalingUrl);
 
     // UI Cache
-    this.btnLeaveRoom = document.getElementById('btnLeaveRoom');
+    // btnLeaveRoom removed — leave button only exists inside ingame-menu
     this.btnStartStop = document.getElementById('btn-start-stop') as HTMLButtonElement | null;
     this.btnPauseResume = document.getElementById('btn-pause-resume') as HTMLButtonElement | null;
     this.btnLockTeams = document.getElementById('btn-lock-teams') as HTMLButtonElement | null;
@@ -252,11 +253,15 @@ export class GameApp {
         const adjustedLeft = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
         const adjustedTop = Math.max(8, Math.min(top, window.innerHeight - menuHeight - 8));
 
+        // Remove all hiding classes so the menu is actually visible
+        this.contextMenu.classList.remove('u-hidden', 'ui-screen-hidden');
+        this.contextMenu.classList.add('ctx-open');
         this.contextMenu.style.position = 'fixed';
-        this.contextMenu.style.zIndex = '10000';
+        this.contextMenu.style.zIndex = '20000';
         this.contextMenu.style.left = `${adjustedLeft}px`;
         this.contextMenu.style.top = `${adjustedTop}px`;
         this.contextMenu.style.display = 'block';
+        this.contextMenu.style.pointerEvents = 'auto';
       }
     };
 
@@ -323,16 +328,26 @@ export class GameApp {
     const menuCloseBtn = document.getElementById('menu-close-btn');
 
     const toggleMenu = () => {
-      if (ingameMenu) {
-        const isHidden = ingameMenu.classList.contains('hidden') || ingameMenu.classList.contains('u-hidden') || ingameMenu.style.display === 'none';
-        if (isHidden) {
-          ingameMenu.classList.remove('hidden', 'u-hidden');
-          ingameMenu.style.display = 'flex';
-          this.updateAdminControlsUI();
-        } else {
-          ingameMenu.classList.add('hidden', 'u-hidden');
-          ingameMenu.style.display = 'none';
+      if (!ingameMenu) return;
+      const isHidden = ingameMenu.classList.contains('hidden') || ingameMenu.classList.contains('u-hidden') || ingameMenu.style.display === 'none';
+      if (isHidden) {
+        // Always allow opening
+        ingameMenu.classList.remove('hidden', 'u-hidden', 'ui-screen-hidden');
+        ingameMenu.style.display = 'flex';
+        ingameMenu.style.pointerEvents = 'auto';
+        this.isMenuManuallyOpen = true;
+        this.updateAdminControlsUI();
+        this.updateTeamLists();
+      } else {
+        // Prevent closing if match is STOPPED (menu is forced open for everyone)
+        const matchState = this.engine?.fsm.currentState || this.currentMatchState;
+        if (matchState === 'STOPPED') {
+          // Menu must stay open in STOPPED state — ignore close
+          return;
         }
+        ingameMenu.classList.add('hidden');
+        ingameMenu.style.display = 'none';
+        this.isMenuManuallyOpen = false;
       }
     };
 
@@ -405,12 +420,7 @@ export class GameApp {
       });
     }
 
-    // Leave Room Button
-    if (this.btnLeaveRoom) {
-      this.btnLeaveRoom.addEventListener('click', () => {
-        this.leaveCurrentRoom();
-      });
-    }
+    // Leave Room Button — only #btn-leave-room inside the menu exists (header button removed)
 
     // Match Iniciar / Detener
     const btnStartStop = document.getElementById('btn-start-stop');
@@ -470,7 +480,10 @@ export class GameApp {
   }
 
   private closeContextMenu(): void {
-    if (this.contextMenu) this.contextMenu.style.display = 'none';
+    if (this.contextMenu) {
+      this.contextMenu.style.display = 'none';
+      this.contextMenu.classList.remove('ctx-open');
+    }
   }
 
   private setupSignaling(): void {
@@ -594,7 +607,7 @@ export class GameApp {
             alert(`Error: ${msg.message || 'Ocurrió un error de conexión'}`);
           }
           this.uiStateMachine?.transitionTo('STATE_LOBBY');
-          if (this.btnLeaveRoom) this.btnLeaveRoom.style.display = 'none';
+          // Leave button is inside ingame-menu, no separate cleanup needed
           break;
         }
       }
@@ -625,7 +638,7 @@ export class GameApp {
     this.engine.startMatch();
 
     if (this.roomNameBadge) this.roomNameBadge.textContent = 'Modo Práctica';
-    if (this.btnLeaveRoom) this.btnLeaveRoom.style.display = 'inline-block';
+    // Leave button is inside ingame-menu only
     this.updateAdminPanelVisibility();
 
     this.uiStateMachine.transitionTo('STATE_IN_GAME');
@@ -649,7 +662,7 @@ export class GameApp {
     this.setupEngineCallbacks(this.engine);
     this.engine.addPlayer(this.localPlayer);
 
-    if (this.btnLeaveRoom) this.btnLeaveRoom.style.display = 'inline-block';
+    // Leave button is inside ingame-menu only
     this.updateAdminPanelVisibility();
     this.updateAdminControlsUI();
 
@@ -682,7 +695,7 @@ export class GameApp {
     this.currentRoomId = roomId;
     this.currentMatchState = 'STOPPED';
 
-    if (this.btnLeaveRoom) this.btnLeaveRoom.style.display = 'inline-block';
+    // Leave button is inside ingame-menu only
     this.updateAdminPanelVisibility();
 
     this.lobby.showConnecting(`Conectando a la sala ${roomId}...`);
@@ -736,9 +749,10 @@ export class GameApp {
       ingameMenu.classList.add('hidden', 'u-hidden');
       ingameMenu.style.display = 'none';
     }
+    this.isMenuManuallyOpen = false;
     this.closeContextMenu();
 
-    if (this.btnLeaveRoom) this.btnLeaveRoom.style.display = 'none';
+    // Leave button cleanup not needed — it's inside the menu that gets hidden
     if (this.roomNameBadge) this.roomNameBadge.textContent = 'Lobby';
     this.updateAdminPanelVisibility();
 
@@ -1280,17 +1294,22 @@ export class GameApp {
       ingameMenu.classList.add('hidden', 'u-hidden');
       ingameMenu.classList.remove('is-forced-open');
       ingameMenu.style.display = 'none';
+      this.isMenuManuallyOpen = false;
       return;
     }
 
     if (state === 'STOPPED') {
-      ingameMenu.classList.remove('hidden', 'u-hidden');
+      // Force open for ALL players — cannot be closed
+      ingameMenu.classList.remove('hidden', 'u-hidden', 'ui-screen-hidden');
       ingameMenu.classList.add('is-forced-open');
       ingameMenu.style.display = 'flex';
+      ingameMenu.style.pointerEvents = 'auto';
     } else {
+      // Remove forced-open, but respect manual open by user
       ingameMenu.classList.remove('is-forced-open');
-      if (state === 'COUNTDOWN' || state === 'PLAYING') {
-        ingameMenu.classList.add('hidden', 'u-hidden');
+      if (!this.isMenuManuallyOpen) {
+        // Only auto-hide if user hasn't manually opened the menu
+        ingameMenu.classList.add('hidden');
         ingameMenu.style.display = 'none';
       }
     }
