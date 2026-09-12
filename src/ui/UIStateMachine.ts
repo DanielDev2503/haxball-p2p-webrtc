@@ -1,12 +1,12 @@
 export type UIState = 'STATE_NICKNAME' | 'STATE_LOBBY' | 'STATE_IN_GAME';
 
 export interface UIStateMachineOptions {
-  onStateChange?: (newState: UIState, prevState: UIState) => void;
+  onStateChange?: ((newState: UIState, prevState: UIState) => void) | undefined;
 }
 
 export class UIStateMachine {
   private currentState: UIState;
-  private onStateChange?: (newState: UIState, prevState: UIState) => void;
+  private onStateChange?: ((newState: UIState, prevState: UIState) => void) | undefined;
 
   // DOM Elements
   private elNicknameModal: HTMLElement | null = null;

@@ -1,4 +1,3 @@
-import { MatchConfig } from '../../core/game/GameState';
 import { MatchState } from '../../core/game/GameFSM';
 
 export type ControlMessageType =
