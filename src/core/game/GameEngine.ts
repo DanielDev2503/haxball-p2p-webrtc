@@ -176,16 +176,19 @@ export class GameEngine {
   }
 
   public togglePause(): void {
-    this.fsm.togglePause();
-    if (this.onStateChange) {
-      this.onStateChange(this.fsm.currentState);
+    if (this.fsm.currentState === 'PLAYING') {
+      this.pauseMatch();
+    } else if (this.fsm.currentState === 'PAUSED') {
+      this.resumeMatch();
     }
   }
 
   public pauseMatch(): void {
-    this.fsm.pauseMatch();
-    if (this.onStateChange) {
-      this.onStateChange(this.fsm.currentState);
+    if (this.fsm.currentState === 'PLAYING') {
+      this.fsm.pauseMatch();
+      if (this.onStateChange) {
+        this.onStateChange(this.fsm.currentState);
+      }
     }
   }
 
@@ -362,6 +365,7 @@ export class GameEngine {
   }
 
   public getSnapshot(): GameSnapshot {
+    const isPaused = this.fsm.currentState === 'PAUSED';
     const discSnapshots: DiscSnapshot[] = [];
 
     // Ball
@@ -370,8 +374,8 @@ export class GameEngine {
       team: 0,
       x: this.ball.pos.x,
       y: this.ball.pos.y,
-      vx: this.ball.vel.x,
-      vy: this.ball.vel.y,
+      vx: isPaused ? 0 : this.ball.vel.x,
+      vy: isPaused ? 0 : this.ball.vel.y,
       radius: this.ball.radius,
       kicking: false,
       avatar: ''
@@ -386,8 +390,8 @@ export class GameEngine {
           team: player.team === 'red' ? 1 : 2,
           x: disc.pos.x,
           y: disc.pos.y,
-          vx: disc.vel.x,
-          vy: disc.vel.y,
+          vx: isPaused ? 0 : disc.vel.x,
+          vy: isPaused ? 0 : disc.vel.y,
           radius: disc.radius,
           kicking: disc.kicking,
           avatar: player.avatar

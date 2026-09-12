@@ -10,10 +10,15 @@ export class JitterBuffer {
   public buffer: BufferedSnapshot[] = [];
   public interpolationDelayMs: number;
   public maxBufferSize: number;
+  public currentMatchState: string = 'STOPPED';
 
   constructor(interpolationDelayMs: number = 70, maxBufferSize: number = 30) {
     this.interpolationDelayMs = interpolationDelayMs;
     this.maxBufferSize = maxBufferSize;
+  }
+
+  public setMatchState(state: string): void {
+    this.currentMatchState = state;
   }
 
   public push(snapshot: GameSnapshot, now: number = performance.now()): void {
@@ -35,6 +40,22 @@ export class JitterBuffer {
 
   public getInterpolatedSnapshot(now: number = performance.now()): GameSnapshot | null {
     if (this.buffer.length === 0) return null;
+
+    // Freeze total cuando el juego esté pausado: no extrapolar ni calcular deltaSec
+    const latestSnapshot = this.buffer[this.buffer.length - 1].snapshot;
+    if (this.currentMatchState === 'PAUSED' || latestSnapshot.matchState === 'PAUSED') {
+      const frozenDiscs: DiscSnapshot[] = latestSnapshot.discs.map(d => ({
+        ...d,
+        vx: 0,
+        vy: 0
+      }));
+      return {
+        ...latestSnapshot,
+        matchState: 'PAUSED',
+        discs: frozenDiscs
+      };
+    }
+
     if (this.buffer.length === 1) return this.buffer[0].snapshot;
 
     const renderTime = now - this.interpolationDelayMs;

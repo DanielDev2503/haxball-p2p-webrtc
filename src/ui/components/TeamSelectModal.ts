@@ -77,29 +77,79 @@ export class TeamSelectModal {
     const renderPlayer = (p: Player, container: HTMLElement) => {
       const el = document.createElement('div');
       el.className = 'player-item';
+      el.draggable = false;
+
+      let startX = 0;
+      let startY = 0;
+      let hasMovedBeyondThreshold = false;
 
       if (isLocalAdmin) {
-        el.draggable = true;
         el.addEventListener('dragstart', (e: DragEvent) => {
+          if (!hasMovedBeyondThreshold) {
+            e.preventDefault();
+            return;
+          }
           if (e.dataTransfer) {
             e.dataTransfer.setData('text/plain', p.id);
             e.dataTransfer.effectAllowed = 'move';
           }
         });
-      } else {
-        el.draggable = false;
+
+        el.addEventListener('dragend', () => {
+          el.draggable = false;
+          hasMovedBeyondThreshold = false;
+        });
       }
+
+      el.addEventListener('mousedown', (e: MouseEvent) => {
+        startX = e.clientX;
+        startY = e.clientY;
+        hasMovedBeyondThreshold = false;
+      });
+
+      el.addEventListener('mousemove', (e: MouseEvent) => {
+        if (e.buttons === 1 && isLocalAdmin) {
+          const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
+          if (dist >= 5) {
+            hasMovedBeyondThreshold = true;
+            el.draggable = true;
+          }
+        }
+      });
 
       const hostIcon = p.isHost ? '👑 ' : '';
       const adminIcon = (!p.isHost && p.isAdmin) ? '⭐ ' : '';
+      const adminRoleText = p.isHost ? 'Host' : (p.isAdmin ? 'Admin' : '');
+
       el.innerHTML = `
-        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-          ${hostIcon}${adminIcon}<strong>${p.name}</strong> [${p.avatar}]
-        </span>
-        <span style="font-size: 0.65rem; color: #64748b;">${p.isHost ? 'Host' : (p.isAdmin ? 'Admin' : '')}</span>
+        <div style="display: flex; align-items: center; gap: 4px; overflow: hidden; flex: 1;">
+          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            ${hostIcon}${adminIcon}<strong>${p.name}</strong> [${p.avatar}]
+          </span>
+          ${adminRoleText ? `<span style="font-size: 0.65rem; color: #64748b;">${adminRoleText}</span>` : ''}
+        </div>
+        ${isLocalAdmin ? `<button class="btn-player-options" title="Acciones de Jugador" style="background: transparent; border: none; color: #94a3b8; font-size: 1rem; cursor: pointer; padding: 0 4px; border-radius: 4px; line-height: 1;">⋮</button>` : ''}
       `;
 
-      el.addEventListener('click', (e) => {
+      // Botón de 3 puntos exclusivo para opciones de moderación
+      const optionsBtn = el.querySelector('.btn-player-options');
+      if (optionsBtn) {
+        optionsBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          if (this.onPlayerClick) {
+            this.onPlayerClick(p, e as MouseEvent);
+          }
+        });
+      }
+
+      // Clic en el elemento entero (siempre que no haya sido arrastre)
+      el.addEventListener('click', (e: MouseEvent) => {
+        if (hasMovedBeyondThreshold) {
+          hasMovedBeyondThreshold = false;
+          return;
+        }
+        e.stopPropagation();
         if (this.onPlayerClick) {
           this.onPlayerClick(p, e);
         }

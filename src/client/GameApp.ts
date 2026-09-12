@@ -17,11 +17,26 @@ import { SnapshotPacket } from '../net/protocol/SnapshotPacket';
 import { JitterBuffer } from '../net/transport/JitterBuffer';
 import { PhysicsTicker } from '../core/physics/PhysicsTicker';
 import { RoomConfig } from '../server/signalingServer';
+import { MatchConfig } from '../core/game/GameState';
+import { MatchStatePayload } from '../net/protocol/ControlMessages';
+import { KeyBinds } from './InputManager';
+
+export function canChangeTeam(
+  senderPeerId: string,
+  targetPlayerId: string,
+  teamsLocked: boolean,
+  isAdmin: boolean
+): boolean {
+  if (isAdmin) return true; // El admin puede mover a cualquiera
+  if (senderPeerId === targetPlayerId && !teamsLocked) return true; // El usuario puede moverse a sí mismo si no está bloqueado
+  return false;
+}
 
 export type AppMode = 'practice' | 'host' | 'client';
 
 export class GameApp {
   public mode: AppMode = 'practice';
+  public currentMatchState: MatchState = 'STOPPED';
   public localPlayer: Player;
   public engine: GameEngine | null = null;
   public canvasRenderer: CanvasRenderer;
@@ -74,7 +89,7 @@ export class GameApp {
   private roomNameBadge: HTMLElement | null;
 
   constructor() {
-    const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
+    const canvas = (document.getElementById('gameCanvas') || document.getElementById('game-canvas')) as HTMLCanvasElement;
     this.gatekeeper = new NicknameGatekeeper();
     const storedNick = this.gatekeeper.checkOrPrompt();
     const initialNick = storedNick || 'Player';
@@ -148,6 +163,8 @@ export class GameApp {
     };
 
     this.setupUIEvents();
+    this.setupKeybindsModal();
+    this.enforceMenuState(this.engine ? this.engine.fsm.currentState : 'STOPPED');
     this.startRenderLoop();
     this.physicsTicker.start();
   }
@@ -225,12 +242,20 @@ export class GameApp {
       }
     });
 
-    // In-game menu overlay toggle (Button & Escape key)
+    // In-game menu overlay toggle (Button & Escape/Menu key)
     const ingameMenu = document.getElementById('ingame-menu');
     const menuToggleBtn = document.getElementById('menu-toggle-btn');
     const menuCloseBtn = document.getElementById('menu-close-btn');
 
+    const isMatchStopped = () => {
+      return (this.engine ? this.engine.fsm.currentState : this.currentMatchState) === 'STOPPED';
+    };
+
     const toggleMenu = () => {
+      if (isMatchStopped()) {
+        // En STOPPED el menú es forzado e inescapable
+        return;
+      }
       if (ingameMenu) {
         ingameMenu.classList.toggle('hidden');
         this.updateAdminControlsUI();
@@ -241,8 +266,36 @@ export class GameApp {
     if (menuCloseBtn) menuCloseBtn.addEventListener('click', toggleMenu);
 
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
+      // Tecla Enter para enfocar el chat sin movimiento residual
+      if (e.code === 'Enter') {
+        if (!this.chat.isFocused()) {
+          e.preventDefault();
+          this.chat.focus();
+          this.inputManager.resetMovement();
+          return;
+        }
+      }
+
+      // Evitar atajos de teclado mientras se escribe en chat o inputs de formulario
+      if (
+        document.activeElement instanceof HTMLInputElement ||
+        document.activeElement instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      // Menú / Escape con tecla configurable
+      if (this.inputManager.isActionKey('menu', e.code) || e.key === 'Escape') {
         toggleMenu();
+        return;
+      }
+
+      // Pausa con tecla configurable (exclusivo Admin)
+      if (this.inputManager.isActionKey('pause', e.code)) {
+        if (this.localPlayer.isAdmin) {
+          this.requestTogglePause();
+          return;
+        }
       }
     });
 
@@ -275,7 +328,7 @@ export class GameApp {
             this.engine.stopMatch();
           }
           this.updateAdminControlsUI();
-          this.broadcastGameState();
+          this.broadcastMatchStateSync();
         }
       });
     }
@@ -285,11 +338,7 @@ export class GameApp {
     if (btnPauseResume) {
       btnPauseResume.addEventListener('click', () => {
         if (!this.localPlayer.isAdmin) return;
-        if (this.engine) {
-          this.engine.togglePause();
-          this.updateAdminControlsUI();
-          this.broadcastGameState();
-        }
+        this.requestTogglePause();
       });
     }
 
@@ -347,6 +396,7 @@ export class GameApp {
 
         case 'room_joined': {
           this.currentRoomId = msg.roomId || '';
+          this.localPlayer.id = this.signaling.peerId;
           if (msg.config) {
             this.roomConfig = { ...this.roomConfig, ...msg.config };
           }
@@ -354,6 +404,7 @@ export class GameApp {
             this.roomNameBadge.textContent = `${this.roomConfig.name} [${this.currentRoomId}]`;
           }
           this.chat.addMessage({ author: 'Lobby', text: `Conectado a la sala: ${this.roomConfig.name}`, team: 'sys' });
+          this.enforceMenuState(this.currentMatchState);
           this.updateAdminPanelVisibility();
           break;
         }
@@ -508,12 +559,15 @@ export class GameApp {
 
   public async startAsClient(nickname: string, roomId: string, password?: string): Promise<void> {
     this.mode = 'client';
+    this.localPlayer.id = this.signaling.peerId;
     this.localPlayer.name = nickname;
     this.localPlayer.avatar = nickname.substring(0, 2).toUpperCase();
     this.localPlayer.team = 'spec';
     this.localPlayer.isHost = false;
     this.localPlayer.isAdmin = false;
     this.currentRoomId = roomId;
+    this.currentMatchState = 'STOPPED';
+    this.enforceMenuState('STOPPED');
 
     if (this.btnLeaveRoom) this.btnLeaveRoom.style.display = 'inline-block';
     this.updateAdminPanelVisibility();
@@ -568,6 +622,12 @@ export class GameApp {
       this.audioManager.playGoalWhistle();
       const color = scoringTeam === 'red' ? 'Rojo' : 'Azul';
       this.chat.addMessage({ author: 'GOL', text: `¡Gol del equipo ${color}! (${redScore} - ${blueScore})`, team: 'sys' });
+      this.broadcastMatchStateSync({
+        text: '¡GOL!',
+        subtext: `Equipo ${color} anota (${redScore} - ${blueScore})`,
+        color: scoringTeam === 'red' ? '#ef4444' : '#38bdf8',
+        duration: 3500
+      });
     };
 
     engine.onKick = () => {
@@ -578,14 +638,38 @@ export class GameApp {
       this.audioManager.playPostHit();
     };
 
+    engine.onMatchEnd = (winner) => {
+      this.audioManager.playGoalWhistle();
+      const winnerText = winner ? `¡Ganador: Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}!` : '¡Empate!';
+      this.chat.addMessage({ author: 'FIN', text: `Fin del partido. ${winnerText}`, team: 'sys' });
+      this.broadcastMatchStateSync({
+        text: '¡VICTORIA!',
+        subtext: winnerText,
+        color: winner === 'red' ? '#ef4444' : (winner === 'blue' ? '#38bdf8' : '#f59e0b'),
+        duration: 5000
+      });
+      this.updateAdminControlsUI();
+    };
+
     engine.onStateChange = (state) => {
+      this.enforceMenuState(state);
       if (state === MatchState.COUNTDOWN) {
         this.audioManager.playCountdown(false);
       } else if (state === MatchState.PLAYING) {
         this.audioManager.playCountdown(true);
+        this.canvasRenderer.clearBanner();
       }
       this.updateAdminControlsUI();
-      this.broadcastGameState();
+      let banner: MatchStatePayload['banner'];
+      if (state === 'PAUSED') {
+        banner = {
+          text: 'PAUSA',
+          subtext: 'Partido pausado por el Administrador',
+          color: '#f59e0b',
+          duration: 0
+        };
+      }
+      this.broadcastMatchStateSync(banner);
     };
   }
 
@@ -602,10 +686,17 @@ export class GameApp {
         type: 'room_config_sync',
         config: this.roomConfig
       }));
+      const currentState = this.engine?.fsm.currentState || 'STOPPED';
+      const payload: MatchStatePayload = {
+        state: currentState,
+        timeRemaining: this.engine?.matchTimerSeconds ?? 0,
+        redScore: this.engine?.redScore ?? 0,
+        blueScore: this.engine?.blueScore ?? 0,
+        countdown: this.engine?.fsm.countdownSeconds ?? 0
+      };
       peer.sendReliable(JSON.stringify({
-        type: 'set_game_state',
-        state: this.engine?.fsm.currentState || 'STOPPED',
-        countdownSeconds: this.engine?.fsm.countdownSeconds
+        type: 'MATCH_STATE_SYNC',
+        payload
       }));
       this.syncPlayersWithClients();
     };
@@ -655,8 +746,7 @@ export class GameApp {
         } else if (msg.type === 'change_team') {
           const requester = this.engine?.players.get(peerId);
           const isAdmin = requester?.isAdmin || false;
-          const isSelf = peerId === msg.playerId;
-          if (!isAdmin && (!isSelf || this.roomConfig.teamsLocked)) {
+          if (!canChangeTeam(peerId, msg.playerId, Boolean(this.roomConfig.teamsLocked), isAdmin)) {
             // Rechazo silencioso
             return;
           }
@@ -664,6 +754,13 @@ export class GameApp {
             this.engine.setPlayerTeam(msg.playerId, msg.team);
             this.updateTeamLists();
             this.syncPlayersWithClients();
+          }
+        } else if (msg.type === 'toggle_pause') {
+          const requester = this.engine?.players.get(peerId);
+          if (requester?.isAdmin && this.engine) {
+            this.engine.togglePause();
+            this.updateAdminControlsUI();
+            this.broadcastMatchStateSync();
           }
         }
       } catch (e) {}
@@ -702,12 +799,28 @@ export class GameApp {
         if (msg.type === 'chat') {
           this.chat.addMessage({ author: msg.author, text: msg.text, team: msg.team });
         } else if (msg.type === 'team_sync') {
-          const self = msg.players.find((p: any) => p.id === this.localPlayer.id);
+          const self = msg.players.find((p: any) => p.id === this.localPlayer.id || p.id === this.signaling.peerId);
           if (self) {
+            this.localPlayer.id = self.id;
             this.localPlayer.isAdmin = Boolean(self.isAdmin);
             this.localPlayer.team = self.team;
           }
           this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin);
+          this.updateAdminControlsUI();
+        } else if (msg.type === 'MATCH_STATE_SYNC') {
+          const p: MatchStatePayload = msg.payload;
+          this.currentMatchState = p.state;
+          this.jitterBuffer.setMatchState(p.state);
+
+          this.hud.update(p.redScore, p.blueScore, p.timeRemaining);
+
+          if (p.banner) {
+            this.canvasRenderer.setBanner(p.banner.text, p.banner.subtext, p.banner.color, p.banner.duration);
+          } else if (p.state === 'PLAYING') {
+            this.canvasRenderer.clearBanner();
+          }
+
+          this.enforceMenuState(p.state);
           this.updateAdminControlsUI();
         } else if (msg.type === 'set_game_state') {
           this.updateAdminControlsUI();
@@ -760,10 +873,9 @@ export class GameApp {
   }
 
   private handleTeamChange(playerId: string, team: TeamType): void {
-    const isSelf = playerId === this.localPlayer.id;
     const isAdmin = this.localPlayer.isAdmin;
 
-    if (!isAdmin && (!isSelf || this.roomConfig.teamsLocked)) {
+    if (!canChangeTeam(this.localPlayer.id, playerId, Boolean(this.roomConfig.teamsLocked), isAdmin)) {
       // Rechazo silencioso
       return;
     }
@@ -872,7 +984,7 @@ export class GameApp {
 
   private updateAdminControlsUI(): void {
     const isAdmin = this.localPlayer.isAdmin;
-    const currentState = this.engine?.fsm.currentState || 'STOPPED';
+    const currentState = this.engine?.fsm.currentState || this.currentMatchState || 'STOPPED';
 
     if (this.btnStartStop) {
       this.btnStartStop.disabled = !isAdmin;
@@ -913,14 +1025,169 @@ export class GameApp {
     }
   }
 
-  private broadcastGameState(): void {
-    if (this.mode === 'host' && this.engine) {
+  public broadcastMatchStateSync(banner?: MatchStatePayload['banner']): void {
+    if (this.mode !== 'host' && this.mode !== 'practice') return;
+    const currentState = this.engine?.fsm.currentState || 'STOPPED';
+    const timeRemaining = this.engine?.matchTimerSeconds ?? 0;
+    const redScore = this.engine?.redScore ?? 0;
+    const blueScore = this.engine?.blueScore ?? 0;
+    const countdown = this.engine?.fsm.countdownSeconds ?? 0;
+
+    const payload: MatchStatePayload = {
+      state: currentState,
+      timeRemaining,
+      redScore,
+      blueScore,
+      countdown,
+      banner
+    };
+
+    if (banner) {
+      this.canvasRenderer.setBanner(banner.text, banner.subtext, banner.color, banner.duration);
+    }
+
+    if (this.mode === 'host') {
       this.broadcastReliable(JSON.stringify({
-        type: 'set_game_state',
-        state: this.engine.fsm.currentState,
-        countdownSeconds: this.engine.fsm.countdownSeconds
+        type: 'MATCH_STATE_SYNC',
+        payload
       }));
     }
+  }
+
+  public requestTogglePause(): void {
+    if (!this.localPlayer.isAdmin) return;
+    if (this.mode === 'host' || this.mode === 'practice') {
+      if (this.engine) {
+        this.engine.togglePause();
+        this.updateAdminControlsUI();
+        this.broadcastMatchStateSync();
+      }
+    } else if (this.mode === 'client' && this.hostPeer) {
+      this.hostPeer.sendReliable(JSON.stringify({
+        type: 'toggle_pause'
+      }));
+    }
+  }
+
+  public enforceMenuState(state: MatchState): void {
+    const ingameMenu = document.getElementById('ingame-menu');
+    if (!ingameMenu) return;
+
+    if (state === 'STOPPED') {
+      ingameMenu.classList.add('is-forced-open');
+      ingameMenu.classList.remove('hidden');
+    } else {
+      ingameMenu.classList.remove('is-forced-open');
+    }
+  }
+
+  private setupKeybindsModal(): void {
+    const modal = document.getElementById('settingsModal');
+    const toggleBtn = document.getElementById('btn-settings-toggle');
+    const closeBtn = document.getElementById('btnCloseSettings');
+    const saveBtn = document.getElementById('btnSaveKeybinds');
+    const resetBtn = document.getElementById('btnResetKeybinds');
+    const listContainer = document.getElementById('keybindsList');
+
+    if (!modal || !listContainer) return;
+
+    const actionLabels: Record<keyof KeyBinds, string> = {
+      up: 'Arriba',
+      down: 'Abajo',
+      left: 'Izquierda',
+      right: 'Derecha',
+      kick: 'Chutar',
+      menu: 'Menú / Escapar',
+      pause: 'Pausar (Admin)',
+      chat: 'Enfocar Chat'
+    };
+
+    let recordingAction: keyof KeyBinds | null = null;
+    let recordingBtn: HTMLButtonElement | null = null;
+
+    const renderKeybinds = () => {
+      listContainer.innerHTML = '';
+      const binds = this.inputManager.keyBinds;
+
+      for (const [actionKey, label] of Object.entries(actionLabels) as [keyof KeyBinds, string][]) {
+        const row = document.createElement('div');
+        row.className = 'keybind-row';
+
+        const labelEl = document.createElement('span');
+        labelEl.className = 'keybind-label';
+        labelEl.textContent = label;
+
+        const btn = document.createElement('button');
+        btn.className = 'keybind-btn';
+        btn.textContent = binds[actionKey].join(' / ') || 'Ninguna';
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (recordingBtn) {
+            recordingBtn.classList.remove('recording');
+            recordingBtn.textContent = binds[recordingAction!].join(' / ') || 'Ninguna';
+          }
+          recordingAction = actionKey;
+          recordingBtn = btn;
+          btn.classList.add('recording');
+          btn.textContent = 'Presiona tecla...';
+        });
+
+        row.appendChild(labelEl);
+        row.appendChild(btn);
+        listContainer.appendChild(row);
+      }
+    };
+
+    window.addEventListener('keydown', (e) => {
+      if (!recordingAction || !recordingBtn) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const newBinds = { ...this.inputManager.keyBinds };
+      newBinds[recordingAction] = [e.code];
+      this.inputManager.saveKeyBinds(newBinds);
+
+      recordingBtn.classList.remove('recording');
+      recordingAction = null;
+      recordingBtn = null;
+      renderKeybinds();
+    }, true);
+
+    toggleBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      renderKeybinds();
+      modal.style.display = 'flex';
+    });
+
+    closeBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      modal.style.display = 'none';
+      if (recordingBtn) {
+        recordingBtn.classList.remove('recording');
+        recordingAction = null;
+        recordingBtn = null;
+      }
+    });
+
+    saveBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      modal.style.display = 'none';
+      if (recordingBtn) {
+        recordingBtn.classList.remove('recording');
+        recordingAction = null;
+        recordingBtn = null;
+      }
+    });
+
+    resetBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.inputManager.resetToDefaultKeyBinds();
+      renderKeybinds();
+    });
+  }
+
+  private broadcastGameState(): void {
+    this.broadcastMatchStateSync();
   }
 
   private broadcastReliable(text: string, excludePeerId?: string): void {

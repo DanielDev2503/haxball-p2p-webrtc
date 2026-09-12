@@ -16,17 +16,42 @@ export class ChatBox {
     this.formEl = (document.getElementById('chatForm') || document.getElementById('chat-form')) as HTMLFormElement;
 
 
+    const submitMessage = () => {
+      const text = this.inputEl.value.trim();
+      if (text && this.onSendMessage) {
+        this.onSendMessage(text);
+      }
+      this.inputEl.value = '';
+      this.inputEl.blur(); // Return focus to gameplay
+    };
+
     if (this.formEl) {
       this.formEl.addEventListener('submit', (e) => {
         e.preventDefault();
-        const text = this.inputEl.value.trim();
-        if (text && this.onSendMessage) {
-          this.onSendMessage(text);
-          this.inputEl.value = '';
-          this.inputEl.blur(); // Return focus to gameplay
+        submitMessage();
+      });
+    }
+
+    if (this.inputEl) {
+      this.inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submitMessage();
         }
       });
     }
+  }
+
+  public focus(): void {
+    this.inputEl?.focus();
+  }
+
+  public blur(): void {
+    this.inputEl?.blur();
+  }
+
+  public isFocused(): boolean {
+    return document.activeElement === this.inputEl;
   }
 
   public addMessage(msg: ChatMessage): void {

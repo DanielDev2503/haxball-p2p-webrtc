@@ -10,6 +10,8 @@ export type ControlMessageType =
   | 'change_team'
   | 'sync_players'
   | 'set_game_state'
+  | 'MATCH_STATE_SYNC'
+  | 'toggle_pause'
   | 'peer_handshake'
   | 'team_sync'
   | 'kicked'
@@ -74,5 +76,28 @@ export interface PeerHandshakeMessage {
 export interface TeamSyncMessage {
   type: 'team_sync';
   players: any[];
+}
+
+export interface MatchStatePayload {
+  state: 'STOPPED' | 'PAUSED' | 'COUNTDOWN' | 'PLAYING';
+  timeRemaining: number;
+  redScore: number;
+  blueScore: number;
+  countdown: number; // 3, 2, 1 o 0
+  banner?: {
+    text: string;
+    subtext?: string;
+    color: string;
+    duration: number;
+  };
+}
+
+export interface MatchStateSyncMessage {
+  type: 'MATCH_STATE_SYNC';
+  payload: MatchStatePayload;
+}
+
+export interface TogglePauseMessage {
+  type: 'toggle_pause';
 }
 

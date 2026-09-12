@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/src/ui/styles/haxball.css">
 </head>
 <body>
-  <div id="app">
+  <div id="app-root" style="display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: #1a1a1a;">
     <!-- Top HUD Navigation -->
     <header class="hud-container">
       <div class="brand">
@@ -44,15 +44,18 @@
       </div>
     </header>
 
-    <!-- Canvas Gameplay Viewport -->
-    <main class="viewport-container">
-      <canvas id="gameCanvas"></canvas>
+    <!-- Área Superior: Canvas y HUD -->
+    <main id="game-view" style="flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; position: relative;">
+      <canvas id="gameCanvas" class="game-canvas"></canvas>
 
       <!-- In-Game Collapsible Overlay Menu (Toggled with Escape or Menu button) -->
       <div id="ingame-menu" class="ingame-menu-overlay hidden">
         <div class="menu-modal-card">
           <div class="menu-header">
-            <h3>⚙️ Controles de Partido & Equipos</h3>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <h3>⚙️ Controles de Partido & Equipos</h3>
+              <button id="btn-settings-toggle" class="icon-btn" title="Configurar Teclado">⚙ Teclas</button>
+            </div>
             <button id="menu-close-btn" class="icon-btn-close">✕</button>
           </div>
 
@@ -106,14 +109,34 @@
         </div>
       </div>
 
-      <!-- Realtime In-Game Chat (Fixed at bottom left overlay) -->
+      <!-- Keybinds Configuration Modal -->
+      <div id="settingsModal" class="modal-overlay" style="display: none; z-index: 200;">
+        <div class="modal-content" style="max-width: 480px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 class="modal-title" style="margin: 0; font-size: 1.25rem;">⚙️ Mapeo de Teclas</h2>
+            <button id="btnCloseSettings" class="icon-btn-close">✕</button>
+          </div>
+          <p style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Haz clic en el botón de una acción y presiona la tecla que desees asignar.</p>
+          
+          <div id="keybindsList" class="keybinds-grid"></div>
+
+          <div style="display: flex; justify-content: space-between; gap: 8px; margin-top: 10px;">
+            <button id="btnResetKeybinds" class="btn btn-secondary" style="flex: 1;">Restablecer Predeterminado</button>
+            <button id="btnSaveKeybinds" class="btn btn-primary" style="flex: 1;">Listo</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Área Inferior: Chat Centrado con espacio reservado propio -->
+    <footer id="chat-section" style="display: flex; justify-content: center; align-items: flex-end; padding: 6px 0; background: #111;">
       <div id="chat-container">
         <div id="chat-messages" class="chat-messages"></div>
         <form id="chatForm" class="chat-input-form">
-          <input id="chat-input" type="text" class="chat-input" placeholder="Presiona Enter para chatear..." autocomplete="off" />
+          <input id="chat-input" type="text" class="chat-input" placeholder="Presiona Enter para escribir..." maxlength="120" autocomplete="off" />
         </form>
       </div>
-    </main>
+    </footer>
   </div>
 
   <!-- Context Menu for Player Actions (Admin Moderation) -->
