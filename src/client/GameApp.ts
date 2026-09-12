@@ -73,6 +73,7 @@ export class GameApp {
   // Loop & timing
   private physicsTicker: PhysicsTicker;
   private isRunning: boolean = true;
+  private renderLoopId: number | null = null;
   private frameCount: number = 0;
   private lastFpsUpdate: number = performance.now();
   private currentFps: number = 60;
@@ -122,10 +123,11 @@ export class GameApp {
     this.physicsTicker.onTick = () => this.physicsTick();
 
     // Detección dinámica de URL para el servidor de señalización WebSockets
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const signalingUrl = import.meta.env.VITE_SIGNALING_URL || `${protocol}//${window.location.host}`;
+    const defaultWs = typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin.replace(/^http/, 'ws')
+      : 'ws://localhost:3000';
+    const signalingUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SIGNALING_URL) || defaultWs;
     this.signaling = new SignalingClient(signalingUrl);
-    this.setupSignaling();
 
     // UI Cache
     this.btnLeaveRoom = document.getElementById('btnLeaveRoom');
@@ -179,8 +181,8 @@ export class GameApp {
 
     this.setupUIEvents();
     this.setupKeybindsModal();
-    this.startRenderLoop();
     this.handleUIStateChange(initialUIState, initialUIState);
+    this.setupSignaling();
   }
 
   private handleUIStateChange(newState: UIState, prevState: UIState): void {
@@ -194,9 +196,11 @@ export class GameApp {
         ingameMenu.style.display = 'none';
       }
       this.canvasRenderer.resize();
+      this.startRenderLoop();
     } else {
       this.inputManager.setEnabled(false);
       this.physicsTicker.stop();
+      this.stopRenderLoop();
       this.canvasRenderer.clear();
       if (newState === 'STATE_LOBBY') {
         this.lobby.updateUserBar(this.localPlayer.name);
@@ -438,11 +442,11 @@ export class GameApp {
 
   private setupSignaling(): void {
     this.signaling.onOpen = () => {
-      this.lobby.setSignalingStatus('connected');
+      this.lobby?.setSignalingStatus('connected');
     };
 
     this.signaling.onClose = () => {
-      this.lobby.setSignalingStatus('disconnected');
+      this.lobby?.setSignalingStatus('disconnected');
     };
 
     this.signaling.onMessage = (msg: SignalingMessage) => {
@@ -458,8 +462,8 @@ export class GameApp {
           this.chat.addMessage({ author: 'Lobby', text: `Sala "${this.roomConfig.name}" creada. ID: ${this.currentRoomId}`, team: 'sys' });
           this.applyRoomConfigToEngine();
           this.updateAdminPanelVisibility();
-          this.lobby.hideConnecting();
-          this.uiStateMachine.transitionTo('STATE_IN_GAME');
+          this.lobby?.hideConnecting();
+          this.uiStateMachine?.transitionTo('STATE_IN_GAME');
           break;
         }
 
@@ -474,14 +478,14 @@ export class GameApp {
           }
           this.chat.addMessage({ author: 'Lobby', text: `Conectado a la sala: ${this.roomConfig.name}`, team: 'sys' });
           this.updateAdminPanelVisibility();
-          this.lobby.hideConnecting();
-          this.uiStateMachine.transitionTo('STATE_IN_GAME');
+          this.lobby?.hideConnecting();
+          this.uiStateMachine?.transitionTo('STATE_IN_GAME');
           break;
         }
 
         case 'room_list': {
           if (msg.rooms) {
-            this.lobby.setRoomList(msg.rooms);
+            this.lobby?.setRoomList(msg.rooms);
           }
           break;
         }
@@ -545,7 +549,7 @@ export class GameApp {
         }
 
         case 'error': {
-          this.lobby.hideConnecting();
+          this.lobby?.hideConnecting();
           console.warn('[Signaling Error]', msg);
           if (msg.code === 'INVALID_PASSWORD') {
             alert('❌ Contraseña incorrecta para esta sala privada.');
@@ -556,19 +560,19 @@ export class GameApp {
           } else {
             alert(`Error: ${msg.message || 'Ocurrió un error de conexión'}`);
           }
-          this.uiStateMachine.transitionTo('STATE_LOBBY');
+          this.uiStateMachine?.transitionTo('STATE_LOBBY');
           if (this.btnLeaveRoom) this.btnLeaveRoom.style.display = 'none';
           break;
         }
       }
     };
 
-    this.lobby.setSignalingStatus('connecting');
+    this.lobby?.setSignalingStatus('connecting');
     this.signaling.connect().then(() => {
-      this.lobby.setSignalingStatus('connected');
+      this.lobby?.setSignalingStatus('connected');
       this.signaling.requestRoomList();
     }).catch(() => {
-      this.lobby.setSignalingStatus('disconnected', 'Modo offline');
+      this.lobby?.setSignalingStatus('disconnected', 'Modo offline');
       console.log('Servidor de señalización no disponible, listo para modo práctica.');
     });
   }
@@ -691,6 +695,7 @@ export class GameApp {
     if (this.roomNameBadge) this.roomNameBadge.textContent = 'Lobby';
     this.updateAdminPanelVisibility();
 
+    this.stopRenderLoop();
     this.canvasRenderer.clear();
     this.uiStateMachine.transitionTo('STATE_LOBBY');
     this.signaling.requestRoomList();
@@ -799,13 +804,22 @@ export class GameApp {
       }
     };
 
+    peer.onDisconnected = () => {
+      console.log(`[Host] Conexión P2P perdida con ${peerId}`);
+      this.handlePeerLeft(peerId);
+    };
+
     peer.onUnreliableMessage = (data: ArrayBuffer) => {
-      const input = InputPacket.decode(data);
-      if (input && this.engine) {
-        const p = this.engine.players.get(peerId);
-        if (p) {
-          p.inputMask = input.inputMask;
+      try {
+        const input = InputPacket.decode(data);
+        if (input && this.engine) {
+          const p = this.engine.players.get(peerId);
+          if (p) {
+            p.inputMask = input.inputMask;
+          }
         }
+      } catch (err) {
+        console.warn('[Host] Error al decodificar paquete de input:', err);
       }
     };
 
@@ -866,10 +880,20 @@ export class GameApp {
       }));
     };
 
+    peer.onDisconnected = () => {
+      console.log('[Client] Conexión P2P perdida con el Host');
+      this.chat.addMessage({ author: 'Sistema', text: 'Conexión P2P con el Host perdida.', team: 'sys' });
+      this.leaveCurrentRoom();
+    };
+
     peer.onUnreliableMessage = (data: ArrayBuffer) => {
-      const snap = SnapshotPacket.decode(data);
-      if (snap) {
-        this.jitterBuffer.push(snap);
+      try {
+        const snap = SnapshotPacket.decode(data);
+        if (snap) {
+          this.jitterBuffer.push(snap);
+        }
+      } catch (err) {
+        console.warn('[Client] Error al decodificar snapshot de red:', err);
       }
     };
 
@@ -1334,10 +1358,20 @@ export class GameApp {
    * Si la pestaña está oculta (document.hidden), omite el render pero NO afecta el tick de física.
    */
   private startRenderLoop(): void {
-    const loop = (now: number) => {
-      if (!this.isRunning) return;
+    if (this.renderLoopId !== null) return;
 
-      if (!document.hidden && this.uiStateMachine.getState() === 'STATE_IN_GAME') {
+    const loop = (now: number) => {
+      if (!this.isRunning) {
+        this.renderLoopId = null;
+        return;
+      }
+
+      if (this.uiStateMachine?.getState() !== 'STATE_IN_GAME') {
+        this.renderLoopId = null;
+        return;
+      }
+
+      if (!document.hidden) {
         let activeSnapshot: GameSnapshot | null = null;
         let localDiscId: number | null = null;
 
@@ -1369,9 +1403,16 @@ export class GameApp {
         }
       }
 
-      requestAnimationFrame(loop);
+      this.renderLoopId = requestAnimationFrame(loop);
     };
 
-    requestAnimationFrame(loop);
+    this.renderLoopId = requestAnimationFrame(loop);
+  }
+
+  private stopRenderLoop(): void {
+    if (this.renderLoopId !== null) {
+      cancelAnimationFrame(this.renderLoopId);
+      this.renderLoopId = null;
+    }
   }
 }

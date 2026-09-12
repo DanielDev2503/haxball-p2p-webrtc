@@ -135,6 +135,16 @@ export class InputManager {
     window.addEventListener('blur', () => {
       this.resetMovement();
     });
+
+    // Reset inputs immediately if any text field gains focus
+    document.addEventListener('focusin', (e) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        this.resetMovement();
+      }
+    });
   }
 
   public resetMovement(): void {

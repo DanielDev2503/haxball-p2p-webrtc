@@ -37,6 +37,10 @@ export class ChatBox {
         if (e.key === 'Enter') {
           e.preventDefault();
           submitMessage();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.blur();
         }
       });
     }

@@ -29,9 +29,10 @@ export class SignalingClient {
     if (serverUrl) {
       this.serverUrl = serverUrl;
     } else {
-      const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = typeof window !== 'undefined' && window.location.host ? window.location.host : 'localhost:3000';
-      this.serverUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SIGNALING_URL) || `${protocol}//${host}`;
+      const defaultWsUrl = typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin.replace(/^http/, 'ws')
+        : 'ws://localhost:3000';
+      this.serverUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SIGNALING_URL) || defaultWsUrl;
     }
     this.peerId = 'peer_' + Math.random().toString(36).substring(2, 9);
   }
