@@ -365,7 +365,8 @@ export class GameEngine {
   }
 
   public getSnapshot(): GameSnapshot {
-    const isPaused = this.fsm.currentState === 'PAUSED';
+    // Freeze velocity in any non-PLAYING state to prevent false extrapolation on clients
+    const isFrozen = this.fsm.currentState !== 'PLAYING';
     const discSnapshots: DiscSnapshot[] = [];
 
     // Ball
@@ -374,8 +375,8 @@ export class GameEngine {
       team: 0,
       x: this.ball.pos.x,
       y: this.ball.pos.y,
-      vx: isPaused ? 0 : this.ball.vel.x,
-      vy: isPaused ? 0 : this.ball.vel.y,
+      vx: isFrozen ? 0 : this.ball.vel.x,
+      vy: isFrozen ? 0 : this.ball.vel.y,
       radius: this.ball.radius,
       kicking: false,
       avatar: ''
@@ -390,8 +391,8 @@ export class GameEngine {
           team: player.team === 'red' ? 1 : 2,
           x: disc.pos.x,
           y: disc.pos.y,
-          vx: isPaused ? 0 : disc.vel.x,
-          vy: isPaused ? 0 : disc.vel.y,
+          vx: isFrozen ? 0 : disc.vel.x,
+          vy: isFrozen ? 0 : disc.vel.y,
           radius: disc.radius,
           kicking: disc.kicking,
           avatar: player.avatar

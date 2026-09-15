@@ -84,7 +84,7 @@ export class TeamSelectModal {
     });
   }
 
-  public updateLists(players: Player[], isLocalAdmin: boolean = false): void {
+  public updateLists(players: Player[], isLocalAdmin: boolean = false, _hostId?: string): void {
     if (this.redListEl) this.redListEl.innerHTML = '';
     if (this.blueListEl) this.blueListEl.innerHTML = '';
     if (this.specListEl) this.specListEl.innerHTML = '';

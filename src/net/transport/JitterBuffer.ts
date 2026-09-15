@@ -41,9 +41,10 @@ export class JitterBuffer {
   public getInterpolatedSnapshot(now: number = performance.now()): GameSnapshot | null {
     if (this.buffer.length === 0) return null;
 
-    // Freeze total cuando el juego esté pausado: no extrapolar ni calcular deltaSec
+    // Freeze total cuando el juego no esté en PLAYING: no extrapolar ni calcular deltaSec
     const latestSnapshot = this.buffer[this.buffer.length - 1].snapshot;
-    if (this.currentMatchState === 'PAUSED' || latestSnapshot.matchState === 'PAUSED') {
+    const effectiveState = this.currentMatchState || latestSnapshot.matchState;
+    if (effectiveState !== 'PLAYING') {
       const frozenDiscs: DiscSnapshot[] = latestSnapshot.discs.map(d => ({
         ...d,
         vx: 0,
@@ -51,7 +52,7 @@ export class JitterBuffer {
       }));
       return {
         ...latestSnapshot,
-        matchState: 'PAUSED',
+        matchState: effectiveState as GameSnapshot['matchState'],
         discs: frozenDiscs
       };
     }

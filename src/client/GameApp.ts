@@ -240,7 +240,13 @@ export class GameApp {
         this.menuPlayerName.textContent = `${targetPlayer.name} (${targetPlayer.team})`;
         const ctxMakeAdmin = document.getElementById('ctxMakeAdmin');
         if (ctxMakeAdmin) {
-          ctxMakeAdmin.textContent = targetPlayer.isAdmin ? '⭐ Quitar Admin' : '⭐ Hacer Admin';
+          if (targetPlayer.isHost) {
+            // Host is perpetual admin — hide the toggle option
+            ctxMakeAdmin.style.display = 'none';
+          } else {
+            ctxMakeAdmin.style.display = '';
+            ctxMakeAdmin.textContent = targetPlayer.isAdmin ? '⭐ Quitar Admin' : '⭐ Hacer Admin';
+          }
         }
 
         let left = e.clientX;
@@ -431,8 +437,18 @@ export class GameApp {
     if (btnStartStop) {
       btnStartStop.addEventListener('click', () => {
         if (!this.localPlayer.isAdmin) return;
-        if (this.engine) {
-          if (this.engine.fsm.currentState === 'STOPPED') {
+        const currentState = this.engine?.fsm.currentState || this.currentMatchState || 'STOPPED';
+        const action = currentState === 'STOPPED' ? 'START' : 'STOP';
+
+        if (this.mode === 'client' && this.hostPeer) {
+          // Delegate to host via match_control message
+          this.hostPeer.sendReliable(JSON.stringify({
+            type: 'match_control',
+            action
+          }));
+        } else if (this.engine) {
+          // Host/practice: execute directly
+          if (action === 'START') {
             this.engine.startMatch();
           } else {
             this.engine.stopMatch();
@@ -969,7 +985,8 @@ export class GameApp {
           }
         } else if (msg.type === 'set_admin') {
           const requester = this.engine?.players.get(peerId);
-          if (requester?.isAdmin) {
+          // Reject if target is the host — host admin is immutable
+          if (requester?.isAdmin && msg.targetId !== this.localPlayer.id) {
             this.setPlayerAdmin(msg.targetId, Boolean(msg.isAdmin));
           }
         } else if (msg.type === 'kick_player') {
@@ -986,6 +1003,17 @@ export class GameApp {
           const requester = this.engine?.players.get(peerId);
           if (requester?.isAdmin && this.engine) {
             this.engine.togglePause();
+            this.updateAdminControlsUI();
+            this.broadcastMatchStateSync();
+          }
+        } else if (msg.type === 'match_control') {
+          const requester = this.engine?.players.get(peerId);
+          if (requester?.isAdmin && this.engine) {
+            if (msg.action === 'START') {
+              this.engine.startMatch();
+            } else if (msg.action === 'STOP') {
+              this.engine.stopMatch();
+            }
             this.updateAdminControlsUI();
             this.broadcastMatchStateSync();
           }
@@ -1054,7 +1082,8 @@ export class GameApp {
             this.localPlayer.isAdmin = Boolean(self.isAdmin);
             this.localPlayer.team = self.team;
           }
-          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin);
+          const remoteHostId = msg.players.find((p: any) => p.isHost)?.id;
+          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin, remoteHostId);
 
           // Apply match state
           if (msg.matchState) {
@@ -1078,7 +1107,8 @@ export class GameApp {
             this.localPlayer.isAdmin = Boolean(self.isAdmin);
             this.localPlayer.team = self.team;
           }
-          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin);
+          const remoteHostId = msg.players.find((p: any) => p.isHost)?.id;
+          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin, remoteHostId);
           this.updateAdminControlsUI();
         } else if (msg.type === 'MATCH_STATE_SYNC') {
           const p: MatchStatePayload = msg.payload;
@@ -1180,7 +1210,8 @@ export class GameApp {
 
   private updateTeamLists(): void {
     if (this.engine) {
-      this.teamSelect.updateLists(Array.from(this.engine.players.values()), this.localPlayer.isAdmin);
+      const hostId = Array.from(this.engine.players.values()).find(p => p.isHost)?.id;
+      this.teamSelect.updateLists(Array.from(this.engine.players.values()), this.localPlayer.isAdmin, hostId);
     }
   }
 
@@ -1190,12 +1221,15 @@ export class GameApp {
   }
 
   public togglePlayerAdmin(playerId: string): void {
+    // Host admin is immutable — cannot toggle
     if (this.mode === 'host' && this.engine) {
       const p = this.engine.players.get(playerId);
-      if (p) {
+      if (p && !p.isHost) {
         this.setPlayerAdmin(playerId, !p.isAdmin);
       }
     } else if (this.mode === 'client' && this.hostPeer && this.localPlayer.isAdmin) {
+      // Don't allow toggling the host's admin from client either
+      if (this.selectedPlayerForAction?.isHost) return;
       const targetIsAdmin = Boolean(this.selectedPlayerForAction?.isAdmin);
       this.hostPeer.sendReliable(JSON.stringify({
         type: 'set_admin',
@@ -1208,19 +1242,20 @@ export class GameApp {
   public setPlayerAdmin(playerId: string, isAdmin: boolean): void {
     if (this.mode === 'host' && this.engine) {
       const p = this.engine.players.get(playerId);
-      if (p) {
-        p.isAdmin = isAdmin;
-        this.updateTeamLists();
-        this.syncPlayersWithClients();
-        const actionMsg = p.isAdmin ? `${p.name} ahora es Administrador.` : `${p.name} ya no es Administrador.`;
-        this.chat.addMessage({ author: 'Admin', text: actionMsg, team: 'sys' });
-        this.broadcastReliable(JSON.stringify({
-          type: 'chat',
-          author: 'Admin',
-          text: actionMsg,
-          team: 'sys'
-        }));
-      }
+      if (!p) return;
+      // Host admin is immutable
+      if (p.isHost) return;
+      p.isAdmin = isAdmin;
+      this.updateTeamLists();
+      this.syncPlayersWithClients();
+      const actionMsg = p.isAdmin ? `${p.name} ahora es Administrador.` : `${p.name} ya no es Administrador.`;
+      this.chat.addMessage({ author: 'Admin', text: actionMsg, team: 'sys' });
+      this.broadcastReliable(JSON.stringify({
+        type: 'chat',
+        author: 'Admin',
+        text: actionMsg,
+        team: 'sys'
+      }));
     }
   }
 

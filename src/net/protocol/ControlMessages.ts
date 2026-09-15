@@ -16,7 +16,8 @@ export type ControlMessageType =
   | 'kicked'
   | 'banned'
   | 'client_hello'
-  | 'initial_state';
+  | 'initial_state'
+  | 'match_control';
 
 export interface RoomConfig {
   name: string;
@@ -121,5 +122,10 @@ export interface InitialStateMessage {
   }>;
   config: RoomConfig;
   matchState: MatchStatePayload;
+}
+
+export interface MatchControlMessage {
+  type: 'match_control';
+  action: 'START' | 'STOP';
 }
 
