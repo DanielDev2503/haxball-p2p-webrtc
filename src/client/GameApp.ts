@@ -59,9 +59,9 @@ export class GameApp {
   public currentRoomId: string = '';
   public currentHostId: string | null = null;
 
-  // Handshake timeout: cancel if initial_state is received within 8s
+  // Handshake timeout: cancel if initial_state is received within 10s
   private joinTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  private static readonly JOIN_TIMEOUT_MS = 8000;
+  private static readonly JOIN_TIMEOUT_MS = 10000;
 
   // Room & Admin state
   public roomConfig: RoomConfig = {
@@ -73,7 +73,6 @@ export class GameApp {
     teamsLocked: false
   };
   private selectedPlayerForAction: Player | null = null;
-  private isMenuManuallyOpen: boolean = false;
 
   // Loop & timing
   private physicsTicker: PhysicsTicker;
@@ -199,7 +198,7 @@ export class GameApp {
     if (newState === 'STATE_IN_GAME') {
       this.inputManager.setEnabled(true);
       this.physicsTicker.start();
-      const matchState = this.engine?.fsm.currentState || this.currentMatchState;
+      const matchState = this.getAuthoritativeMatchState();
       this.enforceMenuState(matchState);
       this.canvasRenderer.resize();
       this.startRenderLoop();
@@ -208,6 +207,7 @@ export class GameApp {
       this.physicsTicker.stop();
       this.stopRenderLoop();
       this.canvasRenderer.clear();
+      this.teamSelect.close(true);
       if (newState === 'STATE_LOBBY') {
         this.lobby.updateUserBar(this.localPlayer.name);
         this.signaling.requestRoomList();
@@ -354,36 +354,16 @@ export class GameApp {
     });
 
     // In-game menu overlay toggle (Button & Escape/Menu key)
-    const ingameMenu = document.getElementById('ingame-menu');
     const menuToggleBtn = document.getElementById('menu-toggle-btn');
-    const menuCloseBtn = document.getElementById('menu-close-btn');
 
     const toggleMenu = () => {
-      if (!ingameMenu) return;
-      const isHidden = ingameMenu.classList.contains('hidden') || ingameMenu.classList.contains('u-hidden') || ingameMenu.style.display === 'none';
-      if (isHidden) {
-        // Always allow opening
-        ingameMenu.classList.remove('hidden', 'u-hidden', 'ui-screen-hidden');
-        ingameMenu.style.display = 'flex';
-        ingameMenu.style.pointerEvents = 'auto';
-        this.isMenuManuallyOpen = true;
-        this.updateAdminControlsUI();
-        this.updateTeamLists();
-      } else {
-        // Prevent closing if match is STOPPED (menu is forced open for everyone)
-        const matchState = this.engine?.fsm.currentState || this.currentMatchState;
-        if (matchState === 'STOPPED') {
-          // Menu must stay open in STOPPED state — ignore close
-          return;
-        }
-        ingameMenu.classList.add('hidden');
-        ingameMenu.style.display = 'none';
-        this.isMenuManuallyOpen = false;
-      }
+      if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') return;
+      this.teamSelect.toggle();
+      this.updateAdminControlsUI();
+      this.updateTeamLists();
     };
 
     if (menuToggleBtn) menuToggleBtn.addEventListener('click', toggleMenu);
-    if (menuCloseBtn) menuCloseBtn.addEventListener('click', toggleMenu);
 
     window.addEventListener('keydown', (e) => {
       // Si no estamos en STATE_IN_GAME, no procesar atajos de partido
@@ -767,12 +747,12 @@ export class GameApp {
       }
     }
 
-    // Start the 8-second join timeout — if handshake doesn't complete, abort
+    // Start the 10-second join timeout — if handshake doesn't complete, abort
     this.clearJoinTimeout();
     this.joinTimeoutId = setTimeout(() => {
       this.joinTimeoutId = null;
-      console.warn('[Client] Join handshake timed out after 8 seconds');
-      this.lobby?.showConnecting('Error de conexión con el anfitrión. Regresando al lobby...');
+      console.warn('[Client] Join handshake timed out after 10 seconds');
+      this.lobby?.showConnecting('Tiempo de espera agotado al conectar con el anfitrión. Regresando al lobby...');
       // Clean up partial connection state
       if (this.hostPeer) {
         this.hostPeer.close();
@@ -828,13 +808,7 @@ export class GameApp {
     this.localPlayer.isAdmin = true;
 
     // Ocultar menú in-game y menú contextual
-    const ingameMenu = document.getElementById('ingame-menu');
-    if (ingameMenu) {
-      ingameMenu.classList.remove('is-forced-open');
-      ingameMenu.classList.add('hidden', 'u-hidden');
-      ingameMenu.style.display = 'none';
-    }
-    this.isMenuManuallyOpen = false;
+    this.teamSelect.close(true);
     this.closeContextMenu();
 
     // Leave button cleanup not needed — it's inside the menu that gets hidden
@@ -947,7 +921,7 @@ export class GameApp {
         if (msg.type === 'chat') {
           this.chat.addMessage({ author: msg.author, text: msg.text, team: msg.team });
           this.broadcastReliable(data, peerId);
-        } else if (msg.type === 'peer_handshake') {
+        } else if (msg.type === 'peer_handshake' || msg.type === 'CLIENT_HELLO') {
           // CLIENT_HELLO received — add player and respond with INITIAL_STATE
           const nick = msg.nickname || initialNick || `Guest_${peerId.substring(0, 4)}`;
           const avatar = msg.avatar || nick.substring(0, 2).toUpperCase();
@@ -985,7 +959,7 @@ export class GameApp {
             }));
 
             peer.sendReliable(JSON.stringify({
-              type: 'initial_state',
+              type: 'INITIAL_STATE',
               yourPlayerId: peerId,
               players,
               config: this.roomConfig,
@@ -1067,9 +1041,9 @@ export class GameApp {
     };
 
     peer.onDataChannelOpen = () => {
-      // Send CLIENT_HELLO — the host will respond with initial_state
+      // Send CLIENT_HELLO — the host will respond with INITIAL_STATE
       peer.sendReliable(JSON.stringify({
-        type: 'peer_handshake',
+        type: 'CLIENT_HELLO',
         nickname: this.localPlayer.name,
         avatar: this.localPlayer.avatar
       }));
@@ -1097,8 +1071,8 @@ export class GameApp {
         const msg = JSON.parse(data);
         if (msg.type === 'chat') {
           this.chat.addMessage({ author: msg.author, text: msg.text, team: msg.team });
-        } else if (msg.type === 'initial_state') {
-          // INITIAL_STATE_PACKET received — handshake complete!
+        } else if (msg.type === 'initial_state' || msg.type === 'INITIAL_STATE') {
+          // INITIAL_STATE received — handshake complete!
           this.clearJoinTimeout();
 
           // Assign our authoritative player ID from the host
@@ -1127,6 +1101,7 @@ export class GameApp {
             this.currentMatchState = ms.state;
             this.jitterBuffer.setMatchState(ms.state);
             this.hud.update(ms.redScore, ms.blueScore, ms.timeRemaining);
+            this.teamSelect.updateMatchState(ms.state);
           }
 
           this.updateAdminControlsUI();
@@ -1481,33 +1456,19 @@ export class GameApp {
     }
   }
 
-  public enforceMenuState(state: MatchState): void {
-    const ingameMenu = document.getElementById('ingame-menu');
-    if (!ingameMenu) return;
+  public getAuthoritativeMatchState(): MatchState {
+    if (this.mode === 'client') {
+      return this.currentMatchState;
+    }
+    return this.engine ? this.engine.fsm.currentState : this.currentMatchState;
+  }
 
+  public enforceMenuState(state: MatchState): void {
     if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') {
-      ingameMenu.classList.add('hidden', 'u-hidden');
-      ingameMenu.classList.remove('is-forced-open');
-      ingameMenu.style.display = 'none';
-      this.isMenuManuallyOpen = false;
+      this.teamSelect.close(true);
       return;
     }
-
-    if (state === 'STOPPED') {
-      // Force open for ALL players — cannot be closed
-      ingameMenu.classList.remove('hidden', 'u-hidden', 'ui-screen-hidden');
-      ingameMenu.classList.add('is-forced-open');
-      ingameMenu.style.display = 'flex';
-      ingameMenu.style.pointerEvents = 'auto';
-    } else {
-      // Remove forced-open, but respect manual open by user
-      ingameMenu.classList.remove('is-forced-open');
-      if (!this.isMenuManuallyOpen) {
-        // Only auto-hide if user hasn't manually opened the menu
-        ingameMenu.classList.add('hidden');
-        ingameMenu.style.display = 'none';
-      }
-    }
+    this.teamSelect.updateMatchState(state);
     this.updateAdminControlsUI();
   }
 

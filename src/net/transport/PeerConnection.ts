@@ -6,10 +6,22 @@ export interface PeerConnectionConfig {
 
 export class PeerConnection {
   public pc: RTCPeerConnection;
-  public reliableChannel: RTCDataChannel | null = null;
-  public unreliableChannel: RTCDataChannel | null = null;
+  public dataChannel: RTCDataChannel | null = null;
   public remotePeerId: string;
   public isInitiator: boolean;
+
+  public get peerConnection(): RTCPeerConnection {
+    return this.pc;
+  }
+
+  // Compatibilidad hacia atrás para llamadas que lean reliableChannel o unreliableChannel
+  public get reliableChannel(): RTCDataChannel | null {
+    return this.dataChannel;
+  }
+
+  public get unreliableChannel(): RTCDataChannel | null {
+    return this.dataChannel;
+  }
 
   public onUnreliableMessage?: (data: ArrayBuffer) => void;
   public onReliableMessage?: (data: string) => void;
@@ -18,13 +30,13 @@ export class PeerConnection {
   public onDisconnected?: () => void;
   public onDataChannelOpen?: () => void;
 
-  // ICE candidate queue — holds candidates that arrive before remoteDescription is set
-  private iceCandidateQueue: RTCIceCandidateInit[] = [];
+  // Cola de candidatos ICE para evitar condiciones de carrera en Trickle ICE
+  private iceCandidatesQueue: RTCIceCandidateInit[] = [];
 
-  // Reconnection timeout for 'disconnected' state (5 seconds before giving up)
+  // Timeout para estado 'disconnected' (5 segundos para ICE restart)
   private disconnectTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  // DataChannel keep-alive to prevent NAT port closure
+  // DataChannel keep-alive para evitar cierre de puertos NAT
   private keepAliveIntervalId: ReturnType<typeof setInterval> | null = null;
   private lastSendTimestamp: number = 0;
 
@@ -43,9 +55,22 @@ export class PeerConnection {
       { urls: 'stun:stun.cloudflare.com:3478' }
     ];
 
-    this.pc = new RTCPeerConnection({
-      iceServers: config.iceServers ?? defaultIceServers
-    });
+    // Soporte para servidores TURN configurados vía variables de entorno (p. ej. Metered)
+    let envTurnServers: RTCIceServer[] = [];
+    try {
+      if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TURN_SERVERS) {
+        envTurnServers = JSON.parse(import.meta.env.VITE_TURN_SERVERS);
+      }
+    } catch (e) {
+      console.warn('[PeerConnection] Error parsing VITE_TURN_SERVERS:', e);
+    }
+
+    const iceServers: RTCIceServer[] = config.iceServers ?? [
+      ...defaultIceServers,
+      ...(Array.isArray(envTurnServers) ? envTurnServers : [])
+    ];
+
+    this.pc = new RTCPeerConnection({ iceServers });
 
     this.pc.onicecandidate = (event) => {
       if (event.candidate && this.onIceCandidate) {
@@ -53,29 +78,33 @@ export class PeerConnection {
       }
     };
 
+    this.pc.oniceconnectionstatechange = () => {
+      const state = this.pc.iceConnectionState;
+      if (state === 'connected' || state === 'completed') {
+        this.clearDisconnectTimeout();
+        if (this.onConnected) this.onConnected();
+      } else if (state === 'failed') {
+        this.clearDisconnectTimeout();
+        if (this.onDisconnected) this.onDisconnected();
+      }
+    };
+
     this.pc.onconnectionstatechange = () => {
       const state = this.pc.connectionState;
       switch (state) {
         case 'connected':
-          // Connection recovered or established — cancel any pending disconnect timeout
           this.clearDisconnectTimeout();
           if (this.onConnected) this.onConnected();
           break;
 
         case 'disconnected':
-          // Transient state — don't close immediately.
-          // If we're the initiator (host), attempt ICE restart.
-          // Give 5 seconds for recovery before declaring dead.
           if (this.isInitiator) {
             try {
               this.pc.restartIce();
-            } catch (_e) {
-              // restartIce may throw if pc is already closed
-            }
+            } catch (_e) {}
           }
           this.clearDisconnectTimeout();
           this.disconnectTimeoutId = setTimeout(() => {
-            // Still disconnected after timeout — treat as failed
             if (this.pc.connectionState === 'disconnected' || this.pc.connectionState === 'failed') {
               if (this.onDisconnected) this.onDisconnected();
             }
@@ -83,59 +112,37 @@ export class PeerConnection {
           break;
 
         case 'failed':
-          // Irrecoverable — notify immediately
           this.clearDisconnectTimeout();
           if (this.onDisconnected) this.onDisconnected();
           break;
 
         case 'closed':
-          // Silent cleanup
           this.clearDisconnectTimeout();
           break;
       }
     };
 
     if (this.isInitiator) {
-      // Host creates the channels
-      this.setupReliableChannel(
-        this.pc.createDataChannel('reliable', { ordered: true })
-      );
-      this.setupUnreliableChannel(
-        this.pc.createDataChannel('unreliable', { ordered: false, maxRetransmits: 0 })
-      );
+      // El Host (creador de la sala / initiator) es el único encargado de invocar createDataChannel
+      const dc = this.pc.createDataChannel('game', { ordered: false, maxRetransmits: 0 });
+      this.setupDataChannel(dc);
     } else {
-      // Client receives incoming channels from Host
+      // El Cliente Invitado debe configurar el listener ondatachannel
       this.pc.ondatachannel = (event) => {
-        if (event.channel.label === 'reliable') {
-          this.setupReliableChannel(event.channel);
-        } else if (event.channel.label === 'unreliable') {
-          this.setupUnreliableChannel(event.channel);
-        }
+        this.setupDataChannel(event.channel);
       };
     }
   }
 
-  private setupReliableChannel(channel: RTCDataChannel): void {
-    this.reliableChannel = channel;
-    channel.onopen = () => {
-      if (this.onDataChannelOpen) {
-        this.onDataChannelOpen();
-      }
-    };
-    channel.onmessage = (event) => {
-      if (typeof event.data === 'string' && this.onReliableMessage) {
-        this.onReliableMessage(event.data);
-      }
-    };
-  }
-
-
-  private setupUnreliableChannel(channel: RTCDataChannel): void {
-    this.unreliableChannel = channel;
+  private setupDataChannel(channel: RTCDataChannel): void {
+    this.dataChannel = channel;
     channel.binaryType = 'arraybuffer';
 
     channel.onopen = () => {
       this.startKeepAlive();
+      if (this.onDataChannelOpen) {
+        this.onDataChannelOpen();
+      }
     };
 
     channel.onclose = () => {
@@ -143,8 +150,12 @@ export class PeerConnection {
     };
 
     channel.onmessage = (event) => {
-      if (event.data instanceof ArrayBuffer) {
-        // Filter out keep-alive packets (1-byte 0xFF)
+      if (typeof event.data === 'string') {
+        if (this.onReliableMessage) {
+          this.onReliableMessage(event.data);
+        }
+      } else if (event.data instanceof ArrayBuffer) {
+        // Filtrar paquetes keep-alive (1 byte 0xFF)
         if (event.data.byteLength === 1) {
           const byte = new Uint8Array(event.data)[0];
           if (byte === OP_KEEPALIVE) return;
@@ -156,15 +167,34 @@ export class PeerConnection {
     };
   }
 
-  // --- ICE Candidate Queue ---
+  // --- Cola de Candidatos ICE (Fix para Trickle ICE Race Condition) ---
 
-  private flushIceCandidateQueue(): void {
-    while (this.iceCandidateQueue.length > 0) {
-      const candidate = this.iceCandidateQueue.shift()!;
-      this.pc.addIceCandidate(new RTCIceCandidate(candidate)).catch((err) => {
-        console.warn('Error adding queued ICE candidate', err);
-      });
+  private async flushIceCandidatesQueue(): Promise<void> {
+    while (this.iceCandidatesQueue.length > 0) {
+      const candidate = this.iceCandidatesQueue.shift()!;
+      try {
+        await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn('[PeerConnection] Error adding queued ICE candidate:', err);
+      }
     }
+  }
+
+  public async handleRemoteCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+    if (!this.pc.remoteDescription) {
+      // Si remoteDescription es null o undefined, encolar el candidato
+      this.iceCandidatesQueue.push(candidate);
+      return;
+    }
+    try {
+      await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      console.warn('[PeerConnection] Error adding ICE candidate:', err);
+    }
+  }
+
+  public async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+    return this.handleRemoteCandidate(candidate);
   }
 
   public async createOffer(): Promise<RTCSessionDescriptionInit> {
@@ -175,7 +205,7 @@ export class PeerConnection {
 
   public async handleOffer(offer: RTCSessionDescriptionInit): Promise<RTCSessionDescriptionInit> {
     await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
-    this.flushIceCandidateQueue();
+    await this.flushIceCandidatesQueue();
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
     return answer;
@@ -183,20 +213,7 @@ export class PeerConnection {
 
   public async handleAnswer(answer: RTCSessionDescriptionInit): Promise<void> {
     await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
-    this.flushIceCandidateQueue();
-  }
-
-  public async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
-    if (!this.pc.remoteDescription) {
-      // Remote description not set yet — queue the candidate for later
-      this.iceCandidateQueue.push(candidate);
-      return;
-    }
-    try {
-      await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (err) {
-      console.warn('Error adding ICE candidate', err);
-    }
+    await this.flushIceCandidatesQueue();
   }
 
   // --- Keep-Alive ---
@@ -205,14 +222,11 @@ export class PeerConnection {
     this.stopKeepAlive();
     this.keepAliveIntervalId = setInterval(() => {
       const now = performance.now();
-      // Only send keep-alive if no other traffic was sent recently
       if (now - this.lastSendTimestamp >= PeerConnection.KEEPALIVE_INTERVAL_MS) {
-        if (this.unreliableChannel && this.unreliableChannel.readyState === 'open') {
+        if (this.dataChannel && this.dataChannel.readyState === 'open') {
           try {
-            this.unreliableChannel.send(PeerConnection.KEEPALIVE_PACKET);
-          } catch (_e) {
-            // Channel may have closed between check and send
-          }
+            this.dataChannel.send(PeerConnection.KEEPALIVE_PACKET);
+          } catch (_e) {}
         }
       }
     }, PeerConnection.KEEPALIVE_INTERVAL_MS);
@@ -225,22 +239,22 @@ export class PeerConnection {
     }
   }
 
-  // --- Send helpers ---
+  // --- Helpers de Envío ---
 
   public sendUnreliable(buffer: ArrayBuffer): void {
-    if (this.unreliableChannel && this.unreliableChannel.readyState === 'open') {
-      this.unreliableChannel.send(buffer);
+    if (this.dataChannel && this.dataChannel.readyState === 'open') {
+      this.dataChannel.send(buffer);
       this.lastSendTimestamp = performance.now();
     }
   }
 
   public sendReliable(text: string): void {
-    if (this.reliableChannel && this.reliableChannel.readyState === 'open') {
-      this.reliableChannel.send(text);
+    if (this.dataChannel && this.dataChannel.readyState === 'open') {
+      this.dataChannel.send(text);
     }
   }
 
-  // --- Cleanup ---
+  // --- Limpieza ---
 
   private clearDisconnectTimeout(): void {
     if (this.disconnectTimeoutId !== null) {
@@ -253,25 +267,24 @@ export class PeerConnection {
     this.clearDisconnectTimeout();
     this.stopKeepAlive();
 
-    // Clean up listeners to prevent memory leaks on reconnection
     this.pc.onicecandidate = null;
     this.pc.onconnectionstatechange = null;
+    this.pc.oniceconnectionstatechange = null;
     this.pc.ondatachannel = null;
 
-    if (this.unreliableChannel) {
-      this.unreliableChannel.onopen = null;
-      this.unreliableChannel.onclose = null;
-      this.unreliableChannel.onmessage = null;
-      this.unreliableChannel.close();
+    if (this.dataChannel) {
+      this.dataChannel.onopen = null;
+      this.dataChannel.onclose = null;
+      this.dataChannel.onmessage = null;
+      try {
+        this.dataChannel.close();
+      } catch (_e) {}
+      this.dataChannel = null;
     }
-    if (this.reliableChannel) {
-      this.reliableChannel.onopen = null;
-      this.reliableChannel.onmessage = null;
-      this.reliableChannel.close();
-    }
-    this.pc.close();
+    try {
+      this.pc.close();
+    } catch (_e) {}
 
-    // Clear the queue
-    this.iceCandidateQueue.length = 0;
+    this.iceCandidatesQueue.length = 0;
   }
 }

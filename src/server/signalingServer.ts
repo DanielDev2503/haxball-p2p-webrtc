@@ -302,7 +302,7 @@ export function setupSignalingServer(wss: WebSocketServer) {
           case 'signal_offer':
           case 'signal_answer':
           case 'signal_ice': {
-            const activeRoomId = peerToRoom.get(peerId);
+            const activeRoomId = peerToRoom.get(peerId) || peerToRoom.get(currentPeerId) || roomId;
             if (!activeRoomId) return;
             const room = rooms.get(activeRoomId);
             if (!room) return;
@@ -314,10 +314,10 @@ export function setupSignalingServer(wss: WebSocketServer) {
               targetWs = room.peers.get(targetId);
             }
 
-            if (targetWs) {
+            if (targetWs && targetWs.readyState === WebSocket.OPEN) {
               send(targetWs, {
                 type,
-                senderId: peerId,
+                senderId: peerId || currentPeerId,
                 payload
               });
             }

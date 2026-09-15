@@ -1,18 +1,27 @@
 import { Player, TeamType } from '../../core/game/Player';
+import { MatchState } from '../../core/game/GameFSM';
 
 export class TeamSelectModal {
+  private menuEl: HTMLElement | null;
+  private closeBtn: HTMLElement | null;
+  private returnGameBtn: HTMLElement | null;
   private redListEl: HTMLElement | null;
   private blueListEl: HTMLElement | null;
   private specListEl: HTMLElement | null;
   private redCountEl: HTMLElement | null;
   private blueCountEl: HTMLElement | null;
   private specCountEl: HTMLElement | null;
+  private currentMatchState: MatchState = 'STOPPED';
 
   public onSelectTeam?: (team: TeamType) => void;
   public onPlayerClick?: (player: Player, event: MouseEvent) => void;
   public onTeamChangeRequest?: (playerId: string, team: TeamType) => void;
 
   constructor() {
+    this.menuEl = document.getElementById('ingame-menu');
+    this.closeBtn = document.getElementById('menu-close-btn');
+    this.returnGameBtn = document.getElementById('btn-return-game');
+
     this.redListEl = document.getElementById('redPlayersList');
     if (!this.redListEl) console.warn('[TeamSelectModal] Element "#redPlayersList" was not found in DOM.');
 
@@ -52,7 +61,86 @@ export class TeamSelectModal {
       console.warn('[TeamSelectModal] Element "#joinSpecBtn" was not found in DOM.');
     }
 
+    // Botón de contingencia para regresar a la partida en curso
+    const handleContingencyClose = () => {
+      if (this.currentMatchState === 'PLAYING' || this.currentMatchState === 'PAUSED' || this.currentMatchState === 'COUNTDOWN') {
+        this.close();
+      }
+    };
+
+    if (this.closeBtn) {
+      this.closeBtn.addEventListener('click', handleContingencyClose);
+    }
+    if (this.returnGameBtn) {
+      this.returnGameBtn.addEventListener('click', handleContingencyClose);
+    }
+
     this.setupDragAndDropColumns();
+  }
+
+  public updateMatchState(newState: MatchState): void {
+    this.currentMatchState = newState;
+
+    // Actualizar visibilidad del botón de retorno
+    if (this.returnGameBtn) {
+      this.returnGameBtn.style.display = (newState === 'PLAYING' || newState === 'PAUSED' || newState === 'COUNTDOWN') ? 'inline-block' : 'none';
+    }
+
+    if (newState === 'COUNTDOWN' || newState === 'PLAYING') {
+      // 1. Cierre Automático: Despeja la pantalla para ver el campo y la cuenta regresiva
+      this.close();
+    } else if (newState === 'STOPPED') {
+      // 2. Apertura Forzada Únicamente en STOPPED y Game Over
+      this.open(true);
+    } else if (newState === 'PAUSED') {
+      // En pausa se desbloquea el modo forzado, permitiendo alternar con Escape o botón
+      if (this.menuEl) {
+        this.menuEl.classList.remove('is-forced-open');
+      }
+    }
+  }
+
+  public open(forced: boolean = false): void {
+    if (!this.menuEl) return;
+    this.menuEl.classList.remove('hidden', 'u-hidden', 'ui-screen-hidden');
+    if (forced) {
+      this.menuEl.classList.add('is-forced-open');
+    } else {
+      this.menuEl.classList.remove('is-forced-open');
+    }
+    this.menuEl.style.display = 'flex';
+    this.menuEl.style.pointerEvents = 'auto';
+  }
+
+  public close(force: boolean = false): void {
+    if (!this.menuEl) return;
+    // Bloquear el cierre (ignorar Escape) exclusivamente mientras el estado sea STOPPED
+    if (this.currentMatchState === 'STOPPED' && !force) {
+      return;
+    }
+    this.menuEl.classList.add('hidden');
+    this.menuEl.classList.remove('is-forced-open');
+    this.menuEl.style.display = 'none';
+  }
+
+  public toggle(): void {
+    if (this.isOpen()) {
+      this.close();
+    } else {
+      this.open(false);
+    }
+  }
+
+  public isOpen(): boolean {
+    if (!this.menuEl) return false;
+    const isHidden = this.menuEl.classList.contains('hidden') ||
+                     this.menuEl.classList.contains('u-hidden') ||
+                     this.menuEl.style.display === 'none';
+    return !isHidden;
+  }
+
+  public getMatchState(): MatchState {
+    return this.currentMatchState;
   }
 
   private setupDragAndDropColumns(): void {
@@ -177,4 +265,3 @@ export class TeamSelectModal {
     }
   }
 }
-
