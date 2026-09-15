@@ -22,10 +22,11 @@ export class Player {
   public team: TeamType;
   public avatar: string;
   public isHost: boolean;
-  public isAdmin: boolean;
+  private _isAdmin: boolean;
   public joinedAt: number;
   public inputMask: number = 0;
   public discId: number | null = null;
+  public declare isAdmin: boolean;
 
   constructor(data: PlayerData) {
     this.id = data.id;
@@ -33,7 +34,34 @@ export class Player {
     this.team = data.team;
     this.avatar = data.avatar ?? data.name.substring(0, 2).toUpperCase();
     this.isHost = data.isHost ?? false;
-    this.isAdmin = data.isAdmin ?? (data.isHost ?? false);
+    this._isAdmin = this.isHost ? true : Boolean(data.isAdmin);
     this.joinedAt = data.joinedAt ?? Date.now();
+
+    // Host admin is perpetual and immutable — cannot be revoked
+    Object.defineProperty(this, 'isAdmin', {
+      enumerable: true,
+      configurable: true,
+      get: () => (this.isHost ? true : this._isAdmin),
+      set: (val: boolean) => {
+        if (this.isHost) {
+          this._isAdmin = true;
+          return;
+        }
+        this._isAdmin = Boolean(val);
+      }
+    });
+  }
+
+  public toJSON() {
+    return {
+      id: this.id,
+      name: this.name,
+      team: this.team,
+      avatar: this.avatar,
+      isHost: this.isHost,
+      isAdmin: this.isAdmin,
+      joinedAt: this.joinedAt
+    };
   }
 }
+

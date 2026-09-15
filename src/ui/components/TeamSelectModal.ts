@@ -84,7 +84,7 @@ export class TeamSelectModal {
     });
   }
 
-  public updateLists(players: Player[], isLocalAdmin: boolean = false, _hostId?: string): void {
+  public updateLists(players: Player[], isLocalAdmin: boolean = false, hostId?: string): void {
     if (this.redListEl) this.redListEl.innerHTML = '';
     if (this.blueListEl) this.blueListEl.innerHTML = '';
     if (this.specListEl) this.specListEl.innerHTML = '';
@@ -99,6 +99,11 @@ export class TeamSelectModal {
     if (this.specCountEl) this.specCountEl.textContent = spec.length.toString();
 
     const renderPlayer = (p: Player, container: HTMLElement) => {
+      const isHost = Boolean(p.isHost || (hostId && p.id === hostId));
+      if (isHost) {
+        p.isHost = true;
+      }
+
       const el = document.createElement('div');
       el.className = 'player-item';
 
@@ -117,9 +122,9 @@ export class TeamSelectModal {
         el.setAttribute('draggable', 'false');
       }
 
-      const hostIcon = p.isHost ? '👑 ' : '';
-      const adminIcon = (!p.isHost && p.isAdmin) ? '⭐ ' : '';
-      const adminRoleText = p.isHost ? 'Host' : (p.isAdmin ? 'Admin' : '');
+      const hostIcon = isHost ? '👑 ' : '';
+      const adminIcon = (!isHost && p.isAdmin) ? '⭐ ' : '';
+      const adminRoleText = isHost ? 'Host' : (p.isAdmin ? 'Admin' : '');
 
       el.innerHTML = `
         <div style="display: flex; align-items: center; gap: 4px; overflow: hidden; flex: 1;">

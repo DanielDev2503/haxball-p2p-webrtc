@@ -57,6 +57,7 @@ export class GameApp {
   public clientInputSequence: number = 0;
   public bannedPeers: Set<string> = new Set();
   public currentRoomId: string = '';
+  public currentHostId: string | null = null;
 
   // Handshake timeout: cancel if initial_state is received within 8s
   private joinTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -111,6 +112,7 @@ export class GameApp {
       isHost: true,
       isAdmin: true
     });
+    this.currentHostId = this.localPlayer.id;
 
     this.inputManager = new InputManager();
     this.audioManager = new AudioManager();
@@ -238,15 +240,34 @@ export class GameApp {
       this.selectedPlayerForAction = targetPlayer;
       if (this.contextMenu && this.menuPlayerName) {
         this.menuPlayerName.textContent = `${targetPlayer.name} (${targetPlayer.team})`;
+        const isTargetHost = Boolean(
+          targetPlayer.isHost ||
+          (this.currentHostId && targetPlayer.id === this.currentHostId) ||
+          (this.mode === 'host' && targetPlayer.id === this.localPlayer.id) ||
+          (this.localPlayer.isHost && targetPlayer.id === this.localPlayer.id) ||
+          (this.engine?.players.get(targetPlayer.id)?.isHost)
+        );
+        const isSelf = targetPlayer.id === this.localPlayer.id;
+
         const ctxMakeAdmin = document.getElementById('ctxMakeAdmin');
         if (ctxMakeAdmin) {
-          if (targetPlayer.isHost) {
-            // Host is perpetual admin — hide the toggle option
+          // El host no debería ni podría quitarse el admin a sí mismo ni nadie puede quitárselo
+          if (isTargetHost) {
             ctxMakeAdmin.style.display = 'none';
           } else {
             ctxMakeAdmin.style.display = '';
             ctxMakeAdmin.textContent = targetPlayer.isAdmin ? '⭐ Quitar Admin' : '⭐ Hacer Admin';
           }
+        }
+
+        const ctxKick = document.getElementById('ctxKick');
+        if (ctxKick) {
+          ctxKick.style.display = (isTargetHost || isSelf) ? 'none' : '';
+        }
+
+        const ctxBan = document.getElementById('ctxBan');
+        if (ctxBan) {
+          ctxBan.style.display = (isTargetHost || isSelf) ? 'none' : '';
         }
 
         let left = e.clientX;
@@ -661,6 +682,7 @@ export class GameApp {
     this.localPlayer.team = 'red';
     this.localPlayer.isHost = true;
     this.localPlayer.isAdmin = true;
+    this.currentHostId = this.localPlayer.id;
     this.currentRoomId = 'PRACTICE';
 
     this.engine = new GameEngine({ scoreLimit: 0, timeLimitSeconds: 0 });
@@ -684,6 +706,7 @@ export class GameApp {
     this.localPlayer.team = 'red';
     this.localPlayer.isHost = true;
     this.localPlayer.isAdmin = true;
+    this.currentHostId = this.localPlayer.id;
 
     this.roomConfig = { ...config };
     this.engine = new GameEngine({
@@ -723,6 +746,7 @@ export class GameApp {
     this.localPlayer.team = 'spec';
     this.localPlayer.isHost = false;
     this.localPlayer.isAdmin = false;
+    this.currentHostId = null;
     this.currentRoomId = roomId;
     this.currentMatchState = 'STOPPED';
 
@@ -985,18 +1009,27 @@ export class GameApp {
           }
         } else if (msg.type === 'set_admin') {
           const requester = this.engine?.players.get(peerId);
+          const isTargetHost = msg.targetId === this.localPlayer.id ||
+            Boolean(this.engine?.players.get(msg.targetId)?.isHost) ||
+            Boolean(this.currentHostId && msg.targetId === this.currentHostId);
           // Reject if target is the host — host admin is immutable
-          if (requester?.isAdmin && msg.targetId !== this.localPlayer.id) {
+          if (requester?.isAdmin && !isTargetHost) {
             this.setPlayerAdmin(msg.targetId, Boolean(msg.isAdmin));
           }
         } else if (msg.type === 'kick_player') {
           const requester = this.engine?.players.get(peerId);
-          if (requester?.isAdmin) {
+          const isTargetHost = msg.targetId === this.localPlayer.id ||
+            Boolean(this.engine?.players.get(msg.targetId)?.isHost) ||
+            Boolean(this.currentHostId && msg.targetId === this.currentHostId);
+          if (requester?.isAdmin && !isTargetHost) {
             this.kickPlayer(msg.targetId);
           }
         } else if (msg.type === 'ban_player') {
           const requester = this.engine?.players.get(peerId);
-          if (requester?.isAdmin) {
+          const isTargetHost = msg.targetId === this.localPlayer.id ||
+            Boolean(this.engine?.players.get(msg.targetId)?.isHost) ||
+            Boolean(this.currentHostId && msg.targetId === this.currentHostId);
+          if (requester?.isAdmin && !isTargetHost) {
             this.banPlayer(msg.targetId);
           }
         } else if (msg.type === 'toggle_pause') {
@@ -1083,7 +1116,10 @@ export class GameApp {
             this.localPlayer.team = self.team;
           }
           const remoteHostId = msg.players.find((p: any) => p.isHost)?.id;
-          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin, remoteHostId);
+          if (remoteHostId) {
+            this.currentHostId = remoteHostId;
+          }
+          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin, this.currentHostId || undefined);
 
           // Apply match state
           if (msg.matchState) {
@@ -1108,7 +1144,10 @@ export class GameApp {
             this.localPlayer.team = self.team;
           }
           const remoteHostId = msg.players.find((p: any) => p.isHost)?.id;
-          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin, remoteHostId);
+          if (remoteHostId) {
+            this.currentHostId = remoteHostId;
+          }
+          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin, this.currentHostId || undefined);
           this.updateAdminControlsUI();
         } else if (msg.type === 'MATCH_STATE_SYNC') {
           const p: MatchStatePayload = msg.payload;
@@ -1210,7 +1249,7 @@ export class GameApp {
 
   private updateTeamLists(): void {
     if (this.engine) {
-      const hostId = Array.from(this.engine.players.values()).find(p => p.isHost)?.id;
+      const hostId = this.currentHostId || Array.from(this.engine.players.values()).find(p => p.isHost)?.id || this.localPlayer.id;
       this.teamSelect.updateLists(Array.from(this.engine.players.values()), this.localPlayer.isAdmin, hostId);
     }
   }
@@ -1221,15 +1260,25 @@ export class GameApp {
   }
 
   public togglePlayerAdmin(playerId: string): void {
-    // Host admin is immutable — cannot toggle
+    const isTargetHost = Boolean(
+      (this.currentHostId && playerId === this.currentHostId) ||
+      (this.selectedPlayerForAction?.isHost && this.selectedPlayerForAction.id === playerId) ||
+      (playerId === this.localPlayer.id && (this.mode === 'host' || this.localPlayer.isHost))
+    );
+
+    // Host admin is immutable — cannot toggle under any circumstance
+    if (isTargetHost) {
+      console.warn('[GameApp] Cannot toggle admin for room host.');
+      return;
+    }
+
     if (this.mode === 'host' && this.engine) {
       const p = this.engine.players.get(playerId);
-      if (p && !p.isHost) {
+      if (p && !p.isHost && p.id !== this.localPlayer.id) {
         this.setPlayerAdmin(playerId, !p.isAdmin);
       }
     } else if (this.mode === 'client' && this.hostPeer && this.localPlayer.isAdmin) {
-      // Don't allow toggling the host's admin from client either
-      if (this.selectedPlayerForAction?.isHost) return;
+      if (this.selectedPlayerForAction?.isHost || (this.currentHostId && playerId === this.currentHostId)) return;
       const targetIsAdmin = Boolean(this.selectedPlayerForAction?.isAdmin);
       this.hostPeer.sendReliable(JSON.stringify({
         type: 'set_admin',
@@ -1243,8 +1292,16 @@ export class GameApp {
     if (this.mode === 'host' && this.engine) {
       const p = this.engine.players.get(playerId);
       if (!p) return;
-      // Host admin is immutable
-      if (p.isHost) return;
+      // Host admin is immutable — host cannot lose admin privileges
+      const isHostPlayer = Boolean(
+        p.isHost ||
+        p.id === this.localPlayer.id ||
+        (this.currentHostId && p.id === this.currentHostId)
+      );
+      if (isHostPlayer && !isAdmin) {
+        console.warn('[GameApp] Cannot revoke admin privileges from the host.');
+        return;
+      }
       p.isAdmin = isAdmin;
       this.updateTeamLists();
       this.syncPlayersWithClients();
@@ -1264,6 +1321,11 @@ export class GameApp {
   }
 
   public kickPlayer(playerId: string): void {
+    const isHostPlayer = playerId === this.localPlayer.id || (this.currentHostId && playerId === this.currentHostId);
+    if (isHostPlayer) {
+      console.warn('[GameApp] Cannot kick the host player.');
+      return;
+    }
     if (this.mode === 'host') {
       const peer = this.peers.get(playerId);
       if (peer) {
@@ -1282,6 +1344,11 @@ export class GameApp {
   }
 
   public banPlayer(playerId: string): void {
+    const isHostPlayer = playerId === this.localPlayer.id || (this.currentHostId && playerId === this.currentHostId);
+    if (isHostPlayer) {
+      console.warn('[GameApp] Cannot ban the host player.');
+      return;
+    }
     if (this.mode === 'host') {
       this.bannedPeers.add(playerId);
       const peer = this.peers.get(playerId);
