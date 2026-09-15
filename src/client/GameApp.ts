@@ -89,8 +89,8 @@ export class GameApp {
   private btnStartStop: HTMLButtonElement | null;
   private btnPauseResume: HTMLButtonElement | null;
   private btnLockTeams: HTMLButtonElement | null;
-  private inputTimeLimit: HTMLInputElement | null;
-  private inputScoreLimit: HTMLInputElement | null;
+  private selectTimeLimit: HTMLSelectElement | HTMLInputElement | null;
+  private selectScoreLimit: HTMLSelectElement | HTMLInputElement | null;
   private contextMenu: HTMLElement | null;
   private menuPlayerName: HTMLElement | null;
   private roomNameBadge: HTMLElement | null;
@@ -144,8 +144,8 @@ export class GameApp {
     this.btnStartStop = document.getElementById('btn-start-stop') as HTMLButtonElement | null;
     this.btnPauseResume = document.getElementById('btn-pause-resume') as HTMLButtonElement | null;
     this.btnLockTeams = document.getElementById('btn-lock-teams') as HTMLButtonElement | null;
-    this.inputTimeLimit = document.getElementById('time-limit') as HTMLInputElement | null;
-    this.inputScoreLimit = document.getElementById('score-limit') as HTMLInputElement | null;
+    this.selectTimeLimit = (document.getElementById('select-time-limit') || document.getElementById('time-limit')) as HTMLSelectElement | HTMLInputElement | null;
+    this.selectScoreLimit = (document.getElementById('select-goal-limit') || document.getElementById('score-limit')) as HTMLSelectElement | HTMLInputElement | null;
     this.contextMenu = document.getElementById('playerContextMenu');
     this.menuPlayerName = document.getElementById('menuPlayerName');
     this.roomNameBadge = document.getElementById('roomNameBadge');
@@ -389,6 +389,12 @@ export class GameApp {
           return;
         }
 
+        // Si el partido está en STOPPED, el menú está forzado y no se debe alternar ni mutar
+        if (this.getAuthoritativeMatchState() === 'STOPPED' || this.teamSelect.getMatchState() === 'STOPPED') {
+          e.preventDefault();
+          return;
+        }
+
         toggleMenu();
         return;
       }
@@ -470,22 +476,22 @@ export class GameApp {
       });
     }
 
-    // Admin Time Limit Input
-    const inputTimeLimit = document.getElementById('time-limit') as HTMLInputElement | null;
-    if (inputTimeLimit) {
-      inputTimeLimit.addEventListener('change', () => {
-        if (!this.localPlayer.isAdmin) return;
-        const mins = parseInt(inputTimeLimit.value, 10);
+    // Admin Time Limit Select
+    const selectTimeLimit = (document.getElementById('select-time-limit') || document.getElementById('time-limit')) as HTMLSelectElement | HTMLInputElement | null;
+    if (selectTimeLimit) {
+      selectTimeLimit.addEventListener('change', () => {
+        if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
+        const mins = parseInt(selectTimeLimit.value, 10);
         this.updateRoomConfig({ timeLimit: isNaN(mins) ? 3 : mins });
       });
     }
 
-    // Admin Score Limit Input
-    const inputScoreLimit = document.getElementById('score-limit') as HTMLInputElement | null;
-    if (inputScoreLimit) {
-      inputScoreLimit.addEventListener('change', () => {
-        if (!this.localPlayer.isAdmin) return;
-        const goals = parseInt(inputScoreLimit.value, 10);
+    // Admin Score Limit Select
+    const selectScoreLimit = (document.getElementById('select-goal-limit') || document.getElementById('score-limit')) as HTMLSelectElement | HTMLInputElement | null;
+    if (selectScoreLimit) {
+      selectScoreLimit.addEventListener('change', () => {
+        if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
+        const goals = parseInt(selectScoreLimit.value, 10);
         this.updateRoomConfig({ scoreLimit: isNaN(goals) ? 3 : goals });
       });
     }
@@ -494,7 +500,7 @@ export class GameApp {
     const btnLockTeams = document.getElementById('btn-lock-teams');
     if (btnLockTeams) {
       btnLockTeams.addEventListener('click', () => {
-        if (!this.localPlayer.isAdmin) return;
+        if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
         const newLock = !this.roomConfig.teamsLocked;
         this.updateRoomConfig({ teamsLocked: newLock });
       });
@@ -828,12 +834,11 @@ export class GameApp {
     engine.onGoal = (scoringTeam, redScore, blueScore) => {
       this.audioManager.playGoalWhistle();
       const color = scoringTeam === 'red' ? 'Rojo' : 'Azul';
-      this.chat.addMessage({ author: 'GOL', text: `¡Gol del equipo ${color}! (${redScore} - ${blueScore})`, team: 'sys' });
       this.broadcastMatchStateSync({
         text: '¡GOL!',
         subtext: `Equipo ${color} anota (${redScore} - ${blueScore})`,
         color: scoringTeam === 'red' ? '#ef4444' : '#38bdf8',
-        duration: 3500
+        duration: 3000
       });
     };
 
@@ -848,14 +853,8 @@ export class GameApp {
     engine.onMatchEnd = (winner) => {
       this.audioManager.playGoalWhistle();
       const outcomeText = winner ? `¡Victoria del Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}!` : '¡Empate!';
-      this.chat.addSystemMessage(`Fin del partido. ${outcomeText}`);
       this.enforceMenuState(MatchState.STOPPED, outcomeText);
-      this.broadcastMatchStateSync({
-        text: winner ? '¡VICTORIA!' : '¡EMPATE!',
-        subtext: outcomeText,
-        color: winner === 'red' ? '#ef4444' : (winner === 'blue' ? '#38bdf8' : '#f59e0b'),
-        duration: 5000
-      });
+      this.broadcastMatchStateSync();
       this.updateAdminControlsUI();
     };
 
@@ -866,6 +865,16 @@ export class GameApp {
       } else if (state === MatchState.PLAYING) {
         this.audioManager.playCountdown(true);
         this.canvasRenderer.clearBanner();
+      } else if (state === MatchState.MATCH_ENDED) {
+        const winner = this.engine?.fsm.winningTeam;
+        const winnerText = winner ? `¡VICTORIA EQUIPO ${winner === 'red' ? 'ROJO' : 'AZUL'}!` : '¡EMPATE!';
+        this.audioManager.playGoalWhistle();
+        this.broadcastMatchStateSync({
+          text: '¡VICTORIA!',
+          subtext: winnerText,
+          color: winner === 'red' ? '#ef4444' : (winner === 'blue' ? '#38bdf8' : '#f59e0b'),
+          duration: 3000
+        });
       }
       this.updateAdminControlsUI();
       let banner: MatchStatePayload['banner'];
@@ -876,8 +885,8 @@ export class GameApp {
           color: '#f59e0b',
           duration: 0
         };
+        this.broadcastMatchStateSync(banner);
       }
-      this.broadcastMatchStateSync(banner);
     };
   }
 
@@ -1031,6 +1040,19 @@ export class GameApp {
             this.updateAdminControlsUI();
             this.broadcastMatchStateSync();
           }
+        } else if (msg.type === 'ROOM_SETTINGS_REQUEST') {
+          const requester = this.engine?.players.get(peerId);
+          if (!requester?.isAdmin && peerId !== this.currentHostId) return;
+
+          const timeLimit = msg.timeLimit !== undefined ? msg.timeLimit : this.roomConfig.timeLimit;
+          const goalLimit = msg.goalLimit !== undefined ? msg.goalLimit : (msg.scoreLimit !== undefined ? msg.scoreLimit : this.roomConfig.scoreLimit);
+          const teamsLocked = msg.teamsLocked !== undefined ? msg.teamsLocked : this.roomConfig.teamsLocked;
+
+          this.updateRoomConfig({
+            timeLimit,
+            scoreLimit: goalLimit,
+            teamsLocked
+          });
         }
       } catch (e) {}
     };
@@ -1169,8 +1191,18 @@ export class GameApp {
           this.updateAdminControlsUI();
         } else if (msg.type === 'set_game_state') {
           this.updateAdminControlsUI();
-        } else if (msg.type === 'room_config_sync') {
-          this.roomConfig = { ...this.roomConfig, ...msg.config };
+        } else if (msg.type === 'room_config_sync' || msg.type === 'ROOM_SETTINGS_SYNC') {
+          const newTimeLimit = msg.timeLimit !== undefined ? msg.timeLimit : msg.config?.timeLimit;
+          const newScoreLimit = msg.goalLimit !== undefined ? msg.goalLimit : (msg.scoreLimit !== undefined ? msg.scoreLimit : msg.config?.scoreLimit);
+          const newTeamsLocked = msg.teamsLocked !== undefined ? msg.teamsLocked : msg.config?.teamsLocked;
+
+          if (newTimeLimit !== undefined) this.roomConfig.timeLimit = newTimeLimit;
+          if (newScoreLimit !== undefined) this.roomConfig.scoreLimit = newScoreLimit;
+          if (newTeamsLocked !== undefined) this.roomConfig.teamsLocked = newTeamsLocked;
+          if (msg.config) {
+            this.roomConfig = { ...this.roomConfig, ...msg.config };
+          }
+          this.applyRoomConfigToEngine();
           this.updateAdminControlsUI();
         } else if (msg.type === 'kicked') {
           alert('Has sido expulsado de la sala.');
@@ -1259,9 +1291,11 @@ export class GameApp {
   }
 
   private updateTeamLists(): void {
-    if (this.engine) {
-      const hostId = this.currentHostId || Array.from(this.engine.players.values()).find(p => p.isHost)?.id || this.localPlayer.id;
-      this.teamSelect.updateLists(Array.from(this.engine.players.values()), this.localPlayer.isAdmin, hostId);
+    if (this.mode === 'host' || this.mode === 'practice') {
+      if (this.engine) {
+        const hostId = this.currentHostId || Array.from(this.engine.players.values()).find(p => p.isHost)?.id || this.localPlayer.id;
+        this.teamSelect.updateLists(Array.from(this.engine.players.values()), this.localPlayer.isAdmin, hostId);
+      }
     }
   }
 
@@ -1384,15 +1418,38 @@ export class GameApp {
   }
 
   public updateRoomConfig(newConfig: Partial<RoomConfig>): void {
-    this.roomConfig = { ...this.roomConfig, ...newConfig };
-    this.applyRoomConfigToEngine();
-    this.updateAdminControlsUI();
+    if (this.mode === 'host' || this.mode === 'practice') {
+      this.roomConfig = { ...this.roomConfig, ...newConfig };
+      this.applyRoomConfigToEngine();
+      this.updateAdminControlsUI();
 
-    if (this.mode === 'host') {
-      this.signaling.updateRoomConfig(this.roomConfig);
-      this.broadcastReliable(JSON.stringify({
-        type: 'room_config_sync',
-        config: this.roomConfig
+      if (this.mode === 'host') {
+        this.signaling.updateRoomConfig(this.roomConfig);
+        const syncPayload = JSON.stringify({
+          type: 'ROOM_SETTINGS_SYNC',
+          timeLimit: this.roomConfig.timeLimit,
+          goalLimit: this.roomConfig.scoreLimit,
+          scoreLimit: this.roomConfig.scoreLimit,
+          teamsLocked: this.roomConfig.teamsLocked
+        });
+        this.broadcastReliable(syncPayload);
+        this.broadcastReliable(JSON.stringify({
+          type: 'room_config_sync',
+          config: this.roomConfig
+        }));
+      }
+    } else if (this.mode === 'client' && this.hostPeer) {
+      if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
+      const timeLimit = newConfig.timeLimit !== undefined ? newConfig.timeLimit : this.roomConfig.timeLimit;
+      const goalLimit = newConfig.scoreLimit !== undefined ? newConfig.scoreLimit : this.roomConfig.scoreLimit;
+      const teamsLocked = newConfig.teamsLocked !== undefined ? newConfig.teamsLocked : this.roomConfig.teamsLocked;
+
+      this.hostPeer.sendReliable(JSON.stringify({
+        type: 'ROOM_SETTINGS_REQUEST',
+        timeLimit,
+        goalLimit,
+        scoreLimit: goalLimit,
+        teamsLocked
       }));
     }
   }
@@ -1411,7 +1468,7 @@ export class GameApp {
   }
 
   private updateAdminControlsUI(): void {
-    const isAdmin = this.localPlayer.isAdmin;
+    const isAdmin = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost);
     const currentState = this.engine?.fsm.currentState || this.currentMatchState || 'STOPPED';
 
     if (this.btnStartStop) {
@@ -1442,14 +1499,14 @@ export class GameApp {
       this.btnLockTeams.className = this.roomConfig.teamsLocked ? 'btn btn-danger' : 'btn btn-secondary';
     }
 
-    if (this.inputTimeLimit) {
-      this.inputTimeLimit.disabled = !isAdmin;
-      this.inputTimeLimit.value = this.roomConfig.timeLimit.toString();
+    if (this.selectTimeLimit) {
+      this.selectTimeLimit.disabled = !isAdmin;
+      this.selectTimeLimit.value = this.roomConfig.timeLimit.toString();
     }
 
-    if (this.inputScoreLimit) {
-      this.inputScoreLimit.disabled = !isAdmin;
-      this.inputScoreLimit.value = this.roomConfig.scoreLimit.toString();
+    if (this.selectScoreLimit) {
+      this.selectScoreLimit.disabled = !isAdmin;
+      this.selectScoreLimit.value = this.roomConfig.scoreLimit.toString();
     }
   }
 

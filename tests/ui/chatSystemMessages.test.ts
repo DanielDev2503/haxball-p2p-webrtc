@@ -51,7 +51,7 @@ describe('ChatBox System Messages and Notifications', () => {
 
     expect(createdElements.length).toBe(1);
     expect(createdElements[0].className).toBe('chat-msg chat-msg--system');
-    expect(createdElements[0].textContent).toBe('[Sistema] Messi se ha unido a la sala.');
+    expect(createdElements[0].textContent).toBe('Messi se ha unido a la sala.');
     expect(container.appendChild).toHaveBeenCalledWith(createdElements[0]);
     expect(container.scrollTop).toBe(1200);
   });
@@ -73,7 +73,7 @@ describe('ChatBox System Messages and Notifications', () => {
 
     expect(createdElements.length).toBe(1);
     expect(createdElements[0].className).toBe('chat-msg chat-msg--system');
-    expect(createdElements[0].textContent).toBe('[Sistema] Mbappe ha abandonado la sala.');
+    expect(createdElements[0].textContent).toBe('Mbappe ha abandonado la sala.');
   });
 
   it('correctly handles kick and ban alert system messages', () => {
@@ -89,7 +89,7 @@ describe('ChatBox System Messages and Notifications', () => {
     chatBox.addSystemMessage('Cheater2 fue baneado de la sala por un administrador.');
 
     expect(createdElements.length).toBe(2);
-    expect(createdElements[0].textContent).toBe('[Sistema] Troll1 fue expulsado de la sala por un administrador.');
-    expect(createdElements[1].textContent).toBe('[Sistema] Cheater2 fue baneado de la sala por un administrador.');
+    expect(createdElements[0].textContent).toBe('Troll1 fue expulsado de la sala por un administrador.');
+    expect(createdElements[1].textContent).toBe('Cheater2 fue baneado de la sala por un administrador.');
   });
 });

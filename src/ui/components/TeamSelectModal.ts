@@ -93,7 +93,7 @@ export class TeamSelectModal {
 
     // Actualizar visibilidad del botón de retorno
     if (this.returnGameBtn) {
-      this.returnGameBtn.style.display = (newState === 'PLAYING' || newState === 'PAUSED' || newState === 'COUNTDOWN') ? 'inline-block' : 'none';
+      this.returnGameBtn.style.display = (newState === 'PLAYING' || newState === 'PAUSED' || newState === 'COUNTDOWN' || newState === 'GOAL_CELEBRATION' || newState === 'MATCH_ENDED') ? 'inline-block' : 'none';
     }
 
     // Banner de resultado del partido al finalizar
@@ -107,7 +107,7 @@ export class TeamSelectModal {
       }
     }
 
-    if (newState === 'COUNTDOWN' || newState === 'PLAYING') {
+    if (newState === 'COUNTDOWN' || newState === 'PLAYING' || newState === 'GOAL_CELEBRATION' || newState === 'MATCH_ENDED') {
       // 1. Cierre Automático: Despeja la pantalla para ver el campo y la cuenta regresiva
       this.close();
     } else if (newState === 'STOPPED') {

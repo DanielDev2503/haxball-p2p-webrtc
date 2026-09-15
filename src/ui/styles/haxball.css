@@ -970,7 +970,7 @@ button:disabled, input:disabled, select:disabled {
 
 /* SYSTEM CHAT NOTIFICATIONS */
 .chat-msg--system {
-  color: #fde047 !important;
+  color: #ffe082 !important;
   font-style: italic;
   font-weight: 500;
   opacity: 0.95;

@@ -128,6 +128,10 @@ export class CanvasRenderer {
       const count = snapshot.countdownSeconds ?? 3;
       const text = count > 0 ? count.toString() : '¡PLAY!';
       this.drawBigText(ctx, text, '#facc15');
+    } else if (snapshot.matchState === 'GOAL_CELEBRATION') {
+      this.drawBannerBox(ctx, '¡GOL!', 'Celebración', '#38bdf8');
+    } else if (snapshot.matchState === 'MATCH_ENDED') {
+      this.drawBannerBox(ctx, '¡VICTORIA!', 'Fin del partido', '#f59e0b');
     }
 
     ctx.restore();

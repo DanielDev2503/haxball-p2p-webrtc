@@ -73,7 +73,7 @@ export class ChatBox {
 
     const row = document.createElement('div');
     row.className = 'chat-msg chat-msg--system';
-    row.textContent = `[Sistema] ${message}`;
+    row.textContent = message;
 
     this.container.appendChild(row);
     this.container.scrollTop = this.container.scrollHeight;

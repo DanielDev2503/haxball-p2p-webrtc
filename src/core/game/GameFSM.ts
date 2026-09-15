@@ -3,6 +3,8 @@ export const MatchState = {
   PAUSED: 'PAUSED',
   COUNTDOWN: 'COUNTDOWN',
   PLAYING: 'PLAYING',
+  GOAL_CELEBRATION: 'GOAL_CELEBRATION',
+  MATCH_ENDED: 'MATCH_ENDED',
 } as const;
 
 export type MatchState = (typeof MatchState)[keyof typeof MatchState];
@@ -74,6 +76,19 @@ export class GameFSM {
     if (this.onStateChange) this.onStateChange(this.currentState);
   }
 
+  public startGoalCelebration(durationTicks: number = 180): void {
+    this.currentState = 'GOAL_CELEBRATION';
+    this.stateTicksRemaining = durationTicks;
+    if (this.onStateChange) this.onStateChange(this.currentState);
+  }
+
+  public startMatchEnded(winner: 'red' | 'blue' | null, durationTicks: number = 180): void {
+    this.currentState = 'MATCH_ENDED';
+    this.winningTeam = winner;
+    this.stateTicksRemaining = durationTicks;
+    if (this.onStateChange) this.onStateChange(this.currentState);
+  }
+
   public endMatch(winner: 'red' | 'blue' | null): void {
     this.currentState = 'STOPPED';
     this.winningTeam = winner;
@@ -99,6 +114,18 @@ export class GameFSM {
         this.currentState = 'PLAYING';
         this.countdownSeconds = 0;
         if (this.onStateChange) this.onStateChange(this.currentState);
+        return true;
+      }
+    } else if (this.currentState === 'GOAL_CELEBRATION' && this.stateTicksRemaining > 0) {
+      this.stateTicksRemaining--;
+      if (this.stateTicksRemaining === 0) {
+        this.startResumeCountdown();
+        return true;
+      }
+    } else if (this.currentState === 'MATCH_ENDED' && this.stateTicksRemaining > 0) {
+      this.stateTicksRemaining--;
+      if (this.stateTicksRemaining === 0) {
+        this.endMatch(this.winningTeam);
         return true;
       }
     }

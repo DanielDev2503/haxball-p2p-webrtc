@@ -17,7 +17,9 @@ export type ControlMessageType =
   | 'banned'
   | 'client_hello'
   | 'initial_state'
-  | 'match_control';
+  | 'match_control'
+  | 'ROOM_SETTINGS_REQUEST'
+  | 'ROOM_SETTINGS_SYNC';
 
 export interface RoomConfig {
   name: string;
@@ -81,7 +83,7 @@ export interface TeamSyncMessage {
 }
 
 export interface MatchStatePayload {
-  state: 'STOPPED' | 'PAUSED' | 'COUNTDOWN' | 'PLAYING';
+  state: MatchState;
   timeRemaining: number;
   redScore: number;
   blueScore: number;
@@ -127,5 +129,21 @@ export interface InitialStateMessage {
 export interface MatchControlMessage {
   type: 'match_control';
   action: 'START' | 'STOP';
+}
+
+export interface RoomSettingsRequestMessage {
+  type: 'ROOM_SETTINGS_REQUEST';
+  timeLimit?: number;
+  goalLimit?: number;
+  scoreLimit?: number;
+  teamsLocked?: boolean;
+}
+
+export interface RoomSettingsSyncMessage {
+  type: 'ROOM_SETTINGS_SYNC';
+  timeLimit: number;
+  goalLimit: number;
+  scoreLimit?: number;
+  teamsLocked: boolean;
 }
 

@@ -6,10 +6,19 @@ const STATE_TO_NUM: Record<MatchState, number> = {
   STOPPED: 0,
   PAUSED: 1,
   COUNTDOWN: 2,
-  PLAYING: 3
+  PLAYING: 3,
+  GOAL_CELEBRATION: 4,
+  MATCH_ENDED: 5
 };
 
-const NUM_TO_STATE: MatchState[] = ['STOPPED', 'PAUSED', 'COUNTDOWN', 'PLAYING'];
+const NUM_TO_STATE: MatchState[] = [
+  'STOPPED',
+  'PAUSED',
+  'COUNTDOWN',
+  'PLAYING',
+  'GOAL_CELEBRATION',
+  'MATCH_ENDED'
+];
 
 export class SnapshotPacket {
   public static readonly HEADER_LENGTH = 11;

@@ -5,16 +5,12 @@ import { TeamSelectModal } from '../../src/ui/components/TeamSelectModal';
 
 describe('Match Conclusion Flow and Menu Synchronization', () => {
   describe('GameEngine state propagation on match end', () => {
-    it('fires onStateChange with STOPPED and onMatchEnd when endMatch is called', () => {
+    it('fires onStateChange with STOPPED when endMatch is called', () => {
       const engine = new GameEngine({ scoreLimit: 3, timeLimitSeconds: 60 });
       const stateChanges: MatchState[] = [];
-      let endWinner: 'red' | 'blue' | null | undefined = undefined;
 
       engine.onStateChange = (state) => {
         stateChanges.push(state);
-      };
-      engine.onMatchEnd = (winner) => {
-        endWinner = winner;
       };
 
       engine.startMatch(); // Moves from STOPPED to COUNTDOWN
@@ -46,6 +42,15 @@ describe('Match Conclusion Flow and Menu Synchronization', () => {
       // Simulate a goal by red team
       (engine as any).redScore = 1;
       (engine as any).checkMatchConclusion();
+
+      expect(engine.fsm.currentState).toBe(MatchState.MATCH_ENDED);
+      expect(finalState).toBe(MatchState.MATCH_ENDED);
+      expect(winnerResult).toBeNull();
+
+      // Advance 180 ticks (3.0 seconds at 60 Hz)
+      for (let i = 0; i < 180; i++) {
+        engine.tick(new Map());
+      }
 
       expect(winnerResult).toBe('red');
       expect(finalState).toBe(MatchState.STOPPED);

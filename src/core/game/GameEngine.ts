@@ -249,25 +249,41 @@ export class GameEngine {
       return;
     }
 
-    // Estado PLAYING:
-    this.tickCount++;
-
-    // Advance match timer (every 60 ticks = 1 second)
-    if (this.tickCount % 60 === 0) {
-      if (this.config.timeLimitSeconds > 0) {
-        if (this.matchTimerSeconds > 0) {
-          this.matchTimerSeconds--;
-          if (this.matchTimerSeconds === 0) {
-            this.checkMatchConclusion();
-          }
+    // Si está en MATCH_ENDED (3s de pantalla de victoria), congela patadas y avanza temporizador síncrono
+    if (this.fsm.currentState === 'MATCH_ENDED') {
+      const transitioned = this.fsm.tick();
+      if (transitioned) {
+        if (this.onMatchEnd) {
+          this.onMatchEnd(this.fsm.winningTeam);
         }
-      } else {
-        // Tiempo indefinido: cuenta hacia arriba
-        this.matchTimerSeconds++;
+        if (this.onStateChange) {
+          this.onStateChange(this.fsm.currentState);
+        }
+      }
+      return;
+    }
+
+    // Estados activos: PLAYING o GOAL_CELEBRATION
+    if (this.fsm.currentState === 'PLAYING') {
+      this.tickCount++;
+
+      // Advance match timer (every 60 ticks = 1 second) únicamente en PLAYING
+      if (this.tickCount % 60 === 0) {
+        if (this.config.timeLimitSeconds > 0) {
+          if (this.matchTimerSeconds > 0) {
+            this.matchTimerSeconds--;
+            if (this.matchTimerSeconds === 0) {
+              this.checkMatchConclusion();
+            }
+          }
+        } else {
+          // Tiempo indefinido: cuenta hacia arriba
+          this.matchTimerSeconds++;
+        }
       }
     }
 
-    // Apply player movement and kicking in PLAYING
+    // Apply player movement and kicking (tanto en PLAYING como en GOAL_CELEBRATION)
     const accel = 7.5;
     const kickStrength = 320.0;
     const kickReach = 15 + 10 + 6; // player radius (15) + ball radius (10) + reach margin (6)
@@ -317,26 +333,36 @@ export class GameEngine {
       }
     }
 
-    // Step physics simulation
+    // Step physics simulation (activa en PLAYING y GOAL_CELEBRATION)
     this.physicsWorld.step();
 
-    // Check for goal
-    const goalScored = this.stadium.checkGoal(this.ball.pos.x, this.ball.pos.y);
-    if (goalScored) {
-      if (goalScored === 'red') {
-        this.redScore++;
-      } else {
-        this.blueScore++;
-      }
+    // Detección de gol (deshabilitada durante GOAL_CELEBRATION para evitar conteos dobles)
+    if (this.fsm.currentState === 'PLAYING') {
+      const goalScored = this.stadium.checkGoal(this.ball.pos.x, this.ball.pos.y);
+      if (goalScored) {
+        if (goalScored === 'red') {
+          this.redScore++;
+        } else {
+          this.blueScore++;
+        }
 
-      if (this.onGoal) {
-        this.onGoal(goalScored, this.redScore, this.blueScore);
-      }
+        if (this.onGoal) {
+          this.onGoal(goalScored, this.redScore, this.blueScore);
+        }
 
-      const matchEnded = this.checkMatchConclusion();
-      if (!matchEnded) {
+        const matchEnded = this.checkMatchConclusion();
+        if (!matchEnded) {
+          this.fsm.startGoalCelebration(180);
+          if (this.onStateChange) {
+            this.onStateChange(this.fsm.currentState);
+          }
+        }
+      }
+    } else if (this.fsm.currentState === 'GOAL_CELEBRATION') {
+      const transitioned = this.fsm.tick();
+      if (transitioned) {
+        // Al expirar los 3 segundos de celebración: reiniciar posiciones de saque y pasar a COUNTDOWN
         this.resetKickoffPositions();
-        this.fsm.startResumeCountdown();
         if (this.onStateChange) {
           this.onStateChange(this.fsm.currentState);
         }
@@ -347,12 +373,12 @@ export class GameEngine {
   private checkMatchConclusion(): boolean {
     if (this.config.scoreLimit > 0) {
       if (this.redScore >= this.config.scoreLimit) {
-        this.fsm.endMatch('red');
-        if (this.onMatchEnd) this.onMatchEnd('red');
+        this.fsm.startMatchEnded('red', 180);
+        if (this.onStateChange) this.onStateChange(this.fsm.currentState);
         return true;
       } else if (this.blueScore >= this.config.scoreLimit) {
-        this.fsm.endMatch('blue');
-        if (this.onMatchEnd) this.onMatchEnd('blue');
+        this.fsm.startMatchEnded('blue', 180);
+        if (this.onStateChange) this.onStateChange(this.fsm.currentState);
         return true;
       }
     }
@@ -360,16 +386,16 @@ export class GameEngine {
       let winner: 'red' | 'blue' | null = null;
       if (this.redScore > this.blueScore) winner = 'red';
       else if (this.blueScore > this.redScore) winner = 'blue';
-      this.fsm.endMatch(winner);
-      if (this.onMatchEnd) this.onMatchEnd(winner);
+      this.fsm.startMatchEnded(winner, 180);
+      if (this.onStateChange) this.onStateChange(this.fsm.currentState);
       return true;
     }
     return false;
   }
 
   public getSnapshot(): GameSnapshot {
-    // Freeze velocity in any non-PLAYING state to prevent false extrapolation on clients
-    const isFrozen = this.fsm.currentState !== 'PLAYING';
+    // Freeze velocity in any non-active state to prevent false extrapolation on clients
+    const isFrozen = this.fsm.currentState !== 'PLAYING' && this.fsm.currentState !== 'GOAL_CELEBRATION';
     const discSnapshots: DiscSnapshot[] = [];
 
     // Ball
