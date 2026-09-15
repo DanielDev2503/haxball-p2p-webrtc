@@ -68,24 +68,36 @@ export class ChatBox {
     return Boolean(this.inputEl && document.activeElement === this.inputEl);
   }
 
+  public addSystemMessage(message: string): void {
+    if (!this.container) return;
+
+    const row = document.createElement('div');
+    row.className = 'chat-msg chat-msg--system';
+    row.textContent = `[Sistema] ${message}`;
+
+    this.container.appendChild(row);
+    this.container.scrollTop = this.container.scrollHeight;
+  }
+
   public addMessage(msg: ChatMessage): void {
     if (!this.container) return;
+
+    if (msg.team === 'sys') {
+      this.addSystemMessage(msg.text);
+      return;
+    }
 
     const row = document.createElement('div');
     row.className = `chat-msg ${msg.team ?? 'spec'}`;
 
-    if (msg.team === 'sys') {
-      row.textContent = `[SYSTEM] ${msg.text}`;
-    } else {
-      const authorSpan = document.createElement('span');
-      authorSpan.className = 'author';
-      authorSpan.textContent = `${msg.author}:`;
-      row.appendChild(authorSpan);
+    const authorSpan = document.createElement('span');
+    authorSpan.className = 'author';
+    authorSpan.textContent = `${msg.author}:`;
+    row.appendChild(authorSpan);
 
-      const textSpan = document.createElement('span');
-      textSpan.textContent = ` ${msg.text}`;
-      row.appendChild(textSpan);
-    }
+    const textSpan = document.createElement('span');
+    textSpan.textContent = ` ${msg.text}`;
+    row.appendChild(textSpan);
 
     this.container.appendChild(row);
     this.container.scrollTop = this.container.scrollHeight;

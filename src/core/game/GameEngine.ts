@@ -38,6 +38,9 @@ export class GameEngine {
     this.physicsWorld = new PhysicsWorld({ fixedDt: 1 / 60, maxSubsteps: 8 });
     this.stadium = new Stadium();
     this.fsm = new GameFSM();
+    this.fsm.onStateChange = (state) => {
+      this.onStateChange?.(state);
+    };
 
     // Register stadium walls and goal posts
     for (const seg of this.stadium.segments) {

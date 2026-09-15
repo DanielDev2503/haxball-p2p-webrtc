@@ -967,3 +967,16 @@ button:disabled, input:disabled, select:disabled {
   background: rgba(255, 255, 255, 0.15) !important;
   color: #fff !important;
 }
+
+/* SYSTEM CHAT NOTIFICATIONS */
+.chat-msg--system {
+  color: #fde047 !important;
+  font-style: italic;
+  font-weight: 500;
+  opacity: 0.95;
+}
+
+/* KEYBINDS MODAL ELEVATED OVERLAY */
+#settingsModal.modal-overlay {
+  z-index: 10001 !important;
+}

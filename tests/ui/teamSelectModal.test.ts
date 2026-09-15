@@ -44,6 +44,7 @@ describe('TeamSelectModal Lifecycle and Match State Synchronization', () => {
         return null;
       },
       querySelectorAll: () => [],
+      querySelector: () => null,
       createElement: () => ({ className: '', appendChild: vi.fn(), setAttribute: vi.fn(), addEventListener: vi.fn() })
     };
   });

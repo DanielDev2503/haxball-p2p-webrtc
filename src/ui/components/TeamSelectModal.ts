@@ -16,6 +16,7 @@ export class TeamSelectModal {
   public onSelectTeam?: (team: TeamType) => void;
   public onPlayerClick?: (player: Player, event: MouseEvent) => void;
   public onTeamChangeRequest?: (playerId: string, team: TeamType) => void;
+  public onOpenKeybinds?: () => void;
 
   constructor() {
     this.menuEl = document.getElementById('ingame-menu');
@@ -61,6 +62,15 @@ export class TeamSelectModal {
       console.warn('[TeamSelectModal] Element "#joinSpecBtn" was not found in DOM.');
     }
 
+    // Botón de ajustes de teclado (⚙)
+    const btnSettings = document.getElementById('btn-settings-toggle') || document.getElementById('btn-settings') || document.querySelector?.('.btn-settings-btn');
+    if (btnSettings) {
+      btnSettings.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.onOpenKeybinds?.();
+      });
+    }
+
     // Botón de contingencia para regresar a la partida en curso
     const handleContingencyClose = () => {
       if (this.currentMatchState === 'PLAYING' || this.currentMatchState === 'PAUSED' || this.currentMatchState === 'COUNTDOWN') {
@@ -78,12 +88,23 @@ export class TeamSelectModal {
     this.setupDragAndDropColumns();
   }
 
-  public updateMatchState(newState: MatchState): void {
+  public updateMatchState(newState: MatchState, outcomeText?: string): void {
     this.currentMatchState = newState;
 
     // Actualizar visibilidad del botón de retorno
     if (this.returnGameBtn) {
       this.returnGameBtn.style.display = (newState === 'PLAYING' || newState === 'PAUSED' || newState === 'COUNTDOWN') ? 'inline-block' : 'none';
+    }
+
+    // Banner de resultado del partido al finalizar
+    const outcomeBanner = document.getElementById('match-outcome-banner');
+    if (outcomeBanner) {
+      if (newState === 'STOPPED' && outcomeText) {
+        outcomeBanner.style.display = 'block';
+        outcomeBanner.textContent = outcomeText;
+      } else if (newState !== 'STOPPED') {
+        outcomeBanner.style.display = 'none';
+      }
     }
 
     if (newState === 'COUNTDOWN' || newState === 'PLAYING') {

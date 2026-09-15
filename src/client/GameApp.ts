@@ -56,6 +56,7 @@ export class GameApp {
   public jitterBuffer: JitterBuffer;
   public clientInputSequence: number = 0;
   public bannedPeers: Set<string> = new Set();
+  public kickedPeers: Set<string> = new Set();
   public currentRoomId: string = '';
   public currentHostId: string | null = null;
 
@@ -846,11 +847,12 @@ export class GameApp {
 
     engine.onMatchEnd = (winner) => {
       this.audioManager.playGoalWhistle();
-      const winnerText = winner ? `¡Ganador: Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}!` : '¡Empate!';
-      this.chat.addMessage({ author: 'FIN', text: `Fin del partido. ${winnerText}`, team: 'sys' });
+      const outcomeText = winner ? `¡Victoria del Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}!` : '¡Empate!';
+      this.chat.addSystemMessage(`Fin del partido. ${outcomeText}`);
+      this.enforceMenuState(MatchState.STOPPED, outcomeText);
       this.broadcastMatchStateSync({
-        text: '¡VICTORIA!',
-        subtext: winnerText,
+        text: winner ? '¡VICTORIA!' : '¡EMPATE!',
+        subtext: outcomeText,
         color: winner === 'red' ? '#ef4444' : (winner === 'blue' ? '#38bdf8' : '#f59e0b'),
         duration: 5000
       });
@@ -919,7 +921,11 @@ export class GameApp {
       try {
         const msg = JSON.parse(data);
         if (msg.type === 'chat') {
-          this.chat.addMessage({ author: msg.author, text: msg.text, team: msg.team });
+          if (msg.team === 'sys') {
+            this.chat.addSystemMessage(msg.text);
+          } else {
+            this.chat.addMessage({ author: msg.author, text: msg.text, team: msg.team });
+          }
           this.broadcastReliable(data, peerId);
         } else if (msg.type === 'peer_handshake' || msg.type === 'CLIENT_HELLO') {
           // CLIENT_HELLO received — add player and respond with INITIAL_STATE
@@ -968,6 +974,7 @@ export class GameApp {
 
             // Also sync all other clients about the new player
             this.syncPlayersWithClients();
+            this.broadcastSystemChat(`${nick} se ha unido a la sala.`);
           }
         } else if (msg.type === 'change_team') {
           const requester = this.engine?.players.get(peerId);
@@ -1070,7 +1077,11 @@ export class GameApp {
       try {
         const msg = JSON.parse(data);
         if (msg.type === 'chat') {
-          this.chat.addMessage({ author: msg.author, text: msg.text, team: msg.team });
+          if (msg.team === 'sys') {
+            this.chat.addSystemMessage(msg.text);
+          } else {
+            this.chat.addMessage({ author: msg.author, text: msg.text, team: msg.team });
+          }
         } else if (msg.type === 'initial_state' || msg.type === 'INITIAL_STATE') {
           // INITIAL_STATE received — handshake complete!
           this.clearJoinTimeout();
@@ -1105,7 +1116,7 @@ export class GameApp {
           }
 
           this.updateAdminControlsUI();
-          this.chat.addMessage({ author: 'Lobby', text: `Conectado a la sala: ${this.roomConfig.name}`, team: 'sys' });
+          this.chat.addSystemMessage(`Conectado a la sala: ${this.roomConfig.name}`);
 
           // NOW transition to in-game — we have all the data we need
           this.lobby?.hideConnecting();
@@ -1137,7 +1148,24 @@ export class GameApp {
             this.canvasRenderer.clearBanner();
           }
 
-          this.enforceMenuState(p.state);
+          let outcomeText: string | undefined = undefined;
+          if (p.state === 'STOPPED') {
+            if (p.banner?.subtext) {
+              outcomeText = p.banner.subtext;
+            } else if (p.redScore !== undefined && p.blueScore !== undefined) {
+              const red = p.redScore;
+              const blue = p.blueScore;
+              if (red > blue) {
+                outcomeText = '¡Victoria del Equipo Rojo!';
+              } else if (blue > red) {
+                outcomeText = '¡Victoria del Equipo Azul!';
+              } else {
+                outcomeText = '¡Empate!';
+              }
+            }
+          }
+
+          this.enforceMenuState(p.state, outcomeText);
           this.updateAdminControlsUI();
         } else if (msg.type === 'set_game_state') {
           this.updateAdminControlsUI();
@@ -1177,6 +1205,10 @@ export class GameApp {
   }
 
   private handlePeerLeft(peerId: string): void {
+    const player = this.engine?.players.get(peerId);
+    const playerName = player?.name;
+    const wasKickedOrBanned = this.bannedPeers.has(peerId) || this.kickedPeers.has(peerId);
+
     if (this.engine) {
       this.engine.removePlayer(peerId);
       this.updateTeamLists();
@@ -1187,6 +1219,10 @@ export class GameApp {
       peer.close();
       this.peers.delete(peerId);
     }
+    if (playerName && !wasKickedOrBanned) {
+      this.broadcastSystemChat(`${playerName} ha abandonado la sala.`);
+    }
+    this.kickedPeers.delete(peerId);
   }
 
   private handleTeamChange(playerId: string, team: TeamType): void {
@@ -1302,13 +1338,16 @@ export class GameApp {
       return;
     }
     if (this.mode === 'host') {
+      const p = this.engine?.players.get(playerId);
+      const nick = p?.name || 'Un jugador';
       const peer = this.peers.get(playerId);
       if (peer) {
+        this.kickedPeers.add(playerId);
         peer.sendReliable(JSON.stringify({ type: 'kicked' }));
         setTimeout(() => {
           this.handlePeerLeft(playerId);
         }, 100);
-        this.chat.addMessage({ author: 'Admin', text: `Un jugador ha sido expulsado.`, team: 'sys' });
+        this.broadcastSystemChat(`${nick} fue expulsado de la sala por un administrador.`);
       }
     } else if (this.mode === 'client' && this.hostPeer && this.localPlayer.isAdmin) {
       this.hostPeer.sendReliable(JSON.stringify({
@@ -1326,13 +1365,15 @@ export class GameApp {
     }
     if (this.mode === 'host') {
       this.bannedPeers.add(playerId);
+      const p = this.engine?.players.get(playerId);
+      const nick = p?.name || 'Un jugador';
       const peer = this.peers.get(playerId);
       if (peer) {
         peer.sendReliable(JSON.stringify({ type: 'banned' }));
         setTimeout(() => {
           this.handlePeerLeft(playerId);
         }, 100);
-        this.chat.addMessage({ author: 'Admin', text: `Un jugador ha sido baneado de la sala.`, team: 'sys' });
+        this.broadcastSystemChat(`${nick} fue baneado de la sala por un administrador.`);
       }
     } else if (this.mode === 'client' && this.hostPeer && this.localPlayer.isAdmin) {
       this.hostPeer.sendReliable(JSON.stringify({
@@ -1463,12 +1504,12 @@ export class GameApp {
     return this.engine ? this.engine.fsm.currentState : this.currentMatchState;
   }
 
-  public enforceMenuState(state: MatchState): void {
+  public enforceMenuState(state: MatchState, outcomeText?: string): void {
     if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') {
       this.teamSelect.close(true);
       return;
     }
-    this.teamSelect.updateMatchState(state);
+    this.teamSelect.updateMatchState(state, outcomeText);
     this.updateAdminControlsUI();
   }
 
@@ -1544,30 +1585,42 @@ export class GameApp {
       renderKeybinds();
     }, true);
 
-    toggleBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
+    const openModal = () => {
       renderKeybinds();
+      modal.classList.remove('u-hidden');
+      modal.classList.remove('ui-screen-hidden');
       modal.style.display = 'flex';
-    });
+      modal.style.zIndex = '10001';
+      modal.style.pointerEvents = 'auto';
+    };
 
-    closeBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
+    const closeModal = () => {
       modal.style.display = 'none';
+      modal.classList.add('u-hidden');
       if (recordingBtn) {
         recordingBtn.classList.remove('recording');
         recordingAction = null;
         recordingBtn = null;
       }
+    };
+
+    toggleBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openModal();
+    });
+
+    this.teamSelect.onOpenKeybinds = () => {
+      openModal();
+    };
+
+    closeBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeModal();
     });
 
     saveBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
-      modal.style.display = 'none';
-      if (recordingBtn) {
-        recordingBtn.classList.remove('recording');
-        recordingAction = null;
-        recordingBtn = null;
-      }
+      closeModal();
     });
 
     resetBtn?.addEventListener('click', (e) => {
@@ -1588,6 +1641,17 @@ export class GameApp {
   private broadcastChat(author: string, text: string, team: TeamType): void {
     this.chat.addMessage({ author, text, team });
     const payload = JSON.stringify({ type: 'chat', author, text, team });
+
+    if (this.mode === 'host') {
+      this.broadcastReliable(payload);
+    } else if (this.mode === 'client' && this.hostPeer) {
+      this.hostPeer.sendReliable(payload);
+    }
+  }
+
+  public broadcastSystemChat(text: string): void {
+    this.chat.addSystemMessage(text);
+    const payload = JSON.stringify({ type: 'chat', author: 'Sistema', text, team: 'sys' });
 
     if (this.mode === 'host') {
       this.broadcastReliable(payload);
