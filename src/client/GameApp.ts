@@ -58,6 +58,10 @@ export class GameApp {
   public bannedPeers: Set<string> = new Set();
   public currentRoomId: string = '';
 
+  // Handshake timeout: cancel if initial_state is received within 8s
+  private joinTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private static readonly JOIN_TIMEOUT_MS = 8000;
+
   // Room & Admin state
   public roomConfig: RoomConfig = {
     name: 'Classic Match',
@@ -514,6 +518,8 @@ export class GameApp {
         }
 
         case 'room_joined': {
+          // Client received room_joined from signaling — but do NOT transition to game yet.
+          // Wait for P2P connection + initial_state handshake from host.
           this.currentRoomId = msg.roomId || '';
           this.localPlayer.id = this.signaling.peerId;
           if (msg.config) {
@@ -522,10 +528,9 @@ export class GameApp {
           if (this.roomNameBadge) {
             this.roomNameBadge.textContent = `${this.roomConfig.name} [${this.currentRoomId}]`;
           }
-          this.chat.addMessage({ author: 'Lobby', text: `Conectado a la sala: ${this.roomConfig.name}`, team: 'sys' });
           this.updateAdminPanelVisibility();
-          this.lobby?.hideConnecting();
-          this.uiStateMachine?.transitionTo('STATE_IN_GAME');
+          // Keep the connecting indicator visible — transition happens on initial_state
+          this.lobby?.showConnecting('Estableciendo conexión P2P con el anfitrión...');
           break;
         }
 
@@ -611,6 +616,16 @@ export class GameApp {
           break;
         }
       }
+    };
+
+    // Auto-reconnection handler: re-register room if we were hosting
+    this.signaling.onReconnected = () => {
+      this.lobby?.setSignalingStatus('connected');
+      if (this.mode === 'host' && this.currentRoomId) {
+        // Attempt to rejoin our room during grace period
+        this.signaling.rejoinRoom(this.currentRoomId);
+      }
+      this.signaling.requestRoomList();
     };
 
     this.lobby?.setSignalingStatus('connecting');
@@ -712,10 +727,40 @@ export class GameApp {
       }
     }
 
+    // Start the 8-second join timeout — if handshake doesn't complete, abort
+    this.clearJoinTimeout();
+    this.joinTimeoutId = setTimeout(() => {
+      this.joinTimeoutId = null;
+      console.warn('[Client] Join handshake timed out after 8 seconds');
+      this.lobby?.showConnecting('Error de conexión con el anfitrión. Regresando al lobby...');
+      // Clean up partial connection state
+      if (this.hostPeer) {
+        this.hostPeer.close();
+        this.hostPeer = null;
+      }
+      this.currentRoomId = '';
+      this.mode = 'practice';
+      setTimeout(() => {
+        this.lobby?.hideConnecting();
+        this.uiStateMachine?.transitionTo('STATE_LOBBY');
+        this.signaling.requestRoomList();
+      }, 2000);
+    }, GameApp.JOIN_TIMEOUT_MS);
+
     this.signaling.joinRoom(roomId, password, this.localPlayer.name);
   }
 
+  private clearJoinTimeout(): void {
+    if (this.joinTimeoutId !== null) {
+      clearTimeout(this.joinTimeoutId);
+      this.joinTimeoutId = null;
+    }
+  }
+
   public leaveCurrentRoom(): void {
+    // Cancel any pending join timeout
+    this.clearJoinTimeout();
+
     // Notificar al signaling server que abandonamos la sala
     if (this.currentRoomId) {
       this.signaling.leaveRoom(this.currentRoomId);
@@ -758,6 +803,7 @@ export class GameApp {
 
     this.stopRenderLoop();
     this.canvasRenderer.clear();
+    this.lobby?.hideConnecting();
     this.uiStateMachine.transitionTo('STATE_LOBBY');
     this.signaling.requestRoomList();
     this.chat.addMessage({ author: 'Sistema', text: 'Has salido de la sala.', team: 'sys' });
@@ -828,41 +874,12 @@ export class GameApp {
     };
 
     peer.onDataChannelOpen = () => {
-      peer.sendReliable(JSON.stringify({
-        type: 'room_config_sync',
-        config: this.roomConfig
-      }));
-      const currentState = this.engine?.fsm.currentState || 'STOPPED';
-      const payload: MatchStatePayload = {
-        state: currentState,
-        timeRemaining: this.engine?.matchTimerSeconds ?? 0,
-        redScore: this.engine?.redScore ?? 0,
-        blueScore: this.engine?.blueScore ?? 0,
-        countdown: this.engine?.fsm.countdownSeconds ?? 0
-      };
-      peer.sendReliable(JSON.stringify({
-        type: 'MATCH_STATE_SYNC',
-        payload
-      }));
-      this.syncPlayersWithClients();
+      // Don't send initial_state yet — wait for peer_handshake from client
+      // This ensures the client is ready to receive
     };
 
     peer.onConnected = () => {
       console.log(`[Host] Conexión P2P establecida con ${peerId}`);
-      const nick = initialNick || `Guest_${peerId.substring(0, 4)}`;
-      const newPlayer = new Player({
-        id: peerId,
-        name: nick,
-        avatar: nick.substring(0, 2).toUpperCase(),
-        team: 'spec',
-        isHost: false,
-        isAdmin: false
-      });
-      if (this.engine) {
-        this.engine.addPlayer(newPlayer);
-        this.updateTeamLists();
-        this.syncPlayersWithClients();
-      }
     };
 
     peer.onDisconnected = () => {
@@ -891,11 +908,51 @@ export class GameApp {
           this.chat.addMessage({ author: msg.author, text: msg.text, team: msg.team });
           this.broadcastReliable(data, peerId);
         } else if (msg.type === 'peer_handshake') {
-          const p = this.engine?.players.get(peerId);
-          if (p && msg.nickname) {
-            p.name = msg.nickname;
-            p.avatar = msg.avatar || msg.nickname.substring(0, 2).toUpperCase();
+          // CLIENT_HELLO received — add player and respond with INITIAL_STATE
+          const nick = msg.nickname || initialNick || `Guest_${peerId.substring(0, 4)}`;
+          const avatar = msg.avatar || nick.substring(0, 2).toUpperCase();
+
+          const newPlayer = new Player({
+            id: peerId,
+            name: nick,
+            avatar,
+            team: 'spec',
+            isHost: false,
+            isAdmin: false
+          });
+
+          if (this.engine) {
+            this.engine.addPlayer(newPlayer);
             this.updateTeamLists();
+
+            // Build and send initial_state packet
+            const currentState = this.engine.fsm.currentState || 'STOPPED';
+            const matchStatePayload: MatchStatePayload = {
+              state: currentState,
+              timeRemaining: this.engine.matchTimerSeconds ?? 0,
+              redScore: this.engine.redScore ?? 0,
+              blueScore: this.engine.blueScore ?? 0,
+              countdown: this.engine.fsm.countdownSeconds ?? 0
+            };
+
+            const players = Array.from(this.engine.players.values()).map(p => ({
+              id: p.id,
+              name: p.name,
+              avatar: p.avatar,
+              team: p.team,
+              isHost: p.isHost,
+              isAdmin: p.isAdmin
+            }));
+
+            peer.sendReliable(JSON.stringify({
+              type: 'initial_state',
+              yourPlayerId: peerId,
+              players,
+              config: this.roomConfig,
+              matchState: matchStatePayload
+            }));
+
+            // Also sync all other clients about the new player
             this.syncPlayersWithClients();
           }
         } else if (msg.type === 'change_team') {
@@ -949,6 +1006,7 @@ export class GameApp {
     };
 
     peer.onDataChannelOpen = () => {
+      // Send CLIENT_HELLO — the host will respond with initial_state
       peer.sendReliable(JSON.stringify({
         type: 'peer_handshake',
         nickname: this.localPlayer.name,
@@ -978,6 +1036,41 @@ export class GameApp {
         const msg = JSON.parse(data);
         if (msg.type === 'chat') {
           this.chat.addMessage({ author: msg.author, text: msg.text, team: msg.team });
+        } else if (msg.type === 'initial_state') {
+          // INITIAL_STATE_PACKET received — handshake complete!
+          this.clearJoinTimeout();
+
+          // Assign our authoritative player ID from the host
+          this.localPlayer.id = msg.yourPlayerId;
+
+          // Apply room config
+          if (msg.config) {
+            this.roomConfig = { ...this.roomConfig, ...msg.config };
+          }
+
+          // Process player list
+          const self = msg.players.find((p: any) => p.id === this.localPlayer.id);
+          if (self) {
+            this.localPlayer.isAdmin = Boolean(self.isAdmin);
+            this.localPlayer.team = self.team;
+          }
+          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin);
+
+          // Apply match state
+          if (msg.matchState) {
+            const ms: MatchStatePayload = msg.matchState;
+            this.currentMatchState = ms.state;
+            this.jitterBuffer.setMatchState(ms.state);
+            this.hud.update(ms.redScore, ms.blueScore, ms.timeRemaining);
+          }
+
+          this.updateAdminControlsUI();
+          this.chat.addMessage({ author: 'Lobby', text: `Conectado a la sala: ${this.roomConfig.name}`, team: 'sys' });
+
+          // NOW transition to in-game — we have all the data we need
+          this.lobby?.hideConnecting();
+          this.uiStateMachine?.transitionTo('STATE_IN_GAME');
+
         } else if (msg.type === 'team_sync') {
           const self = msg.players.find((p: any) => p.id === this.localPlayer.id || p.id === this.signaling.peerId);
           if (self) {

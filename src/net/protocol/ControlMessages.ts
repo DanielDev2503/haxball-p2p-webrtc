@@ -14,7 +14,9 @@ export type ControlMessageType =
   | 'peer_handshake'
   | 'team_sync'
   | 'kicked'
-  | 'banned';
+  | 'banned'
+  | 'client_hello'
+  | 'initial_state';
 
 export interface RoomConfig {
   name: string;
@@ -98,5 +100,26 @@ export interface MatchStateSyncMessage {
 
 export interface TogglePauseMessage {
   type: 'toggle_pause';
+}
+
+export interface ClientHelloMessage {
+  type: 'client_hello';
+  nickname: string;
+  avatar?: string | undefined;
+}
+
+export interface InitialStateMessage {
+  type: 'initial_state';
+  yourPlayerId: string;
+  players: Array<{
+    id: string;
+    name: string;
+    avatar: string;
+    team: 'red' | 'blue' | 'spec';
+    isHost: boolean;
+    isAdmin: boolean;
+  }>;
+  config: RoomConfig;
+  matchState: MatchStatePayload;
 }
 
