@@ -1,27 +1,9 @@
 import { OP_SNAPSHOT } from './BinaryProtocol';
 import { GameSnapshot, DiscSnapshot } from '../../core/game/GameState';
-import { MatchState } from '../../core/game/GameFSM';
-
-const STATE_TO_NUM: Record<MatchState, number> = {
-  STOPPED: 0,
-  PAUSED: 1,
-  COUNTDOWN: 2,
-  PLAYING: 3,
-  GOAL_CELEBRATION: 4,
-  MATCH_ENDED: 5
-};
-
-const NUM_TO_STATE: MatchState[] = [
-  'STOPPED',
-  'PAUSED',
-  'COUNTDOWN',
-  'PLAYING',
-  'GOAL_CELEBRATION',
-  'MATCH_ENDED'
-];
+import { MatchPhase, toMatchPhase } from '../../core/game/GameFSM';
 
 export class SnapshotPacket {
-  public static readonly HEADER_LENGTH = 11;
+  public static readonly HEADER_LENGTH = 16;
   public static readonly DISC_LENGTH = 18;
 
   public static encode(snapshot: GameSnapshot): ArrayBuffer {
@@ -30,15 +12,26 @@ export class SnapshotPacket {
     const buffer = new ArrayBuffer(totalLength);
     const view = new DataView(buffer);
 
-    // Header
+    const phase = snapshot.matchPhase !== undefined
+      ? snapshot.matchPhase
+      : (typeof snapshot.matchState === 'number' ? snapshot.matchState : toMatchPhase(snapshot.matchState));
+
+    const timer = snapshot.timerSeconds !== undefined ? snapshot.timerSeconds : (snapshot.matchTimerSeconds ?? 0);
+    const subTimer = snapshot.subStateTimer !== undefined ? snapshot.subStateTimer : (snapshot.countdownSeconds ?? 0);
+    const red = snapshot.scoreRed !== undefined ? snapshot.scoreRed : (snapshot.redScore ?? 0);
+    const blue = snapshot.scoreBlue !== undefined ? snapshot.scoreBlue : (snapshot.blueScore ?? 0);
+    const target = snapshot.targetTeam ?? 0;
+
+    // Header (16 bytes)
     view.setUint8(0, OP_SNAPSHOT);
     view.setUint32(1, snapshot.tick, false);
-    view.setUint8(5, STATE_TO_NUM[snapshot.matchState] ?? 0);
-    view.setUint16(6, snapshot.matchTimerSeconds, false);
-    view.setUint8(8, snapshot.redScore);
-    view.setUint8(9, snapshot.blueScore);
-    view.setUint8(10, discCount);
-
+    view.setUint8(5, phase);
+    view.setUint16(6, timer, false);
+    view.setFloat32(8, subTimer, false);
+    view.setUint8(12, target);
+    view.setUint8(13, red);
+    view.setUint8(14, blue);
+    view.setUint8(15, discCount);
 
     // Disc records
     let offset = SnapshotPacket.HEADER_LENGTH;
@@ -78,13 +71,14 @@ export class SnapshotPacket {
     if (view.getUint8(0) !== OP_SNAPSHOT) return null;
 
     const tick = view.getUint32(1, false);
-    const stateNum = view.getUint8(5);
-    const matchState: MatchState = NUM_TO_STATE[stateNum] ?? 'STOPPED';
-    const matchTimerSeconds = view.getUint16(6, false);
-    const redScore = view.getUint8(8);
-    const blueScore = view.getUint8(9);
-    const discCount = view.getUint8(10);
-
+    const phaseNum = view.getUint8(5);
+    const matchPhase: MatchPhase = (phaseNum in MatchPhase) ? (phaseNum as MatchPhase) : MatchPhase.STOPPED;
+    const timerSeconds = view.getUint16(6, false);
+    const subStateTimer = view.getFloat32(8, false);
+    const targetTeam = view.getUint8(12);
+    const scoreRed = view.getUint8(13);
+    const scoreBlue = view.getUint8(14);
+    const discCount = view.getUint8(15);
 
     const expectedLength = SnapshotPacket.HEADER_LENGTH + discCount * SnapshotPacket.DISC_LENGTH;
     if (view.byteLength < expectedLength) return null;
@@ -125,11 +119,20 @@ export class SnapshotPacket {
 
     return {
       tick,
-      matchState,
-      matchTimerSeconds,
-      redScore,
-      blueScore,
-      discs
+      matchPhase,
+      timerSeconds,
+      subStateTimer,
+      targetTeam,
+      scoreRed,
+      scoreBlue,
+      discs,
+
+      // Compat
+      matchState: matchPhase,
+      matchTimerSeconds: timerSeconds,
+      redScore: scoreRed,
+      blueScore: scoreBlue,
+      countdownSeconds: Math.ceil(subStateTimer)
     };
   }
 }

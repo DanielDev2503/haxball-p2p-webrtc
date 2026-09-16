@@ -2,7 +2,7 @@ import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Stadium } from '../entities/Stadium';
 import { Disc, COLLISION_GROUP_BALL, COLLISION_GROUP_RED, COLLISION_GROUP_BLUE } from '../entities/Disc';
 import { Player, INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK } from './Player';
-import { GameFSM, MatchState } from './GameFSM';
+import { GameFSM, MatchPhase } from './GameFSM';
 import { GameSnapshot, DiscSnapshot, MatchConfig } from './GameState';
 
 export class GameEngine {
@@ -18,13 +18,14 @@ export class GameEngine {
   public blueScore: number = 0;
   public matchTimerSeconds: number = 180;
   public config: MatchConfig;
+  public lastScoringTeam: 'red' | 'blue' | null = null;
 
   // Event callbacks
   public onGoal?: (scoringTeam: 'red' | 'blue', redScore: number, blueScore: number) => void;
   public onKick?: (playerDisc: Disc, ball: Disc) => void;
   public onPostHit?: (ball: Disc, post: Disc) => void;
   public onMatchEnd?: (winner: 'red' | 'blue' | null) => void;
-  public onStateChange?: (state: MatchState) => void;
+  public onStateChange?: (state: MatchPhase) => void;
 
   private nextDiscId: number = 1000;
 
@@ -97,7 +98,7 @@ export class GameEngine {
     if (newConfig.scoreLimit !== undefined) this.config.scoreLimit = newConfig.scoreLimit;
     if (newConfig.timeLimitSeconds !== undefined) {
       this.config.timeLimitSeconds = newConfig.timeLimitSeconds;
-      if (this.fsm.currentState === 'STOPPED') {
+      if (this.fsm.currentState === MatchPhase.STOPPED) {
         this.matchTimerSeconds = this.config.timeLimitSeconds > 0 ? this.config.timeLimitSeconds : 0;
       }
     }
@@ -159,6 +160,7 @@ export class GameEngine {
   public startMatch(): void {
     this.redScore = 0;
     this.blueScore = 0;
+    this.lastScoringTeam = null;
     this.matchTimerSeconds = this.config.timeLimitSeconds > 0 ? this.config.timeLimitSeconds : 0;
     this.resetKickoffPositions();
     this.fsm.startMatch();
@@ -170,6 +172,7 @@ export class GameEngine {
   public stopMatch(): void {
     this.redScore = 0;
     this.blueScore = 0;
+    this.lastScoringTeam = null;
     this.matchTimerSeconds = 0;
     this.fsm.stopMatch();
     this.resetKickoffPositions();
@@ -179,15 +182,15 @@ export class GameEngine {
   }
 
   public togglePause(): void {
-    if (this.fsm.currentState === 'PLAYING') {
+    if (this.fsm.currentState === MatchPhase.PLAYING) {
       this.pauseMatch();
-    } else if (this.fsm.currentState === 'PAUSED') {
+    } else if (this.fsm.currentState === MatchPhase.PAUSED) {
       this.resumeMatch();
     }
   }
 
   public pauseMatch(): void {
-    if (this.fsm.currentState === 'PLAYING') {
+    if (this.fsm.currentState === MatchPhase.PLAYING) {
       this.fsm.pauseMatch();
       if (this.onStateChange) {
         this.onStateChange(this.fsm.currentState);
@@ -236,12 +239,12 @@ export class GameEngine {
    */
   public tick(inputs: Map<string, number>): void {
     // Si el partido está detenido o pausado, la física y el reloj permanecen completamente congelados
-    if (this.fsm.currentState === 'STOPPED' || this.fsm.currentState === 'PAUSED') {
+    if (this.fsm.currentState === MatchPhase.STOPPED || this.fsm.currentState === MatchPhase.PAUSED) {
       return;
     }
 
     // Si está en cuenta regresiva (3, 2, 1), avanza la cuenta pero congela la física
-    if (this.fsm.currentState === 'COUNTDOWN') {
+    if (this.fsm.currentState === MatchPhase.COUNTDOWN) {
       const transitioned = this.fsm.tick();
       if (transitioned && this.onStateChange) {
         this.onStateChange(this.fsm.currentState);
@@ -250,7 +253,7 @@ export class GameEngine {
     }
 
     // Si está en MATCH_ENDED (3s de pantalla de victoria), congela patadas y avanza temporizador síncrono
-    if (this.fsm.currentState === 'MATCH_ENDED') {
+    if (this.fsm.currentState === MatchPhase.MATCH_ENDED) {
       const transitioned = this.fsm.tick();
       if (transitioned) {
         if (this.onMatchEnd) {
@@ -264,7 +267,7 @@ export class GameEngine {
     }
 
     // Estados activos: PLAYING o GOAL_CELEBRATION
-    if (this.fsm.currentState === 'PLAYING') {
+    if (this.fsm.currentState === MatchPhase.PLAYING) {
       this.tickCount++;
 
       // Advance match timer (every 60 ticks = 1 second) únicamente en PLAYING
@@ -337,13 +340,15 @@ export class GameEngine {
     this.physicsWorld.step();
 
     // Detección de gol (deshabilitada durante GOAL_CELEBRATION para evitar conteos dobles)
-    if (this.fsm.currentState === 'PLAYING') {
+    if (this.fsm.currentState === MatchPhase.PLAYING) {
       const goalScored = this.stadium.checkGoal(this.ball.pos.x, this.ball.pos.y);
       if (goalScored) {
         if (goalScored === 'red') {
           this.redScore++;
+          this.lastScoringTeam = 'red';
         } else {
           this.blueScore++;
+          this.lastScoringTeam = 'blue';
         }
 
         if (this.onGoal) {
@@ -358,10 +363,11 @@ export class GameEngine {
           }
         }
       }
-    } else if (this.fsm.currentState === 'GOAL_CELEBRATION') {
+    } else if (this.fsm.currentState === MatchPhase.GOAL_CELEBRATION) {
       const transitioned = this.fsm.tick();
       if (transitioned) {
         // Al expirar los 3 segundos de celebración: reiniciar posiciones de saque y pasar a COUNTDOWN
+        this.lastScoringTeam = null;
         this.resetKickoffPositions();
         if (this.onStateChange) {
           this.onStateChange(this.fsm.currentState);
@@ -395,7 +401,7 @@ export class GameEngine {
 
   public getSnapshot(): GameSnapshot {
     // Freeze velocity in any non-active state to prevent false extrapolation on clients
-    const isFrozen = this.fsm.currentState !== 'PLAYING' && this.fsm.currentState !== 'GOAL_CELEBRATION';
+    const isFrozen = this.fsm.currentState !== MatchPhase.PLAYING && this.fsm.currentState !== MatchPhase.GOAL_CELEBRATION;
     const discSnapshots: DiscSnapshot[] = [];
 
     // Ball
@@ -429,13 +435,30 @@ export class GameEngine {
       }
     }
 
+    let targetTeam = 0;
+    if (this.fsm.currentState === MatchPhase.GOAL_CELEBRATION) {
+      targetTeam = this.lastScoringTeam === 'red' ? 1 : (this.lastScoringTeam === 'blue' ? 2 : 0);
+    } else if (this.fsm.currentState === MatchPhase.MATCH_ENDED) {
+      targetTeam = this.fsm.winningTeam === 'red' ? 1 : (this.fsm.winningTeam === 'blue' ? 2 : 0);
+    }
+
+    const subStateTimer = this.fsm.stateTicksRemaining > 0 ? this.fsm.stateTicksRemaining / 60 : 0;
+
     return {
       tick: this.tickCount,
+      matchPhase: this.fsm.currentState,
+      timerSeconds: this.matchTimerSeconds,
+      subStateTimer,
+      targetTeam,
+      scoreRed: this.redScore,
+      scoreBlue: this.blueScore,
+      discs: discSnapshots,
+
+      // Compatibilidad
       matchState: this.fsm.currentState,
       matchTimerSeconds: this.matchTimerSeconds,
       redScore: this.redScore,
       blueScore: this.blueScore,
-      discs: discSnapshots,
       countdownSeconds: this.fsm.countdownSeconds
     };
   }

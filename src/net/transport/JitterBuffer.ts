@@ -1,5 +1,6 @@
 import { GameSnapshot, DiscSnapshot } from '../../core/game/GameState';
 import { lerp } from '../../core/math/MathUtils';
+import { MatchPhase, toMatchPhase } from '../../core/game/GameFSM';
 
 interface BufferedSnapshot {
   snapshot: GameSnapshot;
@@ -10,18 +11,23 @@ export class JitterBuffer {
   public buffer: BufferedSnapshot[] = [];
   public interpolationDelayMs: number;
   public maxBufferSize: number;
-  public currentMatchState: string = 'STOPPED';
+  public currentMatchState: MatchPhase | string | null = null;
 
   constructor(interpolationDelayMs: number = 70, maxBufferSize: number = 30) {
     this.interpolationDelayMs = interpolationDelayMs;
     this.maxBufferSize = maxBufferSize;
   }
 
-  public setMatchState(state: string): void {
+  public setMatchState(state: MatchPhase | string): void {
     this.currentMatchState = state;
   }
 
   public push(snapshot: GameSnapshot, now: number = performance.now()): void {
+    // Sincronizar estado actual automáticamente desde el snapshot recibido
+    this.currentMatchState = snapshot.matchPhase !== undefined
+      ? snapshot.matchPhase
+      : (snapshot.matchState ? toMatchPhase(snapshot.matchState) : this.currentMatchState);
+
     // Drop outdated snapshots
     if (this.buffer.length > 0) {
       const latest = this.buffer[this.buffer.length - 1];
@@ -41,10 +47,15 @@ export class JitterBuffer {
   public getInterpolatedSnapshot(now: number = performance.now()): GameSnapshot | null {
     if (this.buffer.length === 0) return null;
 
-    // Freeze total cuando el juego no esté en PLAYING: no extrapolar ni calcular deltaSec
     const latestSnapshot = this.buffer[this.buffer.length - 1].snapshot;
-    const effectiveState = this.currentMatchState || latestSnapshot.matchState;
-    if (effectiveState !== 'PLAYING') {
+    const effectivePhase = typeof this.currentMatchState === 'number'
+      ? this.currentMatchState
+      : (this.currentMatchState ? toMatchPhase(this.currentMatchState) : (latestSnapshot.matchPhase ?? toMatchPhase(latestSnapshot.matchState)));
+
+    // Físicas activas en PLAYING y GOAL_CELEBRATION
+    const isSimulationActive = effectivePhase === MatchPhase.PLAYING || effectivePhase === MatchPhase.GOAL_CELEBRATION;
+
+    if (!isSimulationActive) {
       const frozenDiscs: DiscSnapshot[] = latestSnapshot.discs.map(d => ({
         ...d,
         vx: 0,
@@ -52,7 +63,6 @@ export class JitterBuffer {
       }));
       return {
         ...latestSnapshot,
-        matchState: effectiveState as GameSnapshot['matchState'],
         discs: frozenDiscs
       };
     }
@@ -81,13 +91,13 @@ export class JitterBuffer {
     // If renderTime is ahead of newest snapshot, extrapolate from latest
     if (!s0 || !s1) {
       const latest = this.buffer[this.buffer.length - 1];
-      const deltaSec = Math.max(0, (renderTime - latest.receivedAt) / 1000);
+      const deltaSec = isSimulationActive ? Math.max(0, (renderTime - latest.receivedAt) / 1000) : 0;
 
       // Extrapolate with velocity
       const extrapolatedDiscs: DiscSnapshot[] = latest.snapshot.discs.map(d => ({
         ...d,
-        x: d.x + d.vx * deltaSec,
-        y: d.y + d.vy * deltaSec
+        x: d.x + (isSimulationActive ? d.vx * deltaSec : 0),
+        y: d.y + (isSimulationActive ? d.vy * deltaSec : 0)
       }));
 
       return {
@@ -127,11 +137,7 @@ export class JitterBuffer {
     }
 
     return {
-      tick: s1.snapshot.tick,
-      matchState: s1.snapshot.matchState,
-      matchTimerSeconds: s1.snapshot.matchTimerSeconds,
-      redScore: s1.snapshot.redScore,
-      blueScore: s1.snapshot.blueScore,
+      ...s1.snapshot,
       discs: interpolatedDiscs
     };
   }

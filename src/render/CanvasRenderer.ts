@@ -1,14 +1,8 @@
 import { Stadium } from '../core/entities/Stadium';
 import { GameSnapshot } from '../core/game/GameState';
+import { MatchPhase, toMatchPhase } from '../core/game/GameFSM';
 import { PitchRenderer } from './PitchRenderer';
 import { DiscRenderer } from './DiscRenderer';
-
-export interface CanvasBanner {
-  text: string;
-  subtext?: string | undefined;
-  color: string;
-  expiresAt: number;
-}
 
 export class CanvasRenderer {
   public canvas: HTMLCanvasElement;
@@ -20,11 +14,6 @@ export class CanvasRenderer {
   public scale: number = 1;
   public offsetX: number = 0;
   public offsetY: number = 0;
-
-  // Visual effects & banners
-  public bannerText: string = '';
-  public bannerColor: string = '#ffffff';
-  public activeBanner: CanvasBanner | null = null;
 
   constructor(canvas: HTMLCanvasElement, stadium: Stadium) {
     this.canvas = canvas;
@@ -38,16 +27,9 @@ export class CanvasRenderer {
     this.discRenderer = new DiscRenderer();
 
     this.handleResize();
-    window.addEventListener('resize', () => this.handleResize());
-  }
-
-  public setBanner(text: string, subtext?: string, color: string = '#facc15', durationMs: number = 3000): void {
-    const expiresAt = durationMs > 0 ? performance.now() + durationMs : Infinity;
-    this.activeBanner = { text, subtext, color, expiresAt };
-  }
-
-  public clearBanner(): void {
-    this.activeBanner = null;
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', () => this.handleResize());
+    }
   }
 
   public clear(): void {
@@ -60,9 +42,9 @@ export class CanvasRenderer {
   }
 
   public handleResize(): void {
-    const dpr = window.devicePixelRatio || 1;
-    const displayWidth = this.canvas.clientWidth || window.innerWidth;
-    const displayHeight = this.canvas.clientHeight || window.innerHeight;
+    const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
+    const displayWidth = this.canvas.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 800);
+    const displayHeight = this.canvas.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 600);
 
     this.canvas.width = Math.round(displayWidth * dpr);
     this.canvas.height = Math.round(displayHeight * dpr);
@@ -80,7 +62,7 @@ export class CanvasRenderer {
   }
 
   public render(snapshot: GameSnapshot, localDiscId?: number | null): void {
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
     const ctx = this.ctx;
 
     ctx.save();
@@ -99,40 +81,39 @@ export class CanvasRenderer {
     // 2. Render Discs (ball & players)
     this.discRenderer.render(ctx, snapshot.discs, localDiscId);
 
-    // 3. Render Match Status Banners
+    // 3. Render Match Status Banners (función pura del snapshot)
     this.renderOverlayState(ctx, snapshot);
 
     ctx.restore();
   }
 
   private renderOverlayState(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot): void {
+    const phase: MatchPhase = snapshot.matchPhase !== undefined
+      ? snapshot.matchPhase
+      : toMatchPhase(snapshot.matchState);
+
     ctx.save();
 
-    // 1. Banner activo sincronizado (¡GOL!, ¡VICTORIA!, aviso especial)
-    if (this.activeBanner) {
-      if (performance.now() > this.activeBanner.expiresAt) {
-        this.activeBanner = null;
-      } else {
-        this.drawBannerBox(ctx, this.activeBanner.text, this.activeBanner.subtext, this.activeBanner.color);
-        ctx.restore();
-        return;
-      }
-    }
-
-    // 2. Overlays según estado de partido
-    if (snapshot.matchState === 'STOPPED') {
-      this.drawPillBanner(ctx, 'PARTIDO DETENIDO', '#94a3b8');
-    } else if (snapshot.matchState === 'PAUSED') {
-      this.drawBannerBox(ctx, 'PAUSA', 'Partido pausado por el Administrador', '#f59e0b');
-    } else if (snapshot.matchState === 'COUNTDOWN') {
-      const count = snapshot.countdownSeconds ?? 3;
+    if (phase === MatchPhase.GOAL_CELEBRATION) {
+      const teamName = snapshot.targetTeam === 1 ? 'ROJO' : (snapshot.targetTeam === 2 ? 'AZUL' : '');
+      const title = teamName ? `¡GOL! - EQUIPO ${teamName}` : '¡GOL!';
+      const color = snapshot.targetTeam === 1 ? '#ef4444' : (snapshot.targetTeam === 2 ? '#38bdf8' : '#facc15');
+      this.drawBannerBox(ctx, title, undefined, color);
+    } else if (phase === MatchPhase.COUNTDOWN) {
+      const count = Math.ceil(snapshot.subStateTimer ?? snapshot.countdownSeconds ?? 3);
       const text = count > 0 ? count.toString() : '¡PLAY!';
       this.drawBigText(ctx, text, '#facc15');
-    } else if (snapshot.matchState === 'GOAL_CELEBRATION') {
-      this.drawBannerBox(ctx, '¡GOL!', 'Celebración', '#38bdf8');
-    } else if (snapshot.matchState === 'MATCH_ENDED') {
-      this.drawBannerBox(ctx, '¡VICTORIA!', 'Fin del partido', '#f59e0b');
+    } else if (phase === MatchPhase.PAUSED) {
+      this.drawBannerBox(ctx, 'PARTIDO PAUSADO', undefined, '#f59e0b');
+    } else if (phase === MatchPhase.MATCH_ENDED) {
+      const winnerName = snapshot.targetTeam === 1 ? 'ROJO' : (snapshot.targetTeam === 2 ? 'AZUL' : '');
+      const title = winnerName ? `¡VICTORIA EQUIPO ${winnerName}!` : '¡EMPATE!';
+      const color = snapshot.targetTeam === 1 ? '#ef4444' : (snapshot.targetTeam === 2 ? '#38bdf8' : '#f59e0b');
+      this.drawBannerBox(ctx, title, undefined, color);
+    } else if (phase === MatchPhase.STOPPED) {
+      this.drawPillBanner(ctx, 'PARTIDO DETENIDO', '#94a3b8');
     }
+    // MatchPhase.PLAYING: no se dibuja ningún overlay
 
     ctx.restore();
   }

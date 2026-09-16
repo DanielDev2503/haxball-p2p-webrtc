@@ -3,6 +3,7 @@ import { InputPacket } from '../../src/net/protocol/InputPacket';
 import { SnapshotPacket } from '../../src/net/protocol/SnapshotPacket';
 import { GameSnapshot } from '../../src/core/game/GameState';
 import { INPUT_UP, INPUT_KICK } from '../../src/core/game/Player';
+import { MatchPhase } from '../../src/core/game/GameFSM';
 
 describe('Binary Protocol Serialization', () => {
   it('correctly encodes and decodes an InputPacket via DataView', () => {
@@ -25,7 +26,13 @@ describe('Binary Protocol Serialization', () => {
   it('correctly encodes and decodes a complex SnapshotPacket via DataView', () => {
     const snapshot: GameSnapshot = {
       tick: 12054,
-      matchState: 'PLAYING',
+      matchPhase: MatchPhase.PLAYING,
+      timerSeconds: 165,
+      subStateTimer: 2.5,
+      targetTeam: 1,
+      scoreRed: 2,
+      scoreBlue: 1,
+      matchState: MatchPhase.PLAYING,
       matchTimerSeconds: 165,
       redScore: 2,
       blueScore: 1,
@@ -70,13 +77,19 @@ describe('Binary Protocol Serialization', () => {
     const buffer = SnapshotPacket.encode(snapshot);
     const expectedBytes = SnapshotPacket.HEADER_LENGTH + 3 * SnapshotPacket.DISC_LENGTH;
     expect(buffer.byteLength).toBe(expectedBytes);
+    expect(SnapshotPacket.HEADER_LENGTH).toBe(16);
 
     const decoded = SnapshotPacket.decode(buffer);
     expect(decoded).not.toBeNull();
     expect(decoded!.tick).toBe(12054);
-    expect(decoded!.matchState).toBe('PLAYING');
+    expect(decoded!.matchPhase).toBe(MatchPhase.PLAYING);
+    expect(decoded!.matchState).toBe(MatchPhase.PLAYING);
+    expect(decoded!.timerSeconds).toBe(165);
     expect(decoded!.matchTimerSeconds).toBe(165);
-
+    expect(decoded!.subStateTimer).toBeCloseTo(2.5, 2);
+    expect(decoded!.targetTeam).toBe(1);
+    expect(decoded!.scoreRed).toBe(2);
+    expect(decoded!.scoreBlue).toBe(1);
     expect(decoded!.redScore).toBe(2);
     expect(decoded!.blueScore).toBe(1);
     expect(decoded!.discs.length).toBe(3);

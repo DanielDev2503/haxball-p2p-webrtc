@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { GameEngine } from '../../src/core/game/GameEngine';
 import { Player } from '../../src/core/game/Player';
+import { MatchPhase } from '../../src/core/game/GameFSM';
 
 describe('Match Finite State Machine (GameFSM) - 3-Phase Model', () => {
   it('manages match lifecycle: STOPPED -> COUNTDOWN (3s) -> PLAYING, PAUSED and STOPPED reset', () => {
@@ -11,11 +12,11 @@ describe('Match Finite State Machine (GameFSM) - 3-Phase Model', () => {
     engine.addPlayer(p2);
 
     // Initial state: STOPPED
-    expect(engine.fsm.currentState).toBe('STOPPED');
+    expect(engine.fsm.currentState).toBe(MatchPhase.STOPPED);
 
     // Start match: enters COUNTDOWN
     engine.startMatch();
-    expect(engine.fsm.currentState).toBe('COUNTDOWN');
+    expect(engine.fsm.currentState).toBe(MatchPhase.COUNTDOWN);
     expect(engine.fsm.countdownSeconds).toBe(3);
 
     // During countdown, physics does NOT step
@@ -23,20 +24,20 @@ describe('Match Finite State Machine (GameFSM) - 3-Phase Model', () => {
     for (let i = 0; i < 60; i++) {
       engine.tick(inputs);
     }
-    expect(engine.fsm.currentState).toBe('COUNTDOWN');
+    expect(engine.fsm.currentState).toBe(MatchPhase.COUNTDOWN);
     expect(engine.fsm.countdownSeconds).toBe(2);
 
     // Advance remaining 120 ticks
     for (let i = 0; i < 120; i++) {
       engine.tick(inputs);
     }
-    expect(engine.fsm.currentState).toBe('PLAYING');
+    expect(engine.fsm.currentState).toBe(MatchPhase.PLAYING);
 
     // Test PAUSE: physics freezes, positions and velocities preserved
     engine.ball.pos.set(50, 10);
     engine.ball.vel.set(100, -50);
     engine.togglePause();
-    expect(engine.fsm.currentState).toBe('PAUSED');
+    expect(engine.fsm.currentState).toBe(MatchPhase.PAUSED);
 
     // Advance ticks while paused: nothing moves
     engine.tick(inputs);
@@ -47,7 +48,7 @@ describe('Match Finite State Machine (GameFSM) - 3-Phase Model', () => {
 
     // Resume from pause: enters COUNTDOWN (3s) before physics resumes
     engine.togglePause();
-    expect(engine.fsm.currentState).toBe('COUNTDOWN');
+    expect(engine.fsm.currentState).toBe(MatchPhase.COUNTDOWN);
     expect(engine.fsm.countdownSeconds).toBe(3);
     expect(engine.ball.vel.x).toBe(100); // Velocities still preserved!
 
@@ -55,13 +56,13 @@ describe('Match Finite State Machine (GameFSM) - 3-Phase Model', () => {
     for (let i = 0; i < 180; i++) {
       engine.tick(inputs);
     }
-    expect(engine.fsm.currentState).toBe('PLAYING');
+    expect(engine.fsm.currentState).toBe(MatchPhase.PLAYING);
 
     // Test STOP: resets time to 0, score to 0 - 0, ball to center (0, 0)
     engine.redScore = 2;
     engine.blueScore = 1;
     engine.stopMatch();
-    expect(engine.fsm.currentState).toBe('STOPPED');
+    expect(engine.fsm.currentState).toBe(MatchPhase.STOPPED);
     expect(engine.matchTimerSeconds).toBe(0);
     expect(engine.redScore).toBe(0);
     expect(engine.blueScore).toBe(0);

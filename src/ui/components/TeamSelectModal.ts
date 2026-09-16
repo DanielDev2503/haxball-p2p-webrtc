@@ -1,5 +1,5 @@
 import { Player, TeamType } from '../../core/game/Player';
-import { MatchState } from '../../core/game/GameFSM';
+import { MatchPhase, MatchState, toMatchPhase } from '../../core/game/GameFSM';
 
 export class TeamSelectModal {
   private menuEl: HTMLElement | null;
@@ -11,7 +11,7 @@ export class TeamSelectModal {
   private redCountEl: HTMLElement | null;
   private blueCountEl: HTMLElement | null;
   private specCountEl: HTMLElement | null;
-  private currentMatchState: MatchState = 'STOPPED';
+  private currentMatchState: MatchPhase = MatchPhase.STOPPED;
 
   public onSelectTeam?: (team: TeamType) => void;
   public onPlayerClick?: (player: Player, event: MouseEvent) => void;
@@ -73,7 +73,7 @@ export class TeamSelectModal {
 
     // Botón de contingencia para regresar a la partida en curso
     const handleContingencyClose = () => {
-      if (this.currentMatchState === 'PLAYING' || this.currentMatchState === 'PAUSED' || this.currentMatchState === 'COUNTDOWN') {
+      if (this.currentMatchState === MatchPhase.PLAYING || this.currentMatchState === MatchPhase.PAUSED || this.currentMatchState === MatchPhase.COUNTDOWN) {
         this.close();
       }
     };
@@ -88,32 +88,33 @@ export class TeamSelectModal {
     this.setupDragAndDropColumns();
   }
 
-  public updateMatchState(newState: MatchState, outcomeText?: string): void {
-    this.currentMatchState = newState;
+  public updateMatchState(newState: MatchPhase | MatchState | string, outcomeText?: string): void {
+    const phase = typeof newState === 'number' ? newState : toMatchPhase(newState);
+    this.currentMatchState = phase;
 
     // Actualizar visibilidad del botón de retorno
     if (this.returnGameBtn) {
-      this.returnGameBtn.style.display = (newState === 'PLAYING' || newState === 'PAUSED' || newState === 'COUNTDOWN' || newState === 'GOAL_CELEBRATION' || newState === 'MATCH_ENDED') ? 'inline-block' : 'none';
+      this.returnGameBtn.style.display = (phase === MatchPhase.PLAYING || phase === MatchPhase.PAUSED || phase === MatchPhase.COUNTDOWN || phase === MatchPhase.GOAL_CELEBRATION || phase === MatchPhase.MATCH_ENDED) ? 'inline-block' : 'none';
     }
 
     // Banner de resultado del partido al finalizar
     const outcomeBanner = document.getElementById('match-outcome-banner');
     if (outcomeBanner) {
-      if (newState === 'STOPPED' && outcomeText) {
+      if (phase === MatchPhase.STOPPED && outcomeText) {
         outcomeBanner.style.display = 'block';
         outcomeBanner.textContent = outcomeText;
-      } else if (newState !== 'STOPPED') {
+      } else if (phase !== MatchPhase.STOPPED) {
         outcomeBanner.style.display = 'none';
       }
     }
 
-    if (newState === 'COUNTDOWN' || newState === 'PLAYING' || newState === 'GOAL_CELEBRATION' || newState === 'MATCH_ENDED') {
+    if (phase === MatchPhase.COUNTDOWN || phase === MatchPhase.PLAYING || phase === MatchPhase.GOAL_CELEBRATION || phase === MatchPhase.MATCH_ENDED) {
       // 1. Cierre Automático: Despeja la pantalla para ver el campo y la cuenta regresiva
       this.close();
-    } else if (newState === 'STOPPED') {
+    } else if (phase === MatchPhase.STOPPED) {
       // 2. Apertura Forzada Únicamente en STOPPED y Game Over
       this.open(true);
-    } else if (newState === 'PAUSED') {
+    } else if (phase === MatchPhase.PAUSED) {
       // En pausa se desbloquea el modo forzado, permitiendo alternar con Escape o botón
       if (this.menuEl) {
         this.menuEl.classList.remove('is-forced-open');
@@ -136,7 +137,7 @@ export class TeamSelectModal {
   public close(force: boolean = false): void {
     if (!this.menuEl) return;
     // Bloquear el cierre (ignorar Escape) exclusivamente mientras el estado sea STOPPED
-    if (this.currentMatchState === 'STOPPED' && !force) {
+    if (this.currentMatchState === MatchPhase.STOPPED && !force) {
       return;
     }
     this.menuEl.classList.add('hidden');

@@ -1,6 +1,6 @@
 import { GameEngine } from '../core/game/GameEngine';
 import { Player, TeamType } from '../core/game/Player';
-import { MatchState } from '../core/game/GameFSM';
+import { MatchPhase, MatchState, toMatchPhase } from '../core/game/GameFSM';
 import { GameSnapshot } from '../core/game/GameState';
 import { CanvasRenderer } from '../render/CanvasRenderer';
 import { InputManager } from './InputManager';
@@ -36,7 +36,8 @@ export type AppMode = 'practice' | 'host' | 'client';
 
 export class GameApp {
   public mode: AppMode = 'practice';
-  public currentMatchState: MatchState = 'STOPPED';
+  public currentMatchState: MatchPhase = MatchPhase.STOPPED;
+  private lastClientPhase: MatchPhase | null = null;
   public localPlayer: Player;
   public engine: GameEngine | null = null;
   public canvasRenderer: CanvasRenderer;
@@ -390,7 +391,7 @@ export class GameApp {
         }
 
         // Si el partido está en STOPPED, el menú está forzado y no se debe alternar ni mutar
-        if (this.getAuthoritativeMatchState() === 'STOPPED' || this.teamSelect.getMatchState() === 'STOPPED') {
+        if (this.getAuthoritativeMatchState() === MatchPhase.STOPPED || this.teamSelect.getMatchState() === MatchPhase.STOPPED) {
           e.preventDefault();
           return;
         }
@@ -445,8 +446,8 @@ export class GameApp {
     if (btnStartStop) {
       btnStartStop.addEventListener('click', () => {
         if (!this.localPlayer.isAdmin) return;
-        const currentState = this.engine?.fsm.currentState || this.currentMatchState || 'STOPPED';
-        const action = currentState === 'STOPPED' ? 'START' : 'STOP';
+        const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+        const action = currentPhase === MatchPhase.STOPPED ? 'START' : 'STOP';
 
         if (this.mode === 'client' && this.hostPeer) {
           // Delegate to host via match_control message
@@ -735,7 +736,8 @@ export class GameApp {
     this.localPlayer.isAdmin = false;
     this.currentHostId = null;
     this.currentRoomId = roomId;
-    this.currentMatchState = 'STOPPED';
+    this.currentMatchState = MatchPhase.STOPPED;
+    this.lastClientPhase = null;
 
     // Leave button is inside ingame-menu only
     this.updateAdminPanelVisibility();
@@ -831,15 +833,9 @@ export class GameApp {
   }
 
   private setupEngineCallbacks(engine: GameEngine): void {
-    engine.onGoal = (scoringTeam, redScore, blueScore) => {
+    engine.onGoal = (_scoringTeam, _redScore, _blueScore) => {
       this.audioManager.playGoalWhistle();
-      const color = scoringTeam === 'red' ? 'Rojo' : 'Azul';
-      this.broadcastMatchStateSync({
-        text: '¡GOL!',
-        subtext: `Equipo ${color} anota (${redScore} - ${blueScore})`,
-        color: scoringTeam === 'red' ? '#ef4444' : '#38bdf8',
-        duration: 3000
-      });
+      this.broadcastMatchStateSync();
     };
 
     engine.onKick = () => {
@@ -853,40 +849,24 @@ export class GameApp {
     engine.onMatchEnd = (winner) => {
       this.audioManager.playGoalWhistle();
       const outcomeText = winner ? `¡Victoria del Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}!` : '¡Empate!';
-      this.enforceMenuState(MatchState.STOPPED, outcomeText);
+      this.enforceMenuState(MatchPhase.STOPPED, outcomeText);
       this.broadcastMatchStateSync();
       this.updateAdminControlsUI();
     };
 
     engine.onStateChange = (state) => {
       this.enforceMenuState(state);
-      if (state === MatchState.COUNTDOWN) {
+      if (state === MatchPhase.COUNTDOWN) {
         this.audioManager.playCountdown(false);
-      } else if (state === MatchState.PLAYING) {
+      } else if (state === MatchPhase.PLAYING) {
         this.audioManager.playCountdown(true);
-        this.canvasRenderer.clearBanner();
-      } else if (state === MatchState.MATCH_ENDED) {
-        const winner = this.engine?.fsm.winningTeam;
-        const winnerText = winner ? `¡VICTORIA EQUIPO ${winner === 'red' ? 'ROJO' : 'AZUL'}!` : '¡EMPATE!';
+      } else if (state === MatchPhase.MATCH_ENDED) {
         this.audioManager.playGoalWhistle();
-        this.broadcastMatchStateSync({
-          text: '¡VICTORIA!',
-          subtext: winnerText,
-          color: winner === 'red' ? '#ef4444' : (winner === 'blue' ? '#38bdf8' : '#f59e0b'),
-          duration: 3000
-        });
+        this.broadcastMatchStateSync();
+      } else if (state === MatchPhase.PAUSED) {
+        this.broadcastMatchStateSync();
       }
       this.updateAdminControlsUI();
-      let banner: MatchStatePayload['banner'];
-      if (state === 'PAUSED') {
-        banner = {
-          text: 'PAUSA',
-          subtext: 'Partido pausado por el Administrador',
-          color: '#f59e0b',
-          duration: 0
-        };
-        this.broadcastMatchStateSync(banner);
-      }
     };
   }
 
@@ -955,7 +935,7 @@ export class GameApp {
             this.updateTeamLists();
 
             // Build and send initial_state packet
-            const currentState = this.engine.fsm.currentState || 'STOPPED';
+            const currentState = this.engine?.fsm.currentState ?? MatchPhase.STOPPED;
             const matchStatePayload: MatchStatePayload = {
               state: currentState,
               timeRemaining: this.engine.matchTimerSeconds ?? 0,
@@ -1159,19 +1139,15 @@ export class GameApp {
           this.updateAdminControlsUI();
         } else if (msg.type === 'MATCH_STATE_SYNC') {
           const p: MatchStatePayload = msg.payload;
-          this.currentMatchState = p.state;
-          this.jitterBuffer.setMatchState(p.state);
+          const phase = toMatchPhase(p.state);
+          this.currentMatchState = phase;
+          this.lastClientPhase = phase;
+          this.jitterBuffer.setMatchState(phase);
 
           this.hud.update(p.redScore, p.blueScore, p.timeRemaining);
 
-          if (p.banner) {
-            this.canvasRenderer.setBanner(p.banner.text, p.banner.subtext, p.banner.color, p.banner.duration);
-          } else if (p.state === 'PLAYING') {
-            this.canvasRenderer.clearBanner();
-          }
-
           let outcomeText: string | undefined = undefined;
-          if (p.state === 'STOPPED') {
+          if (phase === MatchPhase.STOPPED) {
             if (p.banner?.subtext) {
               outcomeText = p.banner.subtext;
             } else if (p.redScore !== undefined && p.blueScore !== undefined) {
@@ -1187,7 +1163,7 @@ export class GameApp {
             }
           }
 
-          this.enforceMenuState(p.state, outcomeText);
+          this.enforceMenuState(phase, outcomeText);
           this.updateAdminControlsUI();
         } else if (msg.type === 'set_game_state') {
           this.updateAdminControlsUI();
@@ -1469,11 +1445,11 @@ export class GameApp {
 
   private updateAdminControlsUI(): void {
     const isAdmin = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost);
-    const currentState = this.engine?.fsm.currentState || this.currentMatchState || 'STOPPED';
+    const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
 
     if (this.btnStartStop) {
       this.btnStartStop.disabled = !isAdmin;
-      if (currentState === 'STOPPED') {
+      if (currentPhase === MatchPhase.STOPPED) {
         this.btnStartStop.textContent = '▶ Iniciar Partido';
         this.btnStartStop.className = 'btn btn-primary';
       } else {
@@ -1483,8 +1459,8 @@ export class GameApp {
     }
 
     if (this.btnPauseResume) {
-      this.btnPauseResume.disabled = !isAdmin || currentState === 'STOPPED';
-      if (currentState === 'PAUSED') {
+      this.btnPauseResume.disabled = !isAdmin || currentPhase === MatchPhase.STOPPED;
+      if (currentPhase === MatchPhase.PAUSED) {
         this.btnPauseResume.textContent = '▶ Reanudar';
         this.btnPauseResume.className = 'btn btn-primary';
       } else {
@@ -1510,9 +1486,9 @@ export class GameApp {
     }
   }
 
-  public broadcastMatchStateSync(banner?: MatchStatePayload['banner']): void {
+  public broadcastMatchStateSync(): void {
     if (this.mode !== 'host' && this.mode !== 'practice') return;
-    const currentState = this.engine?.fsm.currentState || 'STOPPED';
+    const currentState = this.engine ? this.engine.fsm.currentState : this.currentMatchState;
     const timeRemaining = this.engine?.matchTimerSeconds ?? 0;
     const redScore = this.engine?.redScore ?? 0;
     const blueScore = this.engine?.blueScore ?? 0;
@@ -1523,13 +1499,8 @@ export class GameApp {
       timeRemaining,
       redScore,
       blueScore,
-      countdown,
-      ...(banner ? { banner } : {})
+      countdown
     };
-
-    if (banner) {
-      this.canvasRenderer.setBanner(banner.text, banner.subtext, banner.color, banner.duration);
-    }
 
     if (this.mode === 'host') {
       this.broadcastReliable(JSON.stringify({
@@ -1561,12 +1532,13 @@ export class GameApp {
     return this.engine ? this.engine.fsm.currentState : this.currentMatchState;
   }
 
-  public enforceMenuState(state: MatchState, outcomeText?: string): void {
+  public enforceMenuState(state: MatchPhase | MatchState | string, outcomeText?: string): void {
+    const phase = typeof state === 'number' ? state : toMatchPhase(state);
     if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') {
       this.teamSelect.close(true);
       return;
     }
-    this.teamSelect.updateMatchState(state, outcomeText);
+    this.teamSelect.updateMatchState(phase, outcomeText);
     this.updateAdminControlsUI();
   }
 
@@ -1786,10 +1758,48 @@ export class GameApp {
         if (activeSnapshot) {
           this.canvasRenderer.render(activeSnapshot, localDiscId);
           this.hud.update(
-            activeSnapshot.redScore,
-            activeSnapshot.blueScore,
-            activeSnapshot.matchTimerSeconds
+            activeSnapshot.scoreRed ?? activeSnapshot.redScore,
+            activeSnapshot.scoreBlue ?? activeSnapshot.blueScore,
+            activeSnapshot.timerSeconds ?? activeSnapshot.matchTimerSeconds
           );
+
+          // Sincronización reactiva autoritativa de fases en cliente
+          if (this.mode === 'client') {
+            const currentPhase = activeSnapshot.matchPhase !== undefined
+              ? activeSnapshot.matchPhase
+              : toMatchPhase(activeSnapshot.matchState);
+
+            if (this.lastClientPhase !== currentPhase) {
+              this.lastClientPhase = currentPhase;
+              this.currentMatchState = currentPhase;
+              this.jitterBuffer.setMatchState(currentPhase);
+
+              if (currentPhase === MatchPhase.GOAL_CELEBRATION) {
+                this.audioManager.playGoalWhistle();
+              } else if (currentPhase === MatchPhase.COUNTDOWN) {
+                this.audioManager.playCountdown(false);
+              } else if (currentPhase === MatchPhase.PLAYING) {
+                this.audioManager.playCountdown(true);
+              } else if (currentPhase === MatchPhase.MATCH_ENDED) {
+                this.audioManager.playGoalWhistle();
+              }
+
+              let outcomeText: string | undefined = undefined;
+              if (currentPhase === MatchPhase.STOPPED) {
+                const red = activeSnapshot.scoreRed ?? activeSnapshot.redScore;
+                const blue = activeSnapshot.scoreBlue ?? activeSnapshot.blueScore;
+                if (red > blue) {
+                  outcomeText = '¡Victoria del Equipo Rojo!';
+                } else if (blue > red) {
+                  outcomeText = '¡Victoria del Equipo Azul!';
+                } else {
+                  outcomeText = '¡Empate!';
+                }
+              }
+              this.enforceMenuState(currentPhase, outcomeText);
+              this.updateAdminControlsUI();
+            }
+          }
         }
 
         // Medición de FPS

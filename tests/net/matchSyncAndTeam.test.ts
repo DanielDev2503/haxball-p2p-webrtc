@@ -4,6 +4,7 @@ import { JitterBuffer } from '../../src/net/transport/JitterBuffer';
 import { GameEngine } from '../../src/core/game/GameEngine';
 import { Player } from '../../src/core/game/Player';
 import { GameSnapshot } from '../../src/core/game/GameState';
+import { MatchPhase } from '../../src/core/game/GameFSM';
 
 describe('canChangeTeam Authorization Logic', () => {
   it('allows admin to move anyone regardless of teamsLocked', () => {
@@ -37,7 +38,7 @@ describe('Match State Sync and Pause Freeze', () => {
     const inputs = new Map<string, number>();
     for (let i = 0; i < 180; i++) engine.tick(inputs);
 
-    expect(engine.fsm.currentState).toBe('PLAYING');
+    expect(engine.fsm.currentState).toBe(MatchPhase.PLAYING);
 
     // Give ball and player some velocity
     engine.ball.vel.set(25, -15);
@@ -53,7 +54,7 @@ describe('Match State Sync and Pause Freeze', () => {
 
     // Now pause match
     engine.togglePause();
-    expect(engine.fsm.currentState).toBe('PAUSED');
+    expect(engine.fsm.currentState).toBe(MatchPhase.PAUSED);
 
     // Snapshot during pause must report vx: 0, vy: 0 to prevent client prediction drift
     const pausedSnap = engine.getSnapshot();
@@ -74,7 +75,13 @@ describe('Match State Sync and Pause Freeze', () => {
 
     const snap1: GameSnapshot = {
       tick: 1,
-      matchState: 'PLAYING',
+      matchPhase: MatchPhase.PLAYING,
+      timerSeconds: 180,
+      subStateTimer: 0,
+      targetTeam: 0,
+      scoreRed: 0,
+      scoreBlue: 0,
+      matchState: MatchPhase.PLAYING,
       matchTimerSeconds: 180,
       redScore: 0,
       blueScore: 0,
@@ -85,7 +92,13 @@ describe('Match State Sync and Pause Freeze', () => {
 
     const snap2: GameSnapshot = {
       tick: 2,
-      matchState: 'PLAYING',
+      matchPhase: MatchPhase.PLAYING,
+      timerSeconds: 180,
+      subStateTimer: 0,
+      targetTeam: 0,
+      scoreRed: 0,
+      scoreBlue: 0,
+      matchState: MatchPhase.PLAYING,
       matchTimerSeconds: 180,
       redScore: 0,
       blueScore: 0,

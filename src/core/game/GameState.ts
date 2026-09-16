@@ -1,4 +1,4 @@
-import { MatchState } from './GameFSM';
+import { MatchPhase, MatchState } from './GameFSM';
 
 export interface DiscSnapshot {
   id: number;
@@ -14,11 +14,19 @@ export interface DiscSnapshot {
 
 export interface GameSnapshot {
   tick: number;
+  matchPhase: MatchPhase;
+  timerSeconds: number;
+  subStateTimer: number;
+  targetTeam: number; // 0: none, 1: red, 2: blue
+  scoreRed: number;
+  scoreBlue: number;
+  discs: DiscSnapshot[];
+
+  // Compatibilidad hacia atrás
   matchState: MatchState;
   matchTimerSeconds: number;
   redScore: number;
   blueScore: number;
-  discs: DiscSnapshot[];
   countdownSeconds?: number;
 }
 
