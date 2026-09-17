@@ -37,11 +37,22 @@ describe('TeamSelectModal Lifecycle and Match State Synchronization', () => {
       })
     };
 
+    const matchToggleBtnEl = {
+      textContent: '',
+      className: '',
+      disabled: false,
+      dataset: {} as Record<string, string>,
+      addEventListener: vi.fn((event: string, cb: Function) => {
+        listeners['toggle_' + event] = cb;
+      })
+    };
+
     (globalThis as any).document = {
       getElementById: (id: string) => {
         if (id === 'ingame-menu') return ingameMenuEl;
         if (id === 'menu-close-btn') return closeBtnEl;
         if (id === 'btn-return-game') return returnGameBtnEl;
+        if (id === 'btn-match-toggle' || id === 'btn-start-stop') return matchToggleBtnEl;
         return null;
       },
       querySelectorAll: () => [],
@@ -115,5 +126,43 @@ describe('TeamSelectModal Lifecycle and Match State Synchronization', () => {
     expect(modal.isOpen()).toBe(true);
     listeners['close_click']();
     expect(modal.isOpen()).toBe(false);
+  });
+
+  it('updates match toggle button text, class and disabled state based on phase and admin status', () => {
+    const modal = new TeamSelectModal();
+    const toggleBtn = (globalThis as any).document.getElementById('btn-match-toggle');
+
+    // In STOPPED phase and Admin: "▶ Iniciar Partido", btn-success, enabled
+    modal.updateMatchControlButton(0 as any, true); // MatchPhase.STOPPED = 0
+    expect(toggleBtn.textContent).toBe('▶ Iniciar Partido');
+    expect(toggleBtn.className).toBe('btn btn-success btn-match-toggle');
+    expect(toggleBtn.disabled).toBe(false);
+
+    // In STOPPED phase and Non-Admin: disabled
+    modal.updateMatchControlButton(0 as any, false);
+    expect(toggleBtn.textContent).toBe('▶ Iniciar Partido');
+    expect(toggleBtn.className).toBe('btn btn-success btn-match-toggle');
+    expect(toggleBtn.disabled).toBe(true);
+
+    // In PLAYING/PAUSED/COUNTDOWN phase and Admin: "■ Detener Partido", btn-danger, enabled
+    modal.updateMatchControlButton(2 as any, true); // MatchPhase.PLAYING = 2
+    expect(toggleBtn.textContent).toBe('■ Detener Partido');
+    expect(toggleBtn.className).toBe('btn btn-danger btn-match-toggle');
+    expect(toggleBtn.disabled).toBe(false);
+
+    // updateMatchState should automatically refresh button
+    modal.updateMatchState('STOPPED');
+    expect(toggleBtn.textContent).toBe('▶ Iniciar Partido');
+    expect(toggleBtn.className).toBe('btn btn-success btn-match-toggle');
+  });
+
+  it('dispatches onMatchToggle when match toggle button is clicked', () => {
+    const modal = new TeamSelectModal();
+    const onToggleSpy = vi.fn();
+    modal.onMatchToggle = onToggleSpy;
+
+    expect(listeners['toggle_click']).toBeDefined();
+    listeners['toggle_click']();
+    expect(onToggleSpy).toHaveBeenCalledTimes(1);
   });
 });

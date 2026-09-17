@@ -5,6 +5,8 @@ export class TeamSelectModal {
   private menuEl: HTMLElement | null;
   private closeBtn: HTMLElement | null;
   private returnGameBtn: HTMLElement | null;
+  private matchToggleBtn: HTMLButtonElement | null = null;
+  private isUserAdmin: boolean = false;
   private redListEl: HTMLElement | null;
   private blueListEl: HTMLElement | null;
   private specListEl: HTMLElement | null;
@@ -17,6 +19,7 @@ export class TeamSelectModal {
   public onPlayerClick?: (player: Player, event: MouseEvent) => void;
   public onTeamChangeRequest?: (playerId: string, team: TeamType) => void;
   public onOpenKeybinds?: () => void;
+  public onMatchToggle?: () => void;
 
   constructor() {
     this.menuEl = document.getElementById('ingame-menu');
@@ -85,12 +88,47 @@ export class TeamSelectModal {
       this.returnGameBtn.addEventListener('click', handleContingencyClose);
     }
 
+    this.matchToggleBtn = (document.getElementById('btn-match-toggle') || document.getElementById('btn-start-stop')) as HTMLButtonElement | null;
+    if (this.matchToggleBtn) {
+      this.matchToggleBtn.addEventListener('click', () => {
+        this.onMatchToggle?.();
+      });
+    }
+
     this.setupDragAndDropColumns();
+  }
+
+  public updateMatchControlButton(phase: MatchPhase, isAdmin?: boolean): void {
+    if (isAdmin !== undefined) {
+      this.isUserAdmin = isAdmin;
+    }
+    if (!this.matchToggleBtn) {
+      this.matchToggleBtn = (document.getElementById('btn-match-toggle') || document.getElementById('btn-start-stop')) as HTMLButtonElement | null;
+      if (this.matchToggleBtn && !this.matchToggleBtn.dataset?.listenerBound) {
+        if (this.matchToggleBtn.dataset) this.matchToggleBtn.dataset.listenerBound = 'true';
+        this.matchToggleBtn.addEventListener('click', () => {
+          this.onMatchToggle?.();
+        });
+      }
+    }
+    if (!this.matchToggleBtn) return;
+
+    this.matchToggleBtn.disabled = !this.isUserAdmin;
+    const isStopped = phase === MatchPhase.STOPPED;
+
+    if (isStopped) {
+      this.matchToggleBtn.textContent = '▶ Iniciar Partido';
+      this.matchToggleBtn.className = 'btn btn-success btn-match-toggle';
+    } else {
+      this.matchToggleBtn.textContent = '■ Detener Partido';
+      this.matchToggleBtn.className = 'btn btn-danger btn-match-toggle';
+    }
   }
 
   public updateMatchState(newState: MatchPhase | MatchState | string, outcomeText?: string): void {
     const phase = typeof newState === 'number' ? newState : toMatchPhase(newState);
     this.currentMatchState = phase;
+    this.updateMatchControlButton(phase);
 
     // Actualizar visibilidad del botón de retorno y botón de cierre ('✕')
     if (this.returnGameBtn?.style) {
@@ -202,6 +240,9 @@ export class TeamSelectModal {
   }
 
   public updateLists(players: Player[], isLocalAdmin: boolean = false, hostId?: string): void {
+    this.isUserAdmin = isLocalAdmin;
+    this.updateMatchControlButton(this.currentMatchState, isLocalAdmin);
+
     if (this.redListEl) this.redListEl.innerHTML = '';
     if (this.blueListEl) this.blueListEl.innerHTML = '';
     if (this.specListEl) this.specListEl.innerHTML = '';

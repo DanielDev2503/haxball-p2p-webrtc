@@ -93,8 +93,6 @@ export class GameApp {
 
   // UI elements
   // btnLeaveRoom removed from HUD header — only #btn-leave-room inside the menu exists
-  private btnStartStop: HTMLButtonElement | null;
-  private btnStopGame: HTMLButtonElement | null;
   private btnPauseResume: HTMLButtonElement | null;
   private btnLockTeams: HTMLButtonElement | null;
   private selectTimeLimit: HTMLSelectElement | HTMLInputElement | null;
@@ -149,8 +147,6 @@ export class GameApp {
 
     // UI Cache
     // btnLeaveRoom removed — leave button only exists inside ingame-menu
-    this.btnStartStop = document.getElementById('btn-start-stop') as HTMLButtonElement | null;
-    this.btnStopGame = document.getElementById('btn-stop-game') as HTMLButtonElement | null;
     this.btnPauseResume = document.getElementById('btn-pause-resume') as HTMLButtonElement | null;
     this.btnLockTeams = document.getElementById('btn-lock-teams') as HTMLButtonElement | null;
     this.selectTimeLimit = (document.getElementById('select-time-limit') || document.getElementById('time-limit')) as HTMLSelectElement | HTMLInputElement | null;
@@ -242,6 +238,11 @@ export class GameApp {
     // Team Selection (HTML5 Drag & Drop)
     this.teamSelect.onTeamChangeRequest = (playerId, team) => {
       this.handleTeamChange(playerId, team);
+    };
+
+    // Match Iniciar / Detener unificado
+    this.teamSelect.onMatchToggle = () => {
+      this.handleMatchToggle();
     };
 
     // Context Menu on player click for Admins
@@ -452,37 +453,12 @@ export class GameApp {
 
     // Leave Room Button — only #btn-leave-room inside the menu exists (header button removed)
 
-    // Match Iniciar / Detener
-    const btnStopGame = document.getElementById('btn-stop-game');
-    if (btnStopGame) {
-      btnStopGame.addEventListener('click', () => {
-        this.requestStopMatch();
-      });
-    }
-
-    const btnStartStop = document.getElementById('btn-start-stop');
-    if (btnStartStop) {
-      btnStartStop.addEventListener('click', () => {
-        if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
-        const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
-        const action = currentPhase === MatchPhase.STOPPED ? 'START' : 'STOP';
-
-        if (action === 'STOP') {
-          this.requestStopMatch();
-          return;
-        }
-
-        if (this.mode === 'client' && this.hostPeer) {
-          this.hostPeer.sendReliable(JSON.stringify({
-            type: 'MATCH_CONTROL_REQUEST',
-            action: 'START'
-          }));
-        } else if (this.engine) {
-          this.engine.startMatch();
-          this.updateAdminControlsUI();
-          this.broadcastMatchStateSync();
-          this.broadcastSnapshot();
-        }
+    // Match Iniciar / Detener (El listener principal se registra en TeamSelectModal.onMatchToggle)
+    const btnMatchToggle = document.getElementById('btn-match-toggle') || document.getElementById('btn-start-stop');
+    if (btnMatchToggle && !btnMatchToggle.dataset.listenerBound) {
+      btnMatchToggle.dataset.listenerBound = 'true';
+      btnMatchToggle.addEventListener('click', () => {
+        this.handleMatchToggle();
       });
     }
 
@@ -1521,21 +1497,7 @@ export class GameApp {
     const isAdmin = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost);
     const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
 
-    if (this.btnStartStop) {
-      this.btnStartStop.disabled = !isAdmin;
-      if (currentPhase === MatchPhase.STOPPED) {
-        this.btnStartStop.textContent = '▶ Iniciar Partido';
-        this.btnStartStop.className = 'btn btn-primary';
-      } else {
-        this.btnStartStop.textContent = '⏹ Detener Partido';
-        this.btnStartStop.className = 'btn btn-danger';
-      }
-    }
-
-    const btnStopGame = this.btnStopGame || (document.getElementById('btn-stop-game') as HTMLButtonElement | null);
-    if (btnStopGame) {
-      btnStopGame.disabled = !isAdmin || currentPhase === MatchPhase.STOPPED;
-    }
+    this.teamSelect.updateMatchControlButton(currentPhase, isAdmin);
 
     if (this.btnPauseResume) {
       this.btnPauseResume.disabled = !isAdmin || currentPhase === MatchPhase.STOPPED;
@@ -1601,6 +1563,29 @@ export class GameApp {
       this.hostPeer.sendReliable(JSON.stringify({
         type: 'toggle_pause'
       }));
+    }
+  }
+
+  public handleMatchToggle(): void {
+    if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
+    const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+    const action = currentPhase === MatchPhase.STOPPED ? 'START' : 'STOP';
+
+    if (action === 'STOP') {
+      this.requestStopMatch();
+      return;
+    }
+
+    if (this.mode === 'client' && this.hostPeer) {
+      this.hostPeer.sendReliable(JSON.stringify({
+        type: 'MATCH_CONTROL_REQUEST',
+        action: 'START'
+      }));
+    } else if (this.engine) {
+      this.engine.startMatch();
+      this.updateAdminControlsUI();
+      this.broadcastMatchStateSync();
+      this.broadcastSnapshot();
     }
   }
 

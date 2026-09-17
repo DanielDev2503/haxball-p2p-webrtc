@@ -397,13 +397,18 @@ canvas#gameCanvas, canvas#game-canvas, canvas.game-canvas {
   padding: 2px 8px !important;
   font-size: 0.7rem !important;
 }
-.btn-primary {
+.btn-primary,
+.btn-success {
   background: #10b981;
   color: #fff;
 }
-.btn-primary:hover {
+.btn-primary:hover,
+.btn-success:hover {
   background: #059669;
   box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+}
+.btn-match-toggle {
+  min-width: 140px;
 }
 .btn-danger {
   background: #ef4444;
