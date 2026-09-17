@@ -4,6 +4,7 @@ import { Disc, COLLISION_GROUP_BALL, COLLISION_GROUP_RED, COLLISION_GROUP_BLUE }
 import { Player, INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK } from './Player';
 import { GameFSM, MatchPhase } from './GameFSM';
 import { GameSnapshot, DiscSnapshot, MatchConfig } from './GameState';
+import { SOUND_KICK, SOUND_POST_HIT, SOUND_GOAL } from '../../net/protocol/BinaryProtocol';
 
 export class GameEngine {
   public physicsWorld: PhysicsWorld;
@@ -19,6 +20,7 @@ export class GameEngine {
   public matchTimerSeconds: number = 180;
   public config: MatchConfig;
   public lastScoringTeam: 'red' | 'blue' | null = null;
+  public soundMask: number = 0;
 
   // Event callbacks
   public onGoal?: (scoringTeam: 'red' | 'blue', redScore: number, blueScore: number) => void;
@@ -71,8 +73,11 @@ export class GameEngine {
       if (event.type === 'disc-disc' && event.discB) {
         const isBall = event.discA === this.ball || event.discB === this.ball;
         const post = this.stadium.posts.find(p => p === event.discA || p === event.discB);
-        if (isBall && post && this.onPostHit) {
-          this.onPostHit(this.ball, post);
+        if (isBall && post) {
+          this.soundMask |= SOUND_POST_HIT;
+          if (this.onPostHit) {
+            this.onPostHit(this.ball, post);
+          }
         }
       }
     };
@@ -238,12 +243,18 @@ export class GameEngine {
    * Deterministic 60Hz tick update.
    */
   public tick(inputs: Map<string, number>): void {
-    // Si el partido está detenido o pausado, la física y el reloj permanecen completamente congelados
-    if (this.fsm.currentState === MatchPhase.STOPPED || this.fsm.currentState === MatchPhase.PAUSED) {
+    // Si el partido está detenido, la física y el reloj permanecen completamente congelados
+    if (this.fsm.currentState === MatchPhase.STOPPED) {
       return;
     }
 
+    this.soundMask = 0;
     this.tickCount++;
+
+    // Si el partido está pausado, la física y el reloj permanecen congelados pero tickCount avanza para emitir snapshots continuos de pausa
+    if (this.fsm.currentState === MatchPhase.PAUSED) {
+      return;
+    }
 
     // Si está en cuenta regresiva (3, 2, 1), avanza la cuenta pero congela la física
     if (this.fsm.currentState === MatchPhase.COUNTDOWN) {
@@ -329,6 +340,7 @@ export class GameEngine {
           this.ball.vel.x += kickDirX * kickStrength;
           this.ball.vel.y += kickDirY * kickStrength;
 
+          this.soundMask |= SOUND_KICK;
           if (this.onKick) {
             this.onKick(disc, this.ball);
           }
@@ -351,6 +363,7 @@ export class GameEngine {
           this.lastScoringTeam = 'blue';
         }
 
+        this.soundMask |= SOUND_GOAL;
         if (this.onGoal) {
           this.onGoal(goalScored, this.redScore, this.blueScore);
         }
@@ -452,6 +465,7 @@ export class GameEngine {
       targetTeam,
       scoreRed: this.redScore,
       scoreBlue: this.blueScore,
+      soundMask: this.soundMask,
       discs: discSnapshots,
 
       // Compatibilidad

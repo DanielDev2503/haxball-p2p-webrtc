@@ -13,3 +13,13 @@ export enum EventType {
   MATCH_START = 4,
   MATCH_END = 5
 }
+
+export enum SoundEvent {
+  KICK = 1 << 0,     // 0x01
+  POST_HIT = 1 << 1, // 0x02
+  GOAL = 1 << 2      // 0x04
+}
+
+export const SOUND_KICK = 1 << 0;
+export const SOUND_POST_HIT = 1 << 1;
+export const SOUND_GOAL = 1 << 2;

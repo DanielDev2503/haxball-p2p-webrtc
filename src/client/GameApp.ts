@@ -14,6 +14,7 @@ import { SignalingClient, SignalingMessage } from '../net/signaling/SignalingCli
 import { PeerConnection } from '../net/transport/PeerConnection';
 import { InputPacket } from '../net/protocol/InputPacket';
 import { SnapshotPacket } from '../net/protocol/SnapshotPacket';
+import { SOUND_POST_HIT, SOUND_KICK } from '../net/protocol/BinaryProtocol';
 import { JitterBuffer } from '../net/transport/JitterBuffer';
 import { PhysicsTicker } from '../core/physics/PhysicsTicker';
 import { RoomConfig } from '../server/signalingServer';
@@ -365,6 +366,9 @@ export class GameApp {
 
     const toggleMenu = () => {
       if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') return;
+      if (this.getAuthoritativeMatchState() === MatchPhase.STOPPED || this.teamSelect.getMatchState() === MatchPhase.STOPPED) {
+        return;
+      }
       this.teamSelect.toggle();
       this.updateAdminControlsUI();
       this.updateTeamLists();
@@ -539,6 +543,7 @@ export class GameApp {
           if (this.roomNameBadge) {
             this.roomNameBadge.textContent = `${this.roomConfig.name} [${this.currentRoomId}]`;
           }
+          this.chat.clear();
           this.chat.addMessage({ author: 'Lobby', text: `Sala "${this.roomConfig.name}" creada. ID: ${this.currentRoomId}`, team: 'sys' });
           this.applyRoomConfigToEngine();
           this.updateAdminPanelVisibility();
@@ -688,6 +693,7 @@ export class GameApp {
     this.updateAdminPanelVisibility();
 
     this.uiStateMachine.transitionTo('STATE_IN_GAME');
+    this.chat.clear();
     this.chat.addMessage({ author: 'Sistema', text: '¡Modo de práctica activo! Usa WASD/Flechas para moverte y Espacio/X para patear.', team: 'sys' });
     this.updateTeamLists();
   }
@@ -836,6 +842,7 @@ export class GameApp {
     this.lobby?.hideConnecting();
     this.uiStateMachine.transitionTo('STATE_LOBBY');
     this.signaling.requestRoomList();
+    this.chat.clear();
     this.chat.addMessage({ author: 'Sistema', text: 'Has salido de la sala.', team: 'sys' });
   }
 
@@ -871,10 +878,8 @@ export class GameApp {
         this.audioManager.playCountdown(true);
       } else if (state === MatchPhase.MATCH_ENDED) {
         this.audioManager.playGoalWhistle();
-        this.broadcastMatchStateSync();
-      } else if (state === MatchPhase.PAUSED) {
-        this.broadcastMatchStateSync();
       }
+      this.broadcastMatchStateSync();
       this.broadcastSnapshot();
       this.updateAdminControlsUI();
     };
@@ -1079,6 +1084,14 @@ export class GameApp {
       try {
         const snap = SnapshotPacket.decode(data);
         if (snap) {
+          if (snap.soundMask) {
+            if (snap.soundMask & SOUND_POST_HIT) {
+              this.audioManager.playPostHit();
+            }
+            if (snap.soundMask & SOUND_KICK) {
+              this.audioManager.playKick();
+            }
+          }
           this.jitterBuffer.push(snap);
           this.reconcileClientPrediction(snap);
         }
@@ -1099,6 +1112,7 @@ export class GameApp {
         } else if (msg.type === 'initial_state' || msg.type === 'INITIAL_STATE') {
           // INITIAL_STATE received — handshake complete!
           this.clearJoinTimeout();
+          this.chat.clear();
 
           // Assign our authoritative player ID from the host
           this.localPlayer.id = msg.yourPlayerId;

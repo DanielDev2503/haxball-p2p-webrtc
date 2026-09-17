@@ -20,6 +20,7 @@ export interface GameSnapshot {
   targetTeam: number; // 0: none, 1: red, 2: blue
   scoreRed: number;
   scoreBlue: number;
+  soundMask?: number;
   discs: DiscSnapshot[];
 
   // Compatibilidad hacia atrás

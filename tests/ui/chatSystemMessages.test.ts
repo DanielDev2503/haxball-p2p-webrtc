@@ -9,6 +9,7 @@ describe('ChatBox System Messages and Notifications', () => {
   beforeEach(() => {
     container = {
       appendChild: vi.fn(),
+      innerHTML: '',
       scrollTop: 0,
       scrollHeight: 1200
     };
@@ -91,5 +92,12 @@ describe('ChatBox System Messages and Notifications', () => {
     expect(createdElements.length).toBe(2);
     expect(createdElements[0].textContent).toBe('Troll1 fue expulsado de la sala por un administrador.');
     expect(createdElements[1].textContent).toBe('Cheater2 fue baneado de la sala por un administrador.');
+  });
+
+  it('clears container innerHTML when clear() is invoked', () => {
+    container.innerHTML = '<div class="chat-msg">Old Message</div>';
+    const chatBox = new ChatBox();
+    chatBox.clear();
+    expect(container.innerHTML).toBe('');
   });
 });

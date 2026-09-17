@@ -64,6 +64,12 @@ export class ChatBox {
     this.inputEl?.blur();
   }
 
+  public clear(): void {
+    if (this.container) {
+      this.container.innerHTML = '';
+    }
+  }
+
   public isFocused(): boolean {
     return Boolean(this.inputEl && document.activeElement === this.inputEl);
   }

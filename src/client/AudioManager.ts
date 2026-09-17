@@ -170,4 +170,14 @@ export class AudioManager {
     osc.start(t);
     osc.stop(t + duration);
   }
+
+  public play(type: 'kick' | 'bounce' | 'post' | 'goal' | 'countdown' | string, isGo?: boolean): void {
+    switch (type) {
+      case 'kick': return this.playKick();
+      case 'bounce': return this.playBounce();
+      case 'post': return this.playPostHit();
+      case 'goal': return this.playGoalWhistle();
+      case 'countdown': return this.playCountdown(isGo);
+    }
+  }
 }

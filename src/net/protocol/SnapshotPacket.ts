@@ -3,7 +3,7 @@ import { GameSnapshot, DiscSnapshot } from '../../core/game/GameState';
 import { MatchPhase, toMatchPhase } from '../../core/game/GameFSM';
 
 export class SnapshotPacket {
-  public static readonly HEADER_LENGTH = 16;
+  public static readonly HEADER_LENGTH = 17;
   public static readonly DISC_LENGTH = 18;
 
   public static encode(snapshot: GameSnapshot): ArrayBuffer {
@@ -21,8 +21,9 @@ export class SnapshotPacket {
     const red = snapshot.scoreRed !== undefined ? snapshot.scoreRed : (snapshot.redScore ?? 0);
     const blue = snapshot.scoreBlue !== undefined ? snapshot.scoreBlue : (snapshot.blueScore ?? 0);
     const target = snapshot.targetTeam ?? 0;
+    const soundMask = snapshot.soundMask ?? 0;
 
-    // Header (16 bytes)
+    // Header (17 bytes)
     view.setUint8(0, OP_SNAPSHOT);
     view.setUint32(1, snapshot.tick, false);
     view.setUint8(5, phase);
@@ -31,7 +32,8 @@ export class SnapshotPacket {
     view.setUint8(12, target);
     view.setUint8(13, red);
     view.setUint8(14, blue);
-    view.setUint8(15, discCount);
+    view.setUint8(15, soundMask);
+    view.setUint8(16, discCount);
 
     // Disc records
     let offset = SnapshotPacket.HEADER_LENGTH;
@@ -78,7 +80,8 @@ export class SnapshotPacket {
     const targetTeam = view.getUint8(12);
     const scoreRed = view.getUint8(13);
     const scoreBlue = view.getUint8(14);
-    const discCount = view.getUint8(15);
+    const soundMask = view.getUint8(15);
+    const discCount = view.getUint8(16);
 
     const expectedLength = SnapshotPacket.HEADER_LENGTH + discCount * SnapshotPacket.DISC_LENGTH;
     if (view.byteLength < expectedLength) return null;
@@ -125,6 +128,7 @@ export class SnapshotPacket {
       targetTeam,
       scoreRed,
       scoreBlue,
+      soundMask,
       discs,
 
       // Compat

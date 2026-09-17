@@ -4,6 +4,7 @@ import { SnapshotPacket } from '../../src/net/protocol/SnapshotPacket';
 import { GameSnapshot } from '../../src/core/game/GameState';
 import { INPUT_UP, INPUT_KICK } from '../../src/core/game/Player';
 import { MatchPhase } from '../../src/core/game/GameFSM';
+import { SOUND_POST_HIT, SOUND_KICK } from '../../src/net/protocol/BinaryProtocol';
 
 describe('Binary Protocol Serialization', () => {
   it('correctly encodes and decodes an InputPacket via DataView', () => {
@@ -36,6 +37,7 @@ describe('Binary Protocol Serialization', () => {
       matchTimerSeconds: 165,
       redScore: 2,
       blueScore: 1,
+      soundMask: SOUND_POST_HIT | SOUND_KICK,
 
       discs: [
         {
@@ -77,10 +79,11 @@ describe('Binary Protocol Serialization', () => {
     const buffer = SnapshotPacket.encode(snapshot);
     const expectedBytes = SnapshotPacket.HEADER_LENGTH + 3 * SnapshotPacket.DISC_LENGTH;
     expect(buffer.byteLength).toBe(expectedBytes);
-    expect(SnapshotPacket.HEADER_LENGTH).toBe(16);
+    expect(SnapshotPacket.HEADER_LENGTH).toBe(17);
 
     const decoded = SnapshotPacket.decode(buffer);
     expect(decoded).not.toBeNull();
+    expect(decoded!.soundMask).toBe(SOUND_POST_HIT | SOUND_KICK);
     expect(decoded!.tick).toBe(12054);
     expect(decoded!.matchPhase).toBe(MatchPhase.PLAYING);
     expect(decoded!.matchState).toBe(MatchPhase.PLAYING);

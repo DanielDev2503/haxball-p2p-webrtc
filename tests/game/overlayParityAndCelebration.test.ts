@@ -7,6 +7,7 @@ import { JitterBuffer } from '../../src/net/transport/JitterBuffer';
 import { CanvasRenderer } from '../../src/render/CanvasRenderer';
 import { Stadium } from '../../src/core/entities/Stadium';
 import { GameSnapshot } from '../../src/core/game/GameState';
+import { SOUND_POST_HIT } from '../../src/net/protocol/BinaryProtocol';
 
 describe('Host-Client Parity: Overlays, Banners & Celebration Physics', () => {
   let engine: GameEngine;
@@ -357,5 +358,138 @@ describe('Host-Client Parity: Overlays, Banners & Celebration Physics', () => {
     predictedPos.x += dx * 0.25;
 
     expect(predictedPos.x).toBeCloseTo(oldX + 2.5, 4);
+  });
+
+  it('sets SOUND_POST_HIT in soundMask on ball-post collision and decodes it via SnapshotPacket', () => {
+    engine.startMatch();
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+    expect(engine.fsm.currentState).toBe(MatchPhase.PLAYING);
+
+    const onPostHitSpy = vi.fn();
+    engine.onPostHit = onPostHitSpy;
+
+    // Position ball to collide with the first stadium post
+    const post = engine.stadium.posts[0];
+    const postRadius = post.radius;
+    const ballRadius = engine.ball.radius;
+    // Overlap post and ball slightly to guarantee collision resolution
+    engine.ball.pos.set(post.pos.x + postRadius + ballRadius - 2, post.pos.y);
+    engine.ball.vel.set(-10, 0);
+
+    engine.tick(new Map());
+
+    expect(onPostHitSpy).toHaveBeenCalled();
+    expect(engine.soundMask & SOUND_POST_HIT).toBeTruthy();
+
+    const snapshot = engine.getSnapshot();
+    expect(snapshot.soundMask! & SOUND_POST_HIT).toBeTruthy();
+
+    // Encode and decode snapshot across simulated network packet
+    const buffer = SnapshotPacket.encode(snapshot);
+    const decoded = SnapshotPacket.decode(buffer);
+    expect(decoded).not.toBeNull();
+    expect(decoded!.soundMask! & SOUND_POST_HIT).toBeTruthy();
+
+    // Verify soundMask is cleared on subsequent tick
+    engine.ball.pos.set(0, 0);
+    engine.ball.vel.set(0, 0);
+    engine.tick(new Map());
+    expect(engine.soundMask).toBe(0);
+    const nextSnapshot = engine.getSnapshot();
+    expect(nextSnapshot.soundMask).toBe(0);
+  });
+
+  it('emits snapshots at 60Hz with monotonic ticks during MatchPhase.PAUSED so JitterBuffer receives them', () => {
+    engine.startMatch();
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+    expect(engine.fsm.currentState).toBe(MatchPhase.PLAYING);
+
+    engine.pauseMatch();
+    expect(engine.fsm.currentState).toBe(MatchPhase.PAUSED);
+
+    const jitterBuffer = new JitterBuffer(100);
+    jitterBuffer.setMatchState(MatchPhase.PAUSED);
+
+    const receivedTicks: number[] = [];
+
+    // Simulate 10 ticks while game is paused
+    for (let i = 0; i < 10; i++) {
+      engine.tick(new Map());
+      const snap = engine.getSnapshot();
+      expect(snap.matchPhase).toBe(MatchPhase.PAUSED);
+      receivedTicks.push(snap.tick);
+
+      // Encode and push to client JitterBuffer
+      const buf = SnapshotPacket.encode(snap);
+      const decoded = SnapshotPacket.decode(buf)!;
+      jitterBuffer.push(decoded);
+    }
+
+    // Ensure tickCount steadily advances monotonically
+    for (let i = 1; i < receivedTicks.length; i++) {
+      expect(receivedTicks[i]).toBeGreaterThan(receivedTicks[i - 1]);
+    }
+
+    // JitterBuffer buffer length should have received the snapshots rather than dropping duplicates
+    expect(jitterBuffer.buffer.length).toBeGreaterThan(0);
+
+    // Verify CanvasRenderer renders PAUSA banner
+    const mockCtx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      scale: vi.fn(),
+      translate: vi.fn(),
+      clearRect: vi.fn(),
+      beginPath: vi.fn(),
+      roundRect: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      fillText: vi.fn(),
+      strokeText: vi.fn(),
+      fillRect: vi.fn(),
+      measureText: vi.fn().mockReturnValue({ width: 100 }),
+      setLineDash: vi.fn(),
+      createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+      createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() }))
+    } as any;
+    const mockCanvas: any = {
+      getContext: vi.fn(() => mockCtx),
+      clientWidth: 800,
+      clientHeight: 600,
+      width: 800,
+      height: 600
+    };
+
+    const renderer = new CanvasRenderer(mockCanvas, engine.stadium);
+    const pausedSnap = engine.getSnapshot();
+    renderer.render(pausedSnap);
+    expect(mockCtx.fillText).toHaveBeenCalledWith('PAUSA', 0, expect.any(Number));
+  });
+
+  it('resets scores, ball position, timer to 0 and re-aligns kickoff on stopMatch', () => {
+    engine.startMatch();
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+    expect(engine.fsm.currentState).toBe(MatchPhase.PLAYING);
+
+    // Mutate state
+    engine.redScore = 2;
+    engine.blueScore = 1;
+    engine.ball.pos.set(150, 80);
+    engine.ball.vel.set(5, 5);
+
+    engine.stopMatch();
+
+    expect(engine.fsm.currentState).toBe(MatchPhase.STOPPED);
+    expect(engine.redScore).toBe(0);
+    expect(engine.blueScore).toBe(0);
+    expect(engine.matchTimerSeconds).toBe(0);
+    expect(engine.ball.pos.x).toBe(0);
+    expect(engine.ball.pos.y).toBe(0);
+    expect(engine.ball.vel.x).toBe(0);
+    expect(engine.ball.vel.y).toBe(0);
   });
 });
