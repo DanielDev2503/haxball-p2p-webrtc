@@ -1,7 +1,7 @@
 import { GameEngine } from '../core/game/GameEngine';
-import { Player, TeamType } from '../core/game/Player';
+import { Player, TeamType, INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK } from '../core/game/Player';
 import { MatchPhase, MatchState, toMatchPhase } from '../core/game/GameFSM';
-import { GameSnapshot } from '../core/game/GameState';
+import { GameSnapshot, DiscSnapshot } from '../core/game/GameState';
 import { CanvasRenderer } from '../render/CanvasRenderer';
 import { InputManager } from './InputManager';
 import { AudioManager } from './AudioManager';
@@ -60,6 +60,11 @@ export class GameApp {
   public kickedPeers: Set<string> = new Set();
   public currentRoomId: string = '';
   public currentHostId: string | null = null;
+
+  // Predicción cinemática del jugador local (cero lag de controles, sin alocaciones GC en bucle caliente)
+  private predictedPos: { x: number; y: number } = { x: 0, y: 0 };
+  private predictedVel: { x: number; y: number } = { x: 0, y: 0 };
+  private hasPredictedPos: boolean = false;
 
   // Handshake timeout: cancel if initial_state is received within 10s
   private joinTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -738,6 +743,7 @@ export class GameApp {
     this.currentRoomId = roomId;
     this.currentMatchState = MatchPhase.STOPPED;
     this.lastClientPhase = null;
+    this.resetClientPrediction();
 
     // Leave button is inside ingame-menu only
     this.updateAdminPanelVisibility();
@@ -815,6 +821,7 @@ export class GameApp {
     this.currentRoomId = '';
     this.localPlayer.team = 'red';
     this.localPlayer.isAdmin = true;
+    this.resetClientPrediction();
 
     // Ocultar menú in-game y menú contextual
     this.teamSelect.close(true);
@@ -836,6 +843,7 @@ export class GameApp {
     engine.onGoal = (_scoringTeam, _redScore, _blueScore) => {
       this.audioManager.playGoalWhistle();
       this.broadcastMatchStateSync();
+      this.broadcastSnapshot();
     };
 
     engine.onKick = () => {
@@ -851,6 +859,7 @@ export class GameApp {
       const outcomeText = winner ? `¡Victoria del Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}!` : '¡Empate!';
       this.enforceMenuState(MatchPhase.STOPPED, outcomeText);
       this.broadcastMatchStateSync();
+      this.broadcastSnapshot();
       this.updateAdminControlsUI();
     };
 
@@ -866,6 +875,7 @@ export class GameApp {
       } else if (state === MatchPhase.PAUSED) {
         this.broadcastMatchStateSync();
       }
+      this.broadcastSnapshot();
       this.updateAdminControlsUI();
     };
   }
@@ -950,7 +960,8 @@ export class GameApp {
               avatar: p.avatar,
               team: p.team,
               isHost: p.isHost,
-              isAdmin: p.isAdmin
+              isAdmin: p.isAdmin,
+              discId: p.discId
             }));
 
             peer.sendReliable(JSON.stringify({
@@ -1069,6 +1080,7 @@ export class GameApp {
         const snap = SnapshotPacket.decode(data);
         if (snap) {
           this.jitterBuffer.push(snap);
+          this.reconcileClientPrediction(snap);
         }
       } catch (err) {
         console.warn('[Client] Error al decodificar snapshot de red:', err);
@@ -1101,6 +1113,9 @@ export class GameApp {
           if (self) {
             this.localPlayer.isAdmin = Boolean(self.isAdmin);
             this.localPlayer.team = self.team;
+            if (self.discId !== undefined) {
+              this.localPlayer.discId = self.discId;
+            }
           }
           const remoteHostId = msg.players.find((p: any) => p.isHost)?.id;
           if (remoteHostId) {
@@ -1130,6 +1145,9 @@ export class GameApp {
             this.localPlayer.id = self.id;
             this.localPlayer.isAdmin = Boolean(self.isAdmin);
             this.localPlayer.team = self.team;
+            if (self.discId !== undefined) {
+              this.localPlayer.discId = self.discId;
+            }
           }
           const remoteHostId = msg.players.find((p: any) => p.isHost)?.id;
           if (remoteHostId) {
@@ -1258,7 +1276,15 @@ export class GameApp {
 
   private syncPlayersWithClients(): void {
     if (this.mode === 'host' && this.engine) {
-      const players = Array.from(this.engine.players.values());
+      const players = Array.from(this.engine.players.values()).map(p => ({
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        team: p.team,
+        isHost: p.isHost,
+        isAdmin: p.isAdmin,
+        discId: p.discId
+      }));
       this.broadcastReliable(JSON.stringify({
         type: 'team_sync',
         players
@@ -1690,6 +1716,140 @@ export class GameApp {
   }
 
   /**
+   * Transmisión ininterrumpida de snapshots a 60 Hz para todos los peers conectados.
+   */
+  private broadcastSnapshot(): void {
+    if (this.mode !== 'host' || !this.engine || this.peers.size === 0) return;
+    const snapshot = this.engine.getSnapshot();
+    const buffer = SnapshotPacket.encode(snapshot);
+    for (const peer of this.peers.values()) {
+      peer.sendUnreliable(buffer);
+    }
+  }
+
+  /**
+   * Resetea el estado de predicción cinemática local del cliente.
+   */
+  private resetClientPrediction(): void {
+    this.hasPredictedPos = false;
+    this.predictedPos.x = 0;
+    this.predictedPos.y = 0;
+    this.predictedVel.x = 0;
+    this.predictedVel.y = 0;
+  }
+
+  /**
+   * Predicción cinemática inmediata a 60 Hz para el jugador local en cliente (cero input lag).
+   * p_local(t + dt) = p_local(t) + v_local * dt
+   */
+  private stepClientPrediction(mask: number): void {
+    const isSimulationActive = this.currentMatchState === MatchPhase.PLAYING ||
+                               this.currentMatchState === MatchPhase.GOAL_CELEBRATION;
+    if (!isSimulationActive || !this.hasPredictedPos || this.localPlayer.team === 'spec') {
+      return;
+    }
+
+    const accel = 7.5;
+    let dirX = 0;
+    let dirY = 0;
+    if (mask & INPUT_UP) dirY -= 1;
+    if (mask & INPUT_DOWN) dirY += 1;
+    if (mask & INPUT_LEFT) dirX -= 1;
+    if (mask & INPUT_RIGHT) dirX += 1;
+
+    if (dirX !== 0 || dirY !== 0) {
+      const len = Math.hypot(dirX, dirY);
+      this.predictedVel.x += (dirX / len) * accel;
+      this.predictedVel.y += (dirY / len) * accel;
+    }
+
+    // Integración cinemática inmediata (dt = 1/60)
+    this.predictedPos.x += this.predictedVel.x * (1 / 60);
+    this.predictedPos.y += this.predictedVel.y * (1 / 60);
+
+    // Amortiguación de fricción del disco (damping = 0.96)
+    this.predictedVel.x *= 0.96;
+    this.predictedVel.y *= 0.96;
+
+    // Confinamiento en los límites del estadio (740x400, radio del disco = 15)
+    const minX = -370 + 15;
+    const maxX = 370 - 15;
+    const minY = -200 + 15;
+    const maxY = 200 - 15;
+
+    if (this.predictedPos.x < minX) {
+      this.predictedPos.x = minX;
+      if (this.predictedVel.x < 0) this.predictedVel.x = 0;
+    } else if (this.predictedPos.x > maxX) {
+      this.predictedPos.x = maxX;
+      if (this.predictedVel.x > 0) this.predictedVel.x = 0;
+    }
+
+    if (this.predictedPos.y < minY) {
+      this.predictedPos.y = minY;
+      if (this.predictedVel.y < 0) this.predictedVel.y = 0;
+    } else if (this.predictedPos.y > maxY) {
+      this.predictedPos.y = maxY;
+      if (this.predictedVel.y > 0) this.predictedVel.y = 0;
+    }
+  }
+
+  /**
+   * Reconciliación suave (soft-snap) del disco local con el snapshot autoritativo del Host.
+   */
+  private reconcileClientPrediction(snap: GameSnapshot): void {
+    if (this.mode !== 'client' || this.localPlayer.team === 'spec') return;
+
+    let authDisc: DiscSnapshot | undefined;
+    if (this.localPlayer.discId !== null) {
+      authDisc = snap.discs.find(d => d.id === this.localPlayer.discId);
+    }
+    if (!authDisc) {
+      const teamNum = this.localPlayer.team === 'red' ? 1 : 2;
+      const candidates = snap.discs.filter(d => d.team === teamNum && d.avatar === this.localPlayer.avatar);
+      if (candidates.length === 1) {
+        this.localPlayer.discId = candidates[0].id;
+        authDisc = candidates[0];
+      }
+    }
+
+    if (!authDisc) return;
+
+    const isSimulationActive = snap.matchPhase === MatchPhase.PLAYING ||
+                               snap.matchPhase === MatchPhase.GOAL_CELEBRATION;
+
+    // Si aún no se ha inicializado o la física no está activa (PAUSED, STOPPED, COUNTDOWN):
+    // Apagar la integración cinemática y sincronizar directamente la posición autoritativa
+    if (!this.hasPredictedPos || !isSimulationActive) {
+      this.predictedPos.x = authDisc.x;
+      this.predictedPos.y = authDisc.y;
+      this.predictedVel.x = authDisc.vx;
+      this.predictedVel.y = authDisc.vy;
+      this.hasPredictedPos = true;
+      return;
+    }
+
+    // Reconciliación cinemática con umbral de tolerancia epsilon = 2.0 px
+    const dx = authDisc.x - this.predictedPos.x;
+    const dy = authDisc.y - this.predictedPos.y;
+    const distSq = dx * dx + dy * dy;
+
+    if (distSq > 40 * 40) {
+      // Discrepancia mayor (teletransporte / saque inicial tras gol): hard snap
+      this.predictedPos.x = authDisc.x;
+      this.predictedPos.y = authDisc.y;
+      this.predictedVel.x = authDisc.vx;
+      this.predictedVel.y = authDisc.vy;
+    } else if (distSq > 2.0 * 2.0) {
+      // Soft snap: corrección suave e interpolada (factor 0.25)
+      this.predictedPos.x += dx * 0.25;
+      this.predictedPos.y += dy * 0.25;
+      this.predictedVel.x = this.predictedVel.x * 0.75 + authDisc.vx * 0.25;
+      this.predictedVel.y = this.predictedVel.y * 0.75 + authDisc.vy * 0.25;
+    }
+  }
+
+  /**
    * Physics tick disparado por el PhysicsTicker (Web Worker) a 60 Hz constantes.
    * Continúa ejecutándose fluidamente aunque la pestaña esté minimizada o desenfocada.
    */
@@ -1702,25 +1862,23 @@ export class GameApp {
         inputs.set(this.localPlayer.id, this.inputManager.getMask());
         this.engine.tick(inputs);
 
-        // Si es Host, transmitir snapshot binario continuo
-        if (this.mode === 'host' && this.peers.size > 0) {
-          const snapshot = this.engine.getSnapshot();
-          const buffer = SnapshotPacket.encode(snapshot);
-          for (const peer of this.peers.values()) {
-            peer.sendUnreliable(buffer);
-          }
-        }
+        // Si es Host, transmitir snapshot binario continuo ininterrumpidamente a 60 Hz
+        this.broadcastSnapshot();
       }
     } else if (this.mode === 'client') {
       this.clientInputSequence++;
+      const mask = this.inputManager.getMask();
       if (this.hostPeer) {
         const inputBuf = InputPacket.encode({
           sequence: this.clientInputSequence,
-          inputMask: this.inputManager.getMask(),
+          inputMask: mask,
           clientTimestamp: Math.round(performance.now()) & 0xffff
         });
         this.hostPeer.sendUnreliable(inputBuf);
       }
+
+      // Predicción cinemática local a 60 Hz para el disco asignado
+      this.stepClientPrediction(mask);
     }
   }
 
@@ -1753,6 +1911,27 @@ export class GameApp {
           }
         } else if (this.mode === 'client') {
           activeSnapshot = this.jitterBuffer.getInterpolatedSnapshot(now);
+          localDiscId = this.localPlayer.discId;
+
+          // Si el cliente tiene predicción activa, sobreescribir la cinemática del disco local
+          if (activeSnapshot && this.hasPredictedPos && localDiscId !== null) {
+            const myDisc = activeSnapshot.discs.find(d => d.id === localDiscId);
+            if (myDisc) {
+              const currentPhase = activeSnapshot.matchPhase !== undefined
+                ? activeSnapshot.matchPhase
+                : toMatchPhase(activeSnapshot.matchState);
+              const isSimulationActive = currentPhase === MatchPhase.PLAYING ||
+                                         currentPhase === MatchPhase.GOAL_CELEBRATION;
+
+              if (isSimulationActive) {
+                myDisc.x = this.predictedPos.x;
+                myDisc.y = this.predictedPos.y;
+                myDisc.vx = this.predictedVel.x;
+                myDisc.vy = this.predictedVel.y;
+                myDisc.kicking = (this.inputManager.getMask() & INPUT_KICK) !== 0;
+              }
+            }
+          }
         }
 
         if (activeSnapshot) {

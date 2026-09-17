@@ -243,6 +243,8 @@ export class GameEngine {
       return;
     }
 
+    this.tickCount++;
+
     // Si está en cuenta regresiva (3, 2, 1), avanza la cuenta pero congela la física
     if (this.fsm.currentState === MatchPhase.COUNTDOWN) {
       const transitioned = this.fsm.tick();
@@ -268,8 +270,6 @@ export class GameEngine {
 
     // Estados activos: PLAYING o GOAL_CELEBRATION
     if (this.fsm.currentState === MatchPhase.PLAYING) {
-      this.tickCount++;
-
       // Advance match timer (every 60 ticks = 1 second) únicamente en PLAYING
       if (this.tickCount % 60 === 0) {
         if (this.config.timeLimitSeconds > 0) {

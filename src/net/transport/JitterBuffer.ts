@@ -32,7 +32,12 @@ export class JitterBuffer {
     if (this.buffer.length > 0) {
       const latest = this.buffer[this.buffer.length - 1];
       if (snapshot.tick <= latest.snapshot.tick) {
-        return;
+        // If tick wrapped or reset (e.g. new match started), clear stale buffer
+        if (snapshot.tick < latest.snapshot.tick - 100) {
+          this.clear();
+        } else {
+          return;
+        }
       }
     }
 

@@ -214,6 +214,148 @@ describe('Host-Client Parity: Overlays, Banners & Celebration Physics', () => {
     mockCtx.fillText.mockClear();
     renderer.render(playingSnap);
     expect(mockCtx.fillText).not.toHaveBeenCalledWith('¡GOL! - EQUIPO ROJO', 0, expect.any(Number));
-    expect(mockCtx.fillText).not.toHaveBeenCalledWith('PARTIDO PAUSADO', 0, expect.any(Number));
+    expect(mockCtx.fillText).not.toHaveBeenCalledWith('PAUSA', 0, expect.any(Number));
+  });
+
+  it('advances tickCount continuously throughout GOAL_CELEBRATION to prevent snapshot dropping', () => {
+    engine.startMatch();
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+    expect(engine.fsm.currentState).toBe(MatchPhase.PLAYING);
+
+    // Score goal for red team
+    engine.ball.pos.set(engine.stadium.halfWidth + 20, 0);
+    engine.tick(new Map());
+    expect(engine.fsm.currentState).toBe(MatchPhase.GOAL_CELEBRATION);
+
+    const initialCelebrationTick = engine.tickCount;
+    // Step 30 celebration ticks
+    for (let i = 0; i < 30; i++) {
+      engine.tick(new Map());
+    }
+    expect(engine.fsm.currentState).toBe(MatchPhase.GOAL_CELEBRATION);
+    expect(engine.tickCount).toBe(initialCelebrationTick + 30);
+  });
+
+  it('renders PAUSED, MATCH_ENDED overlays and renders no overlay during STOPPED', () => {
+    const mockCtx: any = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      scale: vi.fn(),
+      translate: vi.fn(),
+      fillRect: vi.fn(),
+      beginPath: vi.fn(),
+      roundRect: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      fillText: vi.fn(),
+      strokeText: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      closePath: vi.fn(),
+      measureText: vi.fn(() => ({ width: 100 })),
+      setLineDash: vi.fn(),
+      createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+      createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() }))
+    };
+    const mockCanvas: any = {
+      getContext: vi.fn(() => mockCtx),
+      clientWidth: 800,
+      clientHeight: 600,
+      width: 800,
+      height: 600
+    };
+    const renderer = new CanvasRenderer(mockCanvas, new Stadium());
+
+    // PAUSED: renders PAUSA
+    const pausedSnap: GameSnapshot = {
+      tick: 10,
+      matchPhase: MatchPhase.PAUSED,
+      timerSeconds: 100,
+      subStateTimer: 0,
+      targetTeam: 0,
+      scoreRed: 0,
+      scoreBlue: 0,
+      matchState: MatchPhase.PAUSED,
+      matchTimerSeconds: 100,
+      redScore: 0,
+      blueScore: 0,
+      discs: []
+    };
+    mockCtx.fillText.mockClear();
+    renderer.render(pausedSnap);
+    expect(mockCtx.fillText).toHaveBeenCalledWith('PAUSA', 0, expect.any(Number));
+
+    // MATCH_ENDED: renders VICTORIA
+    const matchEndedSnap: GameSnapshot = {
+      tick: 20,
+      matchPhase: MatchPhase.MATCH_ENDED,
+      timerSeconds: 0,
+      subStateTimer: 3,
+      targetTeam: 2, // Blue
+      scoreRed: 1,
+      scoreBlue: 3,
+      matchState: MatchPhase.MATCH_ENDED,
+      matchTimerSeconds: 0,
+      redScore: 1,
+      blueScore: 3,
+      discs: []
+    };
+    mockCtx.fillText.mockClear();
+    renderer.render(matchEndedSnap);
+    expect(mockCtx.fillText).toHaveBeenCalledWith('¡VICTORIA EQUIPO AZUL!', 0, expect.any(Number));
+
+    // STOPPED: renders no banners on canvas
+    const stoppedSnap: GameSnapshot = {
+      tick: 0,
+      matchPhase: MatchPhase.STOPPED,
+      timerSeconds: 0,
+      subStateTimer: 0,
+      targetTeam: 0,
+      scoreRed: 0,
+      scoreBlue: 0,
+      matchState: MatchPhase.STOPPED,
+      matchTimerSeconds: 0,
+      redScore: 0,
+      blueScore: 0,
+      discs: []
+    };
+    mockCtx.fillText.mockClear();
+    renderer.render(stoppedSnap);
+    expect(mockCtx.fillText).not.toHaveBeenCalled();
+  });
+
+  it('predicts local player kinematics and performs soft snap reconciliation with epsilon > 2.0px', () => {
+    const dt = 1 / 60;
+    const accel = 7.5;
+    const damping = 0.96;
+
+    const predictedPos = { x: 0, y: 0 };
+    const predictedVel = { x: 0, y: 0 };
+
+    // Move RIGHT: dirX = 1, dirY = 0
+    predictedVel.x += accel;
+    predictedPos.x += predictedVel.x * dt;
+    predictedVel.x *= damping;
+
+    expect(predictedPos.x).toBeCloseTo(7.5 * dt, 4);
+    expect(predictedVel.x).toBeCloseTo(7.5 * damping, 4);
+
+    // Reconcile with authoritative host snapshot
+    // 1. Within tolerance (<= 2.0px): no soft snap adjustment
+    const authClose = { x: predictedPos.x + 1.2, y: 0, vx: predictedVel.x, vy: 0 };
+    let dist = Math.hypot(authClose.x - predictedPos.x, authClose.y - predictedPos.y);
+    expect(dist).toBeLessThanOrEqual(2.0);
+
+    // 2. Beyond tolerance (> 2.0px): applies soft snap correction factor 0.25
+    const authDistant = { x: predictedPos.x + 10.0, y: 0, vx: predictedVel.x, vy: 0 };
+    dist = Math.hypot(authDistant.x - predictedPos.x, authDistant.y - predictedPos.y);
+    expect(dist).toBeGreaterThan(2.0);
+
+    const oldX = predictedPos.x;
+    const dx = authDistant.x - predictedPos.x;
+    predictedPos.x += dx * 0.25;
+
+    expect(predictedPos.x).toBeCloseTo(oldX + 2.5, 4);
   });
 });

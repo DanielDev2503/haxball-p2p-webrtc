@@ -82,40 +82,82 @@ export class CanvasRenderer {
     this.discRenderer.render(ctx, snapshot.discs, localDiscId);
 
     // 3. Render Match Status Banners (función pura del snapshot)
-    this.renderOverlayState(ctx, snapshot);
+    this.drawOverlays(ctx, snapshot);
 
     ctx.restore();
   }
 
-  private renderOverlayState(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot): void {
-    const phase: MatchPhase = snapshot.matchPhase !== undefined
+  public drawOverlays(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot): void {
+    const currentPhase: MatchPhase = snapshot.matchPhase !== undefined
       ? snapshot.matchPhase
       : toMatchPhase(snapshot.matchState);
 
+    const subStateTimer = snapshot.subStateTimer ?? snapshot.countdownSeconds ?? 0;
+    const targetTeam = snapshot.targetTeam ?? 0;
+    const targetTeamColor = targetTeam === 1 ? '#ef4444' : (targetTeam === 2 ? '#38bdf8' : '#facc15');
+    const winningTeam = targetTeam === 1 ? 'EQUIPO ROJO' : (targetTeam === 2 ? 'EQUIPO AZUL' : '');
+    const winningTeamColor = targetTeam === 1 ? '#ef4444' : (targetTeam === 2 ? '#38bdf8' : '#f59e0b');
+
     ctx.save();
 
-    if (phase === MatchPhase.GOAL_CELEBRATION) {
-      const teamName = snapshot.targetTeam === 1 ? 'ROJO' : (snapshot.targetTeam === 2 ? 'AZUL' : '');
-      const title = teamName ? `¡GOL! - EQUIPO ${teamName}` : '¡GOL!';
-      const color = snapshot.targetTeam === 1 ? '#ef4444' : (snapshot.targetTeam === 2 ? '#38bdf8' : '#facc15');
-      this.drawBannerBox(ctx, title, undefined, color);
-    } else if (phase === MatchPhase.COUNTDOWN) {
-      const count = Math.ceil(snapshot.subStateTimer ?? snapshot.countdownSeconds ?? 3);
-      const text = count > 0 ? count.toString() : '¡PLAY!';
-      this.drawBigText(ctx, text, '#facc15');
-    } else if (phase === MatchPhase.PAUSED) {
-      this.drawBannerBox(ctx, 'PARTIDO PAUSADO', undefined, '#f59e0b');
-    } else if (phase === MatchPhase.MATCH_ENDED) {
-      const winnerName = snapshot.targetTeam === 1 ? 'ROJO' : (snapshot.targetTeam === 2 ? 'AZUL' : '');
-      const title = winnerName ? `¡VICTORIA EQUIPO ${winnerName}!` : '¡EMPATE!';
-      const color = snapshot.targetTeam === 1 ? '#ef4444' : (snapshot.targetTeam === 2 ? '#38bdf8' : '#f59e0b');
-      this.drawBannerBox(ctx, title, undefined, color);
-    } else if (phase === MatchPhase.STOPPED) {
-      this.drawPillBanner(ctx, 'PARTIDO DETENIDO', '#94a3b8');
+    // Renderizado gobernado estrictamente por el estado del snapshot
+    switch (currentPhase) {
+      case MatchPhase.GOAL_CELEBRATION: {
+        const teamSuffix = targetTeam === 1 ? ' - EQUIPO ROJO' : (targetTeam === 2 ? ' - EQUIPO AZUL' : '');
+        this.drawCenterBanner(ctx, `¡GOL!${teamSuffix}`, targetTeamColor);
+        break;
+      }
+      case MatchPhase.COUNTDOWN:
+        this.drawCountdownNumber(ctx, Math.ceil(subStateTimer)); // 3, 2, 1
+        break;
+      case MatchPhase.PAUSED:
+        this.drawCenterBanner(ctx, 'PAUSA', '#ffffff');
+        break;
+      case MatchPhase.MATCH_ENDED: {
+        const title = winningTeam ? `¡VICTORIA ${winningTeam}!` : '¡EMPATE!';
+        this.drawCenterBanner(ctx, title, winningTeamColor);
+        break;
+      }
+      case MatchPhase.PLAYING:
+      case MatchPhase.STOPPED:
+      default:
+        // No renderizar banners superpuestos
+        break;
     }
-    // MatchPhase.PLAYING: no se dibuja ningún overlay
 
     ctx.restore();
+  }
+
+  public renderOverlayState(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot): void {
+    this.drawOverlays(ctx, snapshot);
+  }
+
+  public drawCenterBanner(ctxOrText: CanvasRenderingContext2D | string, textOrColor?: string, colorOrSubtext?: string, subtext?: string): void {
+    let ctx: CanvasRenderingContext2D;
+    let text: string;
+    let color: string = '#facc15';
+    let sub: string | undefined;
+
+    if (typeof ctxOrText === 'string') {
+      ctx = this.ctx;
+      text = ctxOrText;
+      if (textOrColor) color = textOrColor;
+      if (colorOrSubtext) sub = colorOrSubtext;
+    } else {
+      ctx = ctxOrText;
+      text = textOrColor || '';
+      if (colorOrSubtext) color = colorOrSubtext;
+      sub = subtext;
+    }
+
+    this.drawBannerBox(ctx, text, sub, color);
+  }
+
+  public drawCountdownNumber(ctxOrCount: CanvasRenderingContext2D | number, countNum?: number): void {
+    const ctx = typeof ctxOrCount === 'number' ? this.ctx : ctxOrCount;
+    const count = typeof ctxOrCount === 'number' ? ctxOrCount : (countNum ?? 0);
+    const text = count > 0 ? count.toString() : '¡PLAY!';
+    this.drawBigText(ctx, text, '#facc15');
   }
 
   private drawBigText(ctx: CanvasRenderingContext2D, text: string, color: string): void {
@@ -190,31 +232,6 @@ export class CanvasRenderer {
       ctx.fillText(subtext, 0, yOffset + 20);
     }
 
-    ctx.restore();
-  }
-
-  private drawPillBanner(ctx: CanvasRenderingContext2D, text: string, color: string): void {
-    ctx.save();
-    ctx.font = 'bold 20px "Inter", "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    const metrics = ctx.measureText(text);
-    const paddingX = 24;
-    const w = metrics.width + paddingX * 2;
-    const h = 40;
-
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.beginPath();
-    ctx.roundRect(-w / 2, -h / 2, w, h, 20);
-    ctx.fill();
-
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    ctx.fillStyle = color;
-    ctx.fillText(text, 0, 0);
     ctx.restore();
   }
 }
