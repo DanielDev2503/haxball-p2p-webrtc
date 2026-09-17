@@ -132,6 +132,7 @@ export class GameApp {
       scoreLimit: this.roomConfig.scoreLimit,
       timeLimitSeconds: this.roomConfig.timeLimit * 60
     });
+    this.setupEngineCallbacks(this.engine);
     this.canvasRenderer = new CanvasRenderer(canvas, this.engine.stadium);
 
     // Physics Ticker desacoplado (Web Worker)
@@ -452,15 +453,6 @@ export class GameApp {
     }
 
     // Leave Room Button — only #btn-leave-room inside the menu exists (header button removed)
-
-    // Match Iniciar / Detener (El listener principal se registra en TeamSelectModal.onMatchToggle)
-    const btnMatchToggle = document.getElementById('btn-match-toggle') || document.getElementById('btn-start-stop');
-    if (btnMatchToggle && !btnMatchToggle.dataset.listenerBound) {
-      btnMatchToggle.dataset.listenerBound = 'true';
-      btnMatchToggle.addEventListener('click', () => {
-        this.handleMatchToggle();
-      });
-    }
 
     // Match Pausar / Reanudar
     const btnPauseResume = document.getElementById('btn-pause-resume');
@@ -1566,7 +1558,15 @@ export class GameApp {
     }
   }
 
+  private isTogglingMatch: boolean = false;
+
   public handleMatchToggle(): void {
+    if (this.isTogglingMatch) return;
+    this.isTogglingMatch = true;
+    setTimeout(() => {
+      this.isTogglingMatch = false;
+    }, 300);
+
     if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
     const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
     const action = currentPhase === MatchPhase.STOPPED ? 'START' : 'STOP';
@@ -1583,6 +1583,7 @@ export class GameApp {
       }));
     } else if (this.engine) {
       this.engine.startMatch();
+      this.enforceMenuState(this.engine.fsm.currentState);
       this.updateAdminControlsUI();
       this.broadcastMatchStateSync();
       this.broadcastSnapshot();
@@ -1634,7 +1635,8 @@ export class GameApp {
       this.teamSelect.close(true);
       return;
     }
-    this.teamSelect.updateMatchState(phase, outcomeText);
+    const isAdmin = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost);
+    this.teamSelect.updateMatchState(phase, outcomeText, isAdmin);
     this.updateAdminControlsUI();
   }
 

@@ -6,7 +6,7 @@ export class TeamSelectModal {
   private closeBtn: HTMLElement | null;
   private returnGameBtn: HTMLElement | null;
   private matchToggleBtn: HTMLButtonElement | null = null;
-  private isUserAdmin: boolean = false;
+  private isUserAdmin: boolean = true;
   private redListEl: HTMLElement | null;
   private blueListEl: HTMLElement | null;
   private specListEl: HTMLElement | null;
@@ -89,8 +89,11 @@ export class TeamSelectModal {
     }
 
     this.matchToggleBtn = (document.getElementById('btn-match-toggle') || document.getElementById('btn-start-stop')) as HTMLButtonElement | null;
-    if (this.matchToggleBtn) {
-      this.matchToggleBtn.addEventListener('click', () => {
+    if (this.matchToggleBtn && !this.matchToggleBtn.dataset?.listenerBound) {
+      if (this.matchToggleBtn.dataset) this.matchToggleBtn.dataset.listenerBound = 'true';
+      this.matchToggleBtn.addEventListener('click', (e) => {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
         this.onMatchToggle?.();
       });
     }
@@ -106,7 +109,9 @@ export class TeamSelectModal {
       this.matchToggleBtn = (document.getElementById('btn-match-toggle') || document.getElementById('btn-start-stop')) as HTMLButtonElement | null;
       if (this.matchToggleBtn && !this.matchToggleBtn.dataset?.listenerBound) {
         if (this.matchToggleBtn.dataset) this.matchToggleBtn.dataset.listenerBound = 'true';
-        this.matchToggleBtn.addEventListener('click', () => {
+        this.matchToggleBtn.addEventListener('click', (e) => {
+          e?.preventDefault?.();
+          e?.stopPropagation?.();
           this.onMatchToggle?.();
         });
       }
@@ -125,10 +130,10 @@ export class TeamSelectModal {
     }
   }
 
-  public updateMatchState(newState: MatchPhase | MatchState | string, outcomeText?: string): void {
+  public updateMatchState(newState: MatchPhase | MatchState | string, outcomeText?: string, isAdmin?: boolean): void {
     const phase = typeof newState === 'number' ? newState : toMatchPhase(newState);
     this.currentMatchState = phase;
-    this.updateMatchControlButton(phase);
+    this.updateMatchControlButton(phase, isAdmin);
 
     // Actualizar visibilidad del botón de retorno y botón de cierre ('✕')
     if (this.returnGameBtn?.style) {
