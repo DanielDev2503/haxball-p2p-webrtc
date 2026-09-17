@@ -179,8 +179,10 @@ export class GameEngine {
     this.blueScore = 0;
     this.lastScoringTeam = null;
     this.matchTimerSeconds = 0;
+    this.soundMask = 0;
     this.fsm.stopMatch();
     this.resetKickoffPositions();
+    this.tickCount++;
     if (this.onStateChange) {
       this.onStateChange(this.fsm.currentState);
     }
@@ -211,7 +213,7 @@ export class GameEngine {
   }
 
   public resetKickoffPositions(): void {
-    // Reset ball to center
+    // Reset ball to center with strictly zero kinematics
     this.ball.pos.set(0, 0);
     this.ball.vel.zero();
     this.ball.prevPos.set(0, 0);
@@ -221,10 +223,12 @@ export class GameEngine {
     let blueIndex = 0;
 
     for (const [playerId, player] of this.players.entries()) {
+      player.inputMask = 0;
       const disc = this.playerDiscs.get(playerId);
       if (!disc) continue;
 
       disc.vel.zero();
+      disc.kicking = false;
       if (player.team === 'red') {
         const offset = redIndex * 40 - 20 * redIndex;
         disc.pos.set(-180, offset);

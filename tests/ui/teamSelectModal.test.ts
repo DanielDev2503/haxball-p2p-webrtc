@@ -24,6 +24,7 @@ describe('TeamSelectModal Lifecycle and Match State Synchronization', () => {
     };
 
     closeBtnEl = {
+      style: { display: '' },
       addEventListener: vi.fn((event: string, cb: Function) => {
         listeners['close_' + event] = cb;
       })

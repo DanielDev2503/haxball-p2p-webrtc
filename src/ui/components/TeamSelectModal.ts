@@ -92,9 +92,12 @@ export class TeamSelectModal {
     const phase = typeof newState === 'number' ? newState : toMatchPhase(newState);
     this.currentMatchState = phase;
 
-    // Actualizar visibilidad del botón de retorno
-    if (this.returnGameBtn) {
+    // Actualizar visibilidad del botón de retorno y botón de cierre ('✕')
+    if (this.returnGameBtn?.style) {
       this.returnGameBtn.style.display = (phase === MatchPhase.PLAYING || phase === MatchPhase.PAUSED || phase === MatchPhase.COUNTDOWN || phase === MatchPhase.GOAL_CELEBRATION || phase === MatchPhase.MATCH_ENDED) ? 'inline-block' : 'none';
+    }
+    if (this.closeBtn?.style) {
+      this.closeBtn.style.display = phase === MatchPhase.STOPPED ? 'none' : '';
     }
 
     // Banner de resultado del partido al finalizar
@@ -110,7 +113,7 @@ export class TeamSelectModal {
 
     if (phase === MatchPhase.COUNTDOWN || phase === MatchPhase.PLAYING || phase === MatchPhase.GOAL_CELEBRATION || phase === MatchPhase.MATCH_ENDED) {
       // 1. Cierre Automático: Despeja la pantalla para ver el campo y la cuenta regresiva
-      this.close();
+      this.close(true);
     } else if (phase === MatchPhase.STOPPED) {
       // 2. Apertura Forzada Únicamente en STOPPED y Game Over
       this.open(true);
@@ -124,8 +127,9 @@ export class TeamSelectModal {
 
   public open(forced: boolean = false): void {
     if (!this.menuEl) return;
+    const isForced = forced || this.currentMatchState === MatchPhase.STOPPED;
     this.menuEl.classList.remove('hidden', 'u-hidden', 'ui-screen-hidden');
-    if (forced) {
+    if (isForced) {
       this.menuEl.classList.add('is-forced-open');
     } else {
       this.menuEl.classList.remove('is-forced-open');
@@ -146,6 +150,9 @@ export class TeamSelectModal {
   }
 
   public toggle(): void {
+    if (this.currentMatchState === MatchPhase.STOPPED) {
+      return;
+    }
     if (this.isOpen()) {
       this.close();
     } else {

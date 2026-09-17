@@ -18,6 +18,8 @@ export type ControlMessageType =
   | 'client_hello'
   | 'initial_state'
   | 'match_control'
+  | 'MATCH_CONTROL_REQUEST'
+  | 'MATCH_STOPPED_EVENT'
   | 'ROOM_SETTINGS_REQUEST'
   | 'ROOM_SETTINGS_SYNC';
 
@@ -129,6 +131,16 @@ export interface InitialStateMessage {
 export interface MatchControlMessage {
   type: 'match_control';
   action: 'START' | 'STOP';
+}
+
+export interface MatchControlRequestMessage {
+  type: 'MATCH_CONTROL_REQUEST';
+  action: 'START' | 'STOP';
+}
+
+export interface MatchStoppedEventMessage {
+  type: 'MATCH_STOPPED_EVENT';
+  payload?: MatchStatePayload;
 }
 
 export interface RoomSettingsRequestMessage {

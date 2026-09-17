@@ -24,9 +24,17 @@ export class JitterBuffer {
 
   public push(snapshot: GameSnapshot, now: number = performance.now()): void {
     // Sincronizar estado actual automáticamente desde el snapshot recibido
-    this.currentMatchState = snapshot.matchPhase !== undefined
+    const newPhase = snapshot.matchPhase !== undefined
       ? snapshot.matchPhase
       : (snapshot.matchState ? toMatchPhase(snapshot.matchState) : this.currentMatchState);
+    this.currentMatchState = newPhase;
+
+    // Si el snapshot es STOPPED, vaciar inmediatamente el buffer previo para evitar deriva o interpolación residual
+    if (newPhase === MatchPhase.STOPPED) {
+      this.clear();
+      this.buffer.push({ snapshot, receivedAt: now });
+      return;
+    }
 
     // Drop outdated snapshots
     if (this.buffer.length > 0) {
