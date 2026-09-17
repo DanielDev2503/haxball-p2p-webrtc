@@ -16,6 +16,7 @@ export class PhysicsWorld {
   public fixedDt: number;
   public maxSubsteps: number;
   public onCollision?: (event: CollisionEvent) => void;
+  public onSubstep?: (subDt: number) => void;
 
   constructor(config: PhysicsWorldConfig = {}) {
     this.fixedDt = config.fixedDt ?? 1 / 60;
@@ -84,6 +85,8 @@ export class PhysicsWorld {
           d.pos.y += d.vel.y * subDt;
         }
       }
+
+      this.onSubstep?.(subDt);
 
       // Solve disc-disc collisions (O(N^2), where N is small, e.g. 1 ball + up to 6 players + 4 posts)
       for (let i = 0; i < discCount; i++) {

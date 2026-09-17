@@ -120,3 +120,143 @@ export function resolveDiscSegmentCollision(
 
   return true;
 }
+
+export interface StadiumBoundariesConfig {
+  halfWidth?: number;       // default 600
+  halfHeight?: number;      // default 270
+  goalHalfHeight?: number;  // default 85
+  goalDepth?: number;       // default 35 (fondo de red X = ±635)
+}
+
+/**
+ * Resuelve la delimitación analítica completa del estadio para la predicción local del cliente,
+ * permitiendo la libre circulación en el interior de la portería (X in [-635, 635]).
+ */
+export function resolveGoalAndPitchBoundaries(
+  pos: { x: number; y: number },
+  vel: { x: number; y: number },
+  radius: number = 15,
+  config: StadiumBoundariesConfig = {}
+): void {
+  const hw = config.halfWidth ?? 600;
+  const hh = config.halfHeight ?? 270;
+  const gh = config.goalHalfHeight ?? 85;
+  const gd = config.goalDepth ?? 35;
+  const netX = hw + gd; // 635
+
+  // 1. Paredes perimetrales superior e inferior del campo (y = ±hh)
+  if (pos.y < -hh + radius) {
+    pos.y = -hh + radius;
+    if (vel.y < 0) vel.y = 0;
+  } else if (pos.y > hh - radius) {
+    pos.y = hh - radius;
+    if (vel.y > 0) vel.y = 0;
+  }
+
+  // 2. Paredes superior e inferior de la red de la portería (y = ±gh para |x| in [hw, netX])
+  const absX = Math.abs(pos.x);
+  if (absX >= hw) {
+    if (pos.y < -gh + radius) {
+      pos.y = -gh + radius;
+      if (vel.y < 0) vel.y = 0;
+    } else if (pos.y > gh - radius) {
+      pos.y = gh - radius;
+      if (vel.y > 0) vel.y = 0;
+    }
+  }
+
+  // 3. Paredes verticales perimetrales (X = ±hw) y fondo de red (X = ±netX)
+  if (Math.abs(pos.y) > gh) {
+    // Fuera de la boca de la portería: límites en X = ±hw
+    if (pos.x < -hw + radius) {
+      pos.x = -hw + radius;
+      if (vel.x < 0) vel.x = 0;
+    } else if (pos.x > hw - radius) {
+      pos.x = hw - radius;
+      if (vel.x > 0) vel.x = 0;
+    }
+  } else {
+    // Dentro de la boca de la portería (|y| <= gh): el límite se extiende hasta el fondo de la red X = ±netX
+    if (pos.x < -netX + radius) {
+      pos.x = -netX + radius;
+      if (vel.x < 0) vel.x = 0;
+    } else if (pos.x > netX - radius) {
+      pos.x = netX - radius;
+      if (vel.x > 0) vel.x = 0;
+    }
+  }
+
+  // 4. Colisión analítica de los 4 postes en (±hw, ±gh) con radio = 8
+  const postR = 8;
+  const minPostDist = radius + postR;
+  const minPostDistSq = minPostDist * minPostDist;
+
+  const postsX = [-hw, -hw, hw, hw];
+  const postsY = [-gh, gh, -gh, gh];
+
+  for (let i = 0; i < 4; i++) {
+    const postX = postsX[i];
+    const postY = postsY[i];
+    const dx = pos.x - postX;
+    const dy = pos.y - postY;
+    const dSq = dx * dx + dy * dy;
+
+    if (dSq < minPostDistSq && dSq > 1e-6) {
+      const dist = Math.sqrt(dSq);
+      const nx = dx / dist;
+      const ny = dy / dist;
+      pos.x = postX + nx * minPostDist;
+      pos.y = postY + ny * minPostDist;
+
+      const vDotN = vel.x * nx + vel.y * ny;
+      if (vDotN < 0) {
+        vel.x -= vDotN * nx;
+        vel.y -= vDotN * ny;
+      }
+    }
+  }
+}
+
+/**
+ * Resuelve la colisión predictiva círculo-círculo no-host en el cliente,
+ * erradicando la superposición visual (clipping) antes de la llegada del snapshot.
+ */
+export function resolvePredictivePlayerCollision(
+  localPos: { x: number; y: number },
+  localVel: { x: number; y: number },
+  localRadius: number,
+  otherPos: { x: number; y: number },
+  otherVel: { x: number; y: number },
+  otherRadius: number,
+  restitution: number = 0.5
+): boolean {
+  const dx = localPos.x - otherPos.x;
+  const dy = localPos.y - otherPos.y;
+  const distSq = dx * dx + dy * dy;
+  const radiusSum = localRadius + otherRadius;
+
+  if (distSq >= radiusSum * radiusSum) return false;
+
+  const dist = Math.sqrt(distSq);
+  let nx = 1;
+  let ny = 0;
+  if (dist > 1e-9) {
+    nx = dx / dist;
+    ny = dy / dist;
+  }
+
+  // Penetración posicional instantánea en el jugador local
+  const overlap = radiusSum - dist;
+  localPos.x += nx * overlap;
+  localPos.y += ny * overlap;
+
+  // Reflexión elástica de la velocidad
+  const relVel = (localVel.x - otherVel.x) * nx + (localVel.y - otherVel.y) * ny;
+  if (relVel < 0) {
+    const impulse = -(1 + restitution) * relVel;
+    localVel.x += nx * impulse * 0.5;
+    localVel.y += ny * impulse * 0.5;
+  }
+
+  return true;
+}

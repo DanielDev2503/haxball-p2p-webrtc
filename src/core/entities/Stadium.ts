@@ -9,13 +9,13 @@ export interface GoalDefinition {
 
 export class Stadium {
   public name: string = 'Classic Haxball';
-  public width: number = 740;
-  public height: number = 400;
-  public halfWidth: number = 370;
-  public halfHeight: number = 200;
-  public goalHalfHeight: number = 70;
-  public goalDepth: number = 60;
-  public centerRadius: number = 75;
+  public width: number = 1200;
+  public height: number = 540;
+  public halfWidth: number = 600;
+  public halfHeight: number = 270;
+  public goalHalfHeight: number = 85;
+  public goalDepth: number = 35;
+  public centerRadius: number = 80;
 
   public segments: Segment[] = [];
   public posts: Disc[] = [];

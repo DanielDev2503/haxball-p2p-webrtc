@@ -161,7 +161,7 @@ export class CanvasRenderer {
         this.drawCountdownNumber(ctx, Math.ceil(subStateTimer)); // 3, 2, 1
         break;
       case MatchPhase.PAUSED:
-        this.drawCenterBanner(ctx, 'PAUSA', '#ffffff');
+        this.drawPauseOverlay(ctx);
         break;
       case MatchPhase.MATCH_ENDED: {
         const title = winningTeam ? `¡VICTORIA ${winningTeam}!` : '¡EMPATE!';
@@ -288,4 +288,67 @@ export class CanvasRenderer {
 
     ctx.restore();
   }
+
+  /**
+   * Renderiza el banner de pausa Aero de alto contraste sobre el campo blanco glacial.
+   */
+  private drawPauseOverlay(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+
+    // 1. Fondo de cristal oscuro translúcido que cubre todo el campo
+    const width = (this.stadium.halfWidth + this.stadium.goalDepth + 30) * 2;
+    const height = (this.stadium.halfHeight + 30) * 2;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.65)';
+    ctx.fillRect(-width / 2, -height / 2, width, height);
+
+    // 2. Medición de texto y dimensionamiento de la tarjeta
+    const title = 'PARTIDO PAUSADO';
+    const subtitle = 'Presiona P o usa el menú de administrador para reanudar';
+
+    ctx.font = '900 36px "Zen Dots", "Inter", sans-serif';
+    const titleMetrics = ctx.measureText(title);
+
+    ctx.font = '600 15px "Zen Dots", "Inter", sans-serif';
+    const subMetrics = ctx.measureText(subtitle);
+
+    const cardWidth = Math.max(titleMetrics.width, subMetrics.width) + 64;
+    const cardHeight = 112;
+    const yOffset = -15;
+
+    // 3. Tarjeta central redondeada con borde blanco neón (#FFFFFF) y sombra azul cielo
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 229, 255, 0.6)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 2;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    ctx.beginPath();
+    ctx.roundRect(-cardWidth / 2, yOffset - cardHeight / 2, cardWidth, cardHeight, 18);
+    ctx.fill();
+
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.restore();
+
+    // 4. Texto en Zen Dots:
+    // Título: "PARTIDO PAUSADO" en blanco puro (#FFFFFF) con brillo exterior en Azul Neón (#00E5FF)
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '900 36px "Zen Dots", "Inter", sans-serif';
+    ctx.shadowColor = '#00E5FF';
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(title, 0, yOffset - 18);
+
+    // Subtítulo: "Presiona P o usa el menú de administrador para reanudar" en gris perla (#E2E8F0)
+    ctx.font = '600 15px "Zen Dots", "Inter", sans-serif';
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#E2E8F0';
+    ctx.fillText(subtitle, 0, yOffset + 24);
+
+    ctx.restore();
+  }
 }
+

@@ -22,6 +22,7 @@ import { MatchStatePayload } from '../net/protocol/ControlMessages';
 import { KeyBinds } from './InputManager';
 import { UIStateMachine, UIState } from '../ui/UIStateMachine';
 import { $matchPhase } from '../ui/stores/gameStore';
+import { resolveGoalAndPitchBoundaries, resolvePredictivePlayerCollision } from '../core/physics/Collision';
 
 export function canChangeTeam(
   senderPeerId: string,
@@ -67,6 +68,9 @@ export class GameApp {
   private predictedPos: { x: number; y: number } = { x: 0, y: 0 };
   private predictedVel: { x: number; y: number } = { x: 0, y: 0 };
   private hasPredictedPos: boolean = false;
+  private currentKickoffActive: boolean = false;
+  private currentKickoffMode: 'NEUTRAL' | 'TEAM_KICKOFF' = 'NEUTRAL';
+  private currentKickoffPossessingTeam: 'red' | 'blue' | null = null;
 
   // Handshake timeout: cancel if initial_state is received within 10s
   private joinTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -1847,26 +1851,76 @@ export class GameApp {
     this.predictedVel.x *= 0.96;
     this.predictedVel.y *= 0.96;
 
-    // Confinamiento en los límites del estadio (740x400, radio del disco = 15)
-    const minX = -370 + 15;
-    const maxX = 370 - 15;
-    const minY = -200 + 15;
-    const maxY = 200 - 15;
+    // 1. Geometría analítica real del estadio: libre circulación en porterías (X in [-635, 635], y = ±85)
+    const stadium = this.canvasRenderer?.stadium || this.engine?.stadium;
+    resolveGoalAndPitchBoundaries(
+      this.predictedPos,
+      this.predictedVel,
+      15,
+      {
+        halfWidth: stadium ? stadium.halfWidth : 600,
+        halfHeight: stadium ? stadium.halfHeight : 270,
+        goalHalfHeight: stadium ? stadium.goalHalfHeight : 85,
+        goalDepth: stadium ? stadium.goalDepth : 35
+      }
+    );
 
-    if (this.predictedPos.x < minX) {
-      this.predictedPos.x = minX;
-      if (this.predictedVel.x < 0) this.predictedVel.x = 0;
-    } else if (this.predictedPos.x > maxX) {
-      this.predictedPos.x = maxX;
-      if (this.predictedVel.x > 0) this.predictedVel.x = 0;
+    // 2. Barreras de saque reglamentario en predicción local
+    if (this.currentKickoffActive) {
+      const r = 15;
+      if (this.localPlayer.team === 'red') {
+        if (this.predictedPos.x > -r) {
+          this.predictedPos.x = -r;
+          if (this.predictedVel.x > 0) this.predictedVel.x = 0;
+        }
+      } else if (this.localPlayer.team === 'blue') {
+        if (this.predictedPos.x < r) {
+          this.predictedPos.x = r;
+          if (this.predictedVel.x < 0) this.predictedVel.x = 0;
+        }
+      }
+
+      if (this.currentKickoffMode === 'TEAM_KICKOFF' && this.localPlayer.team !== this.currentKickoffPossessingTeam) {
+        const limitR = 80 + r;
+        const px = this.predictedPos.x;
+        const py = this.predictedPos.y;
+        const distSq = px * px + py * py;
+        if (distSq < limitR * limitR) {
+          const dist = Math.sqrt(distSq);
+          if (dist > 1e-6) {
+            const nx = px / dist;
+            const ny = py / dist;
+            this.predictedPos.x = nx * limitR;
+            this.predictedPos.y = ny * limitR;
+            const vDotN = this.predictedVel.x * nx + this.predictedVel.y * ny;
+            if (vDotN < 0) {
+              this.predictedVel.x -= vDotN * nx;
+              this.predictedVel.y -= vDotN * ny;
+            }
+          }
+        }
+      }
     }
 
-    if (this.predictedPos.y < minY) {
-      this.predictedPos.y = minY;
-      if (this.predictedVel.y < 0) this.predictedVel.y = 0;
-    } else if (this.predictedPos.y > maxY) {
-      this.predictedPos.y = maxY;
-      if (this.predictedVel.y > 0) this.predictedVel.y = 0;
+    // 3. Colisión Predictiva Círculo-Círculo (Anti-Clipping en No-Host)
+    // Itera sobre todos los demás jugadores activos en el snapshot interpolado actual
+    const currentSnap = this.jitterBuffer.getInterpolatedSnapshot(performance.now()) ||
+      (this.jitterBuffer.buffer.length > 0 ? this.jitterBuffer.buffer[this.jitterBuffer.buffer.length - 1].snapshot : null);
+    if (currentSnap && currentSnap.discs) {
+      for (let i = 0; i < currentSnap.discs.length; i++) {
+        const other = currentSnap.discs[i];
+        if (other.id === this.localPlayer.discId) continue;
+        if (other.team === 0) continue; // Solo contra otros jugadores
+
+        resolvePredictivePlayerCollision(
+          this.predictedPos,
+          this.predictedVel,
+          15,
+          { x: other.x, y: other.y },
+          { x: other.vx, y: other.vy },
+          other.radius || 15
+        );
+      }
     }
   }
 
@@ -1874,6 +1928,16 @@ export class GameApp {
    * Reconciliación suave (soft-snap) del disco local con el snapshot autoritativo del Host.
    */
   private reconcileClientPrediction(snap: GameSnapshot): void {
+    if (snap.kickoffActive !== undefined) {
+      this.currentKickoffActive = snap.kickoffActive;
+    }
+    if (snap.kickoffMode !== undefined) {
+      this.currentKickoffMode = snap.kickoffMode;
+    }
+    if (snap.possessingTeam !== undefined) {
+      this.currentKickoffPossessingTeam = snap.possessingTeam;
+    }
+
     if (this.mode !== 'client' || this.localPlayer.team === 'spec') return;
 
     let authDisc: DiscSnapshot | undefined;

@@ -12,6 +12,12 @@ export interface DiscSnapshot {
   avatar: string;
 }
 
+export interface KickoffState {
+  active: boolean;
+  mode: 'NEUTRAL' | 'TEAM_KICKOFF';
+  possessingTeam: 'red' | 'blue' | null;
+}
+
 export interface GameSnapshot {
   tick: number;
   matchPhase: MatchPhase;
@@ -21,6 +27,9 @@ export interface GameSnapshot {
   scoreRed: number;
   scoreBlue: number;
   soundMask?: number;
+  kickoffActive?: boolean;
+  kickoffMode?: 'NEUTRAL' | 'TEAM_KICKOFF';
+  possessingTeam?: 'red' | 'blue' | null;
   discs: DiscSnapshot[];
 
   // Compatibilidad hacia atrás

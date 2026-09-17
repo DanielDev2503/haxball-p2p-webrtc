@@ -20,7 +20,12 @@ export class SnapshotPacket {
     const subTimer = snapshot.subStateTimer !== undefined ? snapshot.subStateTimer : (snapshot.countdownSeconds ?? 0);
     const red = snapshot.scoreRed !== undefined ? snapshot.scoreRed : (snapshot.redScore ?? 0);
     const blue = snapshot.scoreBlue !== undefined ? snapshot.scoreBlue : (snapshot.blueScore ?? 0);
-    const target = snapshot.targetTeam ?? 0;
+    let targetByte = (snapshot.targetTeam ?? 0) & 0x03;
+    if (snapshot.kickoffActive) targetByte |= 0x80;
+    if (snapshot.kickoffMode === 'TEAM_KICKOFF') targetByte |= 0x40;
+    if (snapshot.possessingTeam === 'blue') targetByte |= 0x20;
+    else if (snapshot.possessingTeam === 'red') targetByte |= 0x10;
+
     const soundMask = snapshot.soundMask ?? 0;
 
     // Header (17 bytes)
@@ -29,7 +34,7 @@ export class SnapshotPacket {
     view.setUint8(5, phase);
     view.setUint16(6, timer, false);
     view.setFloat32(8, subTimer, false);
-    view.setUint8(12, target);
+    view.setUint8(12, targetByte);
     view.setUint8(13, red);
     view.setUint8(14, blue);
     view.setUint8(15, soundMask);
@@ -77,7 +82,17 @@ export class SnapshotPacket {
     const matchPhase: MatchPhase = (phaseNum in MatchPhase) ? (phaseNum as MatchPhase) : MatchPhase.STOPPED;
     const timerSeconds = view.getUint16(6, false);
     const subStateTimer = view.getFloat32(8, false);
-    const targetTeam = view.getUint8(12);
+    const rawTarget = view.getUint8(12);
+    const targetTeam = rawTarget & 0x03;
+    const kickoffActive = (rawTarget & 0x80) !== 0;
+    const isTeamKickoff = (rawTarget & 0x40) !== 0;
+    const kickoffMode: 'NEUTRAL' | 'TEAM_KICKOFF' = isTeamKickoff ? 'TEAM_KICKOFF' : 'NEUTRAL';
+    let possessingTeam: 'red' | 'blue' | null = null;
+    if (isTeamKickoff) {
+      if ((rawTarget & 0x20) !== 0) possessingTeam = 'blue';
+      else if ((rawTarget & 0x10) !== 0) possessingTeam = 'red';
+    }
+
     const scoreRed = view.getUint8(13);
     const scoreBlue = view.getUint8(14);
     const soundMask = view.getUint8(15);
@@ -129,6 +144,9 @@ export class SnapshotPacket {
       scoreRed,
       scoreBlue,
       soundMask,
+      kickoffActive,
+      kickoffMode,
+      possessingTeam,
       discs,
 
       // Compat

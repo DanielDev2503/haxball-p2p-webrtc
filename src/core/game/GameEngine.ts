@@ -3,7 +3,7 @@ import { Stadium } from '../entities/Stadium';
 import { Disc, COLLISION_GROUP_BALL, COLLISION_GROUP_RED, COLLISION_GROUP_BLUE } from '../entities/Disc';
 import { Player, INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK } from './Player';
 import { GameFSM, MatchPhase } from './GameFSM';
-import { GameSnapshot, DiscSnapshot, MatchConfig } from './GameState';
+import { GameSnapshot, DiscSnapshot, MatchConfig, KickoffState } from './GameState';
 import { SOUND_KICK, SOUND_POST_HIT, SOUND_GOAL } from '../../net/protocol/BinaryProtocol';
 
 export class GameEngine {
@@ -13,6 +13,11 @@ export class GameEngine {
   public players: Map<string, Player> = new Map();
   public playerDiscs: Map<string, Disc> = new Map();
   public fsm: GameFSM;
+  public kickoffState: KickoffState = {
+    active: false,
+    mode: 'NEUTRAL',
+    possessingTeam: null
+  };
 
   public tickCount: number = 0;
   public redScore: number = 0;
@@ -68,15 +73,34 @@ export class GameEngine {
     });
     this.physicsWorld.addDisc(this.ball);
 
-    // Collision listener for post hits
+    // Register substep hook for deterministic kickoff barriers
+    this.physicsWorld.onSubstep = () => {
+      this.applyKickoffBarriers();
+    };
+
+    // Collision listener for post hits and kickoff ball contact
     this.physicsWorld.onCollision = (event) => {
       if (event.type === 'disc-disc' && event.discB) {
         const isBall = event.discA === this.ball || event.discB === this.ball;
-        const post = this.stadium.posts.find(p => p === event.discA || p === event.discB);
-        if (isBall && post) {
-          this.soundMask |= SOUND_POST_HIT;
-          if (this.onPostHit) {
-            this.onPostHit(this.ball, post);
+        if (isBall) {
+          if (this.kickoffState.active) {
+            const playerDisc = event.discA === this.ball ? event.discB : event.discA;
+            for (const [_, player] of this.players.entries()) {
+              if (this.playerDiscs.get(player.id) === playerDisc) {
+                if (this.kickoffState.mode === 'NEUTRAL' || player.team === this.kickoffState.possessingTeam) {
+                  this.kickoffState.active = false;
+                }
+                break;
+              }
+            }
+          }
+
+          const post = this.stadium.posts.find(p => p === event.discA || p === event.discB);
+          if (post) {
+            this.soundMask |= SOUND_POST_HIT;
+            if (this.onPostHit) {
+              this.onPostHit(this.ball, post);
+            }
           }
         }
       }
@@ -166,6 +190,11 @@ export class GameEngine {
     this.redScore = 0;
     this.blueScore = 0;
     this.lastScoringTeam = null;
+    this.kickoffState = {
+      active: true,
+      mode: 'NEUTRAL',
+      possessingTeam: null
+    };
     this.matchTimerSeconds = this.config.timeLimitSeconds > 0 ? this.config.timeLimitSeconds : 0;
     this.resetKickoffPositions();
     this.fsm.startMatch();
@@ -178,6 +207,11 @@ export class GameEngine {
     this.redScore = 0;
     this.blueScore = 0;
     this.lastScoringTeam = null;
+    this.kickoffState = {
+      active: false,
+      mode: 'NEUTRAL',
+      possessingTeam: null
+    };
     this.matchTimerSeconds = 0;
     this.soundMask = 0;
     this.fsm.stopMatch();
@@ -344,6 +378,12 @@ export class GameEngine {
           this.ball.vel.x += kickDirX * kickStrength;
           this.ball.vel.y += kickDirY * kickStrength;
 
+          if (this.kickoffState.active) {
+            if (this.kickoffState.mode === 'NEUTRAL' || player.team === this.kickoffState.possessingTeam) {
+              this.kickoffState.active = false;
+            }
+          }
+
           this.soundMask |= SOUND_KICK;
           if (this.onKick) {
             this.onKick(disc, this.ball);
@@ -354,6 +394,24 @@ export class GameEngine {
 
     // Step physics simulation (activa en PLAYING y GOAL_CELEBRATION)
     this.physicsWorld.step();
+
+    // Detección de contacto con el balón para desactivar barreras de saque
+    if (this.kickoffState.active) {
+      for (const [playerId, player] of this.players.entries()) {
+        if (player.team === 'spec') continue;
+        const disc = this.playerDiscs.get(playerId);
+        if (!disc) continue;
+        const touchDist = this.ball.radius + disc.radius;
+        const dx = this.ball.pos.x - disc.pos.x;
+        const dy = this.ball.pos.y - disc.pos.y;
+        if (dx * dx + dy * dy <= touchDist * touchDist + 1.0) {
+          if (this.kickoffState.mode === 'NEUTRAL' || player.team === this.kickoffState.possessingTeam) {
+            this.kickoffState.active = false;
+            break;
+          }
+        }
+      }
+    }
 
     // Detección de gol (deshabilitada durante GOAL_CELEBRATION para evitar conteos dobles)
     if (this.fsm.currentState === MatchPhase.PLAYING) {
@@ -383,7 +441,13 @@ export class GameEngine {
     } else if (this.fsm.currentState === MatchPhase.GOAL_CELEBRATION) {
       const transitioned = this.fsm.tick();
       if (transitioned) {
-        // Al expirar los 3 segundos de celebración: reiniciar posiciones de saque y pasar a COUNTDOWN
+        // Al expirar los 3 segundos de celebración: el equipo que recibió el gol saca de centro
+        const possessingTeam = this.lastScoringTeam === 'red' ? 'blue' : (this.lastScoringTeam === 'blue' ? 'red' : null);
+        this.kickoffState = {
+          active: true,
+          mode: 'TEAM_KICKOFF',
+          possessingTeam
+        };
         this.lastScoringTeam = null;
         this.resetKickoffPositions();
         if (this.onStateChange) {
@@ -470,6 +534,9 @@ export class GameEngine {
       scoreRed: this.redScore,
       scoreBlue: this.blueScore,
       soundMask: this.soundMask,
+      kickoffActive: this.kickoffState.active,
+      kickoffMode: this.kickoffState.mode,
+      possessingTeam: this.kickoffState.possessingTeam,
       discs: discSnapshots,
 
       // Compatibilidad
@@ -479,6 +546,65 @@ export class GameEngine {
       blueScore: this.blueScore,
       countdownSeconds: this.fsm.countdownSeconds
     };
+  }
+
+  /**
+   * Resolución física pura y sin GC de las barreras reglamentarias de saque.
+   */
+  public applyKickoffBarriers(): void {
+    if (!this.kickoffState.active) return;
+
+    for (const [playerId, player] of this.players.entries()) {
+      if (player.team === 'spec') continue;
+      const disc = this.playerDiscs.get(playerId);
+      if (!disc) continue;
+
+      const r = disc.radius;
+
+      // 1. Barrera de Mitad de Cancha (X = 0)
+      if (player.team === 'red') {
+        if (disc.pos.x > -r) {
+          disc.pos.x = -r;
+          if (disc.vel.x > 0) disc.vel.x = 0;
+        }
+      } else if (player.team === 'blue') {
+        if (disc.pos.x < r) {
+          disc.pos.x = r;
+          if (disc.vel.x < 0) disc.vel.x = 0;
+        }
+      }
+
+      // 2. Barrera de Rotonda Central (R = 80)
+      if (this.kickoffState.mode === 'TEAM_KICKOFF' && player.team !== this.kickoffState.possessingTeam) {
+        const limitR = 80 + r;
+        const px = disc.pos.x;
+        const py = disc.pos.y;
+        const distSq = px * px + py * py;
+
+        if (distSq < limitR * limitR) {
+          const dist = Math.sqrt(distSq);
+          if (dist > 1e-6) {
+            const nx = px / dist;
+            const ny = py / dist;
+            disc.pos.x = nx * limitR;
+            disc.pos.y = ny * limitR;
+
+            // Anular la componente de velocidad entrante hacia el centro
+            const vDotN = disc.vel.x * nx + disc.vel.y * ny;
+            if (vDotN < 0) {
+              disc.vel.x -= vDotN * nx;
+              disc.vel.y -= vDotN * ny;
+            }
+          } else {
+            const dirX = player.team === 'red' ? -1 : 1;
+            disc.pos.x = dirX * limitR;
+            disc.pos.y = 0;
+            if (player.team === 'red' && disc.vel.x > 0) disc.vel.x = 0;
+            if (player.team === 'blue' && disc.vel.x < 0) disc.vel.x = 0;
+          }
+        }
+      }
+    }
   }
 }
 

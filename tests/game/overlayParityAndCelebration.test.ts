@@ -215,7 +215,7 @@ describe('Host-Client Parity: Overlays, Banners & Celebration Physics', () => {
     mockCtx.fillText.mockClear();
     renderer.render(playingSnap);
     expect(mockCtx.fillText).not.toHaveBeenCalledWith('¡GOL! - EQUIPO ROJO', 0, expect.any(Number));
-    expect(mockCtx.fillText).not.toHaveBeenCalledWith('PAUSA', 0, expect.any(Number));
+    expect(mockCtx.fillText).not.toHaveBeenCalledWith('PARTIDO PAUSADO', 0, expect.any(Number));
   });
 
   it('advances tickCount continuously throughout GOAL_CELEBRATION to prevent snapshot dropping', () => {
@@ -268,7 +268,7 @@ describe('Host-Client Parity: Overlays, Banners & Celebration Physics', () => {
     };
     const renderer = new CanvasRenderer(mockCanvas, new Stadium());
 
-    // PAUSED: renders PAUSA
+    // PAUSED: renders PARTIDO PAUSADO
     const pausedSnap: GameSnapshot = {
       tick: 10,
       matchPhase: MatchPhase.PAUSED,
@@ -285,7 +285,7 @@ describe('Host-Client Parity: Overlays, Banners & Celebration Physics', () => {
     };
     mockCtx.fillText.mockClear();
     renderer.render(pausedSnap);
-    expect(mockCtx.fillText).toHaveBeenCalledWith('PAUSA', 0, expect.any(Number));
+    expect(mockCtx.fillText).toHaveBeenCalledWith('PARTIDO PAUSADO', 0, expect.any(Number));
 
     // MATCH_ENDED: renders VICTORIA
     const matchEndedSnap: GameSnapshot = {
@@ -467,7 +467,7 @@ describe('Host-Client Parity: Overlays, Banners & Celebration Physics', () => {
     const renderer = new CanvasRenderer(mockCanvas, engine.stadium);
     const pausedSnap = engine.getSnapshot();
     renderer.render(pausedSnap);
-    expect(mockCtx.fillText).toHaveBeenCalledWith('PAUSA', 0, expect.any(Number));
+    expect(mockCtx.fillText).toHaveBeenCalledWith('PARTIDO PAUSADO', 0, expect.any(Number));
   });
 
   it('resets scores, ball position, timer to 0 and re-aligns kickoff on stopMatch', () => {
