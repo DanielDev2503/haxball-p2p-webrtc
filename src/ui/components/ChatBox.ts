@@ -1,3 +1,5 @@
+import { animate } from 'motion';
+
 export interface ChatMessage {
   author: string;
   text: string;
@@ -74,6 +76,16 @@ export class ChatBox {
     return Boolean(this.inputEl && document.activeElement === this.inputEl);
   }
 
+  private animateRowEntry(element: HTMLElement): void {
+    try {
+      if (typeof element?.animate === 'function') {
+        animate(element, { opacity: [0, 1], y: [6, 0] }, { duration: 0.25 });
+      }
+    } catch {
+      // Entornos de prueba sin Web Animations API continúan de forma segura
+    }
+  }
+
   public addSystemMessage(message: string): void {
     if (!this.container) return;
 
@@ -83,6 +95,8 @@ export class ChatBox {
 
     this.container.appendChild(row);
     this.container.scrollTop = this.container.scrollHeight;
+
+    this.animateRowEntry(row);
   }
 
   public addMessage(msg: ChatMessage): void {
@@ -107,5 +121,7 @@ export class ChatBox {
 
     this.container.appendChild(row);
     this.container.scrollTop = this.container.scrollHeight;
+
+    this.animateRowEntry(row);
   }
 }

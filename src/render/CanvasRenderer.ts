@@ -3,6 +3,8 @@ import { GameSnapshot } from '../core/game/GameState';
 import { MatchPhase, toMatchPhase } from '../core/game/GameFSM';
 import { PitchRenderer } from './PitchRenderer';
 import { DiscRenderer } from './DiscRenderer';
+import gsap from 'gsap';
+import confetti from 'canvas-confetti';
 
 export class CanvasRenderer {
   public canvas: HTMLCanvasElement;
@@ -14,6 +16,10 @@ export class CanvasRenderer {
   public scale: number = 1;
   public offsetX: number = 0;
   public offsetY: number = 0;
+
+  // Transformación de cámara y sacudón elástico con GSAP
+  public cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
+  private lastCelebrationPhase: MatchPhase | null = null;
 
   constructor(canvas: HTMLCanvasElement, stadium: Stadium) {
     this.canvas = canvas;
@@ -33,7 +39,7 @@ export class CanvasRenderer {
   }
 
   public clear(): void {
-    this.ctx.fillStyle = '#1a2332';
+    this.ctx.fillStyle = '#060e18';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
@@ -61,18 +67,52 @@ export class CanvasRenderer {
     this.offsetY = (this.canvas.height / dpr) / 2;
   }
 
+  /**
+   * Micro-sacudón de cámara de 150ms con decaimiento elástico en impactos de postes o choques fuertes
+   */
+  public triggerPostHitShake(): void {
+    try {
+      gsap.fromTo(
+        this.cameraOffset,
+        { x: -3, y: 3 },
+        { x: 0, y: 0, duration: 0.15, ease: 'power2.out' }
+      );
+    } catch {
+      this.cameraOffset.x = 0;
+      this.cameraOffset.y = 0;
+    }
+  }
+
+  /**
+   * Dispara una ráfaga cinética de confeti con los colores del equipo anotador y blanco glacial
+   */
+  public triggerCelebrationConfetti(targetTeam: number): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const scoringColor = targetTeam === 1 ? '#FF0055' : (targetTeam === 2 ? '#00E5FF' : '#00E599');
+      confetti({
+        particleCount: 75,
+        spread: 75,
+        origin: { y: 0.6 },
+        colors: [scoringColor, '#FFFFFF', '#00C2FF']
+      });
+    } catch {
+      // Ignorar en pruebas sin DOM completo
+    }
+  }
+
   public render(snapshot: GameSnapshot, localDiscId?: number | null): void {
     const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
     const ctx = this.ctx;
 
     ctx.save();
-    // Clear whole screen with dark stadium boundary background
-    ctx.fillStyle = '#1a2332';
+    // Fondo perimetral técnico Futurism Aero
+    ctx.fillStyle = '#060e18';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // Apply High-DPI and Center-Zoom transformations
+    // Transformaciones High-DPI, Centrado y Desplazamiento de Cámara GSAP
     ctx.scale(dpr, dpr);
-    ctx.translate(this.offsetX, this.offsetY);
+    ctx.translate(this.offsetX + this.cameraOffset.x, this.offsetY + this.cameraOffset.y);
     ctx.scale(this.scale, this.scale);
 
     // 1. Render Pitch geometry & posts
@@ -94,9 +134,19 @@ export class CanvasRenderer {
 
     const subStateTimer = snapshot.subStateTimer ?? snapshot.countdownSeconds ?? 0;
     const targetTeam = snapshot.targetTeam ?? 0;
-    const targetTeamColor = targetTeam === 1 ? '#ef4444' : (targetTeam === 2 ? '#38bdf8' : '#facc15');
+    const targetTeamColor = targetTeam === 1 ? '#FF0055' : (targetTeam === 2 ? '#00E5FF' : '#00E599');
     const winningTeam = targetTeam === 1 ? 'EQUIPO ROJO' : (targetTeam === 2 ? 'EQUIPO AZUL' : '');
-    const winningTeamColor = targetTeam === 1 ? '#ef4444' : (targetTeam === 2 ? '#38bdf8' : '#f59e0b');
+    const winningTeamColor = targetTeam === 1 ? '#FF0055' : (targetTeam === 2 ? '#00E5FF' : '#00E599');
+
+    // Detección de transición para disparo de confeti
+    if (currentPhase === MatchPhase.GOAL_CELEBRATION || currentPhase === MatchPhase.MATCH_ENDED) {
+      if (this.lastCelebrationPhase !== currentPhase) {
+        this.lastCelebrationPhase = currentPhase;
+        this.triggerCelebrationConfetti(targetTeam);
+      }
+    } else {
+      this.lastCelebrationPhase = null;
+    }
 
     ctx.save();
 
@@ -135,7 +185,7 @@ export class CanvasRenderer {
   public drawCenterBanner(ctxOrText: CanvasRenderingContext2D | string, textOrColor?: string, colorOrSubtext?: string, subtext?: string): void {
     let ctx: CanvasRenderingContext2D;
     let text: string;
-    let color: string = '#facc15';
+    let color: string = '#00E599';
     let sub: string | undefined;
 
     if (typeof ctxOrText === 'string') {
@@ -157,79 +207,83 @@ export class CanvasRenderer {
     const ctx = typeof ctxOrCount === 'number' ? this.ctx : ctxOrCount;
     const count = typeof ctxOrCount === 'number' ? ctxOrCount : (countNum ?? 0);
     const text = count > 0 ? count.toString() : '¡PLAY!';
-    this.drawBigText(ctx, text, '#facc15');
+    this.drawBigText(ctx, text, '#00E599');
   }
 
   private drawBigText(ctx: CanvasRenderingContext2D, text: string, color: string): void {
     ctx.save();
-    ctx.font = '900 72px "Inter", "Segoe UI", sans-serif';
+    ctx.font = '900 70px "Zen Dots", "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // Shadow
+    // Halo neón reactivo
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 18;
+
+    // Sombra de contraste
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillText(text, 0, -20 + 4);
 
-    // Black stroke outline for high contrast
+    // Contorno oscuro
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 6;
     ctx.strokeText(text, 0, -20);
 
-    // Text fill
+    // Relleno de texto neón
     ctx.fillStyle = color;
     ctx.fillText(text, 0, -20);
     ctx.restore();
   }
 
-  private drawBannerBox(ctx: CanvasRenderingContext2D, text: string, subtext?: string, color: string = '#facc15'): void {
+  private drawBannerBox(ctx: CanvasRenderingContext2D, text: string, subtext?: string, color: string = '#00E599'): void {
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // Medición de texto para dimensionar caja
-    ctx.font = '900 44px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    // Medición de texto con Zen Dots para dimensionar caja aero
+    ctx.font = '900 38px "Zen Dots", "Inter", sans-serif';
     const textMetrics = ctx.measureText(text);
-    let bannerWidth = Math.max(textMetrics.width + 60, 260);
+    let bannerWidth = Math.max(textMetrics.width + 64, 280);
 
     if (subtext) {
-      ctx.font = '600 16px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.font = '600 16px "Inter", sans-serif';
       const subMetrics = ctx.measureText(subtext);
       bannerWidth = Math.max(bannerWidth, subMetrics.width + 48);
     }
 
-    const bannerHeight = subtext ? 92 : 68;
+    const bannerHeight = subtext ? 96 : 72;
     const yOffset = -20;
 
-    // Fondo oscuro con sombra
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-    ctx.shadowBlur = 16;
-    ctx.shadowOffsetY = 4;
+    // Fondo oscuro aero con resplandor neón reactivo
+    ctx.fillStyle = 'rgba(6, 14, 24, 0.92)';
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 20;
+    ctx.shadowOffsetY = 2;
 
     ctx.beginPath();
-    ctx.roundRect(-bannerWidth / 2, yOffset - bannerHeight / 2, bannerWidth, bannerHeight, 12);
+    ctx.roundRect(-bannerWidth / 2, yOffset - bannerHeight / 2, bannerWidth, bannerHeight, 14);
     ctx.fill();
 
-    // Borde de acento
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetY = 0;
-
+    // Borde de cristal reactivo
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.stroke();
 
     // Texto de título principal
-    ctx.font = '900 42px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.font = '900 38px "Zen Dots", "Inter", sans-serif';
     ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12;
     const titleY = subtext ? yOffset - 14 : yOffset;
     ctx.fillText(text, 0, titleY);
 
     // Subtexto opcional
     if (subtext) {
-      ctx.font = '600 15px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.font = '600 15px "Inter", sans-serif';
       ctx.fillStyle = '#cbd5e1';
-      ctx.fillText(subtext, 0, yOffset + 20);
+      ctx.fillText(subtext, 0, yOffset + 22);
     }
 
     ctx.restore();

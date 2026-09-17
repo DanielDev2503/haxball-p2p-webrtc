@@ -1,4 +1,5 @@
 import { defineConfig, Plugin } from 'vite';
+import tailwindcss from '@tailwindcss/vite';
 import { WebSocketServer } from 'ws';
 import { setupSignalingServer } from './src/server/signalingServer';
 
@@ -22,7 +23,7 @@ function signalingPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [signalingPlugin()],
+  plugins: [tailwindcss(), signalingPlugin()],
   server: {
     port: 3000,
     strictPort: true,

@@ -10,32 +10,53 @@ export class PitchRenderer {
 
     ctx.save();
 
-    // 1. Stadium Pitch Background (Rich grass turf with stripes)
-    const stripeCount = 14;
-    const stripeWidth = (hw * 2) / stripeCount;
-    for (let i = 0; i < stripeCount; i++) {
-      ctx.fillStyle = i % 2 === 0 ? '#488a38' : '#427e33';
-      ctx.fillRect(-hw + i * stripeWidth, -hh, stripeWidth, hh * 2);
-    }
+    // 1. Fondo Azul Técnico Oscuro con Gradiente de Profundidad (#060E18 a #0A1626)
+    const pitchGrad = ctx.createLinearGradient(0, -hh, 0, hh);
+    pitchGrad.addColorStop(0, '#060e18');
+    pitchGrad.addColorStop(0.5, '#081220');
+    pitchGrad.addColorStop(1, '#0a1626');
+    ctx.fillStyle = pitchGrad;
+    ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
 
-    // 2. Goal Nets (Left & Right)
-    // Left net
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    // 2. Rejilla Bio-Digital Translúcida en Verde Neovital Suave
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 229, 153, 0.06)';
+    ctx.lineWidth = 1;
+    const gridSize = 28;
+
+    ctx.beginPath();
+    for (let x = -hw; x <= hw; x += gridSize) {
+      ctx.moveTo(x, -hh);
+      ctx.lineTo(x, hh);
+    }
+    for (let y = -hh; y <= hh; y += gridSize) {
+      ctx.moveTo(-hw, y);
+      ctx.lineTo(hw, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // 3. Redes de Portería (Izquierda y Derecha) con Acento Aero
+    // Red Izquierda
+    ctx.fillStyle = 'rgba(0, 229, 255, 0.04)';
     ctx.fillRect(-(hw + gd), -gh, gd, gh * 2);
     this.renderNetMesh(ctx, -(hw + gd), -gh, gd, gh * 2);
 
-    // Right net
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    // Red Derecha
+    ctx.fillStyle = 'rgba(0, 229, 255, 0.04)';
     ctx.fillRect(hw, -gh, gd, gh * 2);
     this.renderNetMesh(ctx, hw, -gh, gd, gh * 2);
 
-    // 3. Pitch Lines (White crisp markings)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    // 4. Líneas de Marcación Blancas Nítidas con Resplandor Sutil
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
     ctx.lineWidth = 3.5;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.shadowColor = 'rgba(0, 194, 255, 0.35)';
+    ctx.shadowBlur = 4;
 
-    // Outer boundary
+    // Perímetro y cajas de portería
     ctx.beginPath();
     ctx.moveTo(-hw, -hh);
     ctx.lineTo(hw, -hh);
@@ -52,25 +73,25 @@ export class PitchRenderer {
     ctx.closePath();
     ctx.stroke();
 
-    // Midfield Line
+    // Línea de medio campo
     ctx.beginPath();
     ctx.moveTo(0, -hh);
     ctx.lineTo(0, hh);
     ctx.stroke();
 
-    // Center Circle
+    // Círculo central
     ctx.beginPath();
     ctx.arc(0, 0, cr, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Center Spot
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    // Punto central
+    ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Goal Lines (Faint dotted or dashed goal entrance)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    // Líneas de gol discontinuas
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 4]);
 
@@ -81,9 +102,9 @@ export class PitchRenderer {
     ctx.lineTo(hw, gh);
     ctx.stroke();
 
-    ctx.setLineDash([]); // Reset dash
+    ctx.restore(); // Restaura sombras y dash
 
-    // 4. Goal Posts
+    // 5. Postes de Portería con Acabado Metálico Cromado
     for (const post of stadium.posts) {
       this.renderPost(ctx, post.pos.x, post.pos.y, post.radius);
     }
@@ -99,7 +120,7 @@ export class PitchRenderer {
     h: number
   ): void {
     ctx.save();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.18)';
     ctx.lineWidth = 1;
     const spacing = 12;
 
@@ -118,25 +139,26 @@ export class PitchRenderer {
 
   private renderPost(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
     ctx.save();
-    // Drop shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    // Sombra proyectada del poste
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.beginPath();
     ctx.arc(x + 2, y + 2, r, 0, Math.PI * 2);
     ctx.fill();
 
-    // Post body with 3D metallic gradient
-    const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 1, x, y, r);
+    // Gradiente metálico esférico 3D con reflejo especular
+    const grad = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, 1, x, y, r);
     grad.addColorStop(0, '#ffffff');
-    grad.addColorStop(0.6, '#cbd5e1');
-    grad.addColorStop(1, '#64748b');
+    grad.addColorStop(0.5, '#cbd5e1');
+    grad.addColorStop(0.85, '#64748b');
+    grad.addColorStop(1, '#334155');
 
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = '#334155';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1.4;
     ctx.stroke();
     ctx.restore();
   }

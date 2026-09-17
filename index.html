@@ -6,34 +6,38 @@
   <title>Haxball Web P2P - Custom Deterministic Physics</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Zen+Dots&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/ui/styles/haxball.css">
 </head>
 <body>
-  <div id="app-root" class="game-container u-hidden" style="flex-direction: column; height: 100vh; overflow: hidden; background: #1a1a1a;">
-    <!-- Top HUD Navigation -->
+  <div id="app-root" class="game-container u-hidden" style="flex-direction: column; height: 100vh; overflow: hidden; background: #060e18;">
+    <!-- Top HUD Navigation (Futurism Aero Floating Capsule) -->
     <header class="hud-container">
       <div class="brand">
-        <span>HAXBALL</span>
-        <span class="brand-badge">P2P ENGINE</span>
-        <span id="roomNameBadge" style="font-size: 0.8rem; color: #94a3b8; font-weight: 600;">Lobby</span>
+        <span class="brand-title">HAXBALL</span>
+        <span class="brand-badge">AERO 2D</span>
+        <span id="roomNameBadge" class="room-badge">Lobby</span>
       </div>
 
-      <!-- Scoreboard Center -->
-      <div class="scoreboard">
+      <!-- Scoreboard Center Capsule -->
+      <div class="scoreboard-capsule">
         <span id="redScore" class="team-score score-red">0</span>
         <span class="score-divider">:</span>
         <span id="blueScore" class="team-score score-blue">0</span>
-        <span id="matchTimer" class="match-clock">00:00</span>
+        <div class="match-clock-container">
+          <span class="clock-icon" id="clockIconSlot"></span>
+          <span id="matchTimer" class="match-clock">00:00</span>
+        </div>
       </div>
 
       <!-- Live Network Stats, Audio & Menu Toggle -->
       <div class="hud-stats">
-        <div class="stat-item">
-          <span class="stat-dot"></span>
+        <div class="stat-item ping-stat" id="pingContainer">
+          <span class="wifi-icon" id="wifiIconSlot"></span>
+          <span class="stat-dot" id="pingDot"></span>
           <span id="pingValue">0ms</span>
         </div>
-        <div class="stat-item">
+        <div class="stat-item fps-stat">
           <span id="fpsValue">60 FPS</span>
         </div>
         <div class="top-bar-right">
@@ -170,7 +174,7 @@
     </main>
 
     <!-- Área Inferior: Chat Centrado con espacio reservado propio -->
-    <footer id="chat-section" style="display: flex; justify-content: center; align-items: flex-end; padding: 6px 0; background: #111;">
+    <footer id="chat-section" class="chat-section">
       <div id="chat-container">
         <div id="chat-messages" class="chat-messages"></div>
         <form id="chatForm" class="chat-input-form">

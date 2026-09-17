@@ -1,5 +1,8 @@
 import { Player, TeamType } from '../../core/game/Player';
 import { MatchPhase, MatchState, toMatchPhase } from '../../core/game/GameFSM';
+import { $matchPhase, $players } from '../stores/gameStore';
+import { renderIconHTML, Crown, ShieldCheck } from '../utils/icons';
+import { animate } from 'motion';
 
 export class TeamSelectModal {
   private menuEl: HTMLElement | null;
@@ -14,6 +17,7 @@ export class TeamSelectModal {
   private blueCountEl: HTMLElement | null;
   private specCountEl: HTMLElement | null;
   private currentMatchState: MatchPhase = MatchPhase.STOPPED;
+  private unsubs: Array<() => void> = [];
 
   public onSelectTeam?: (team: TeamType) => void;
   public onPlayerClick?: (player: Player, event: MouseEvent) => void;
@@ -99,6 +103,21 @@ export class TeamSelectModal {
     }
 
     this.setupDragAndDropColumns();
+
+    // Suscripción reactiva con Nano Stores
+    this.unsubs.push(
+      $matchPhase.subscribe((phase) => {
+        this.updateMatchControlButton(phase, this.isUserAdmin);
+      })
+    );
+
+    this.unsubs.push(
+      $players.subscribe((playerList) => {
+        if (playerList && playerList.length > 0) {
+          this.updateLists([...playerList] as Player[], this.isUserAdmin);
+        }
+      })
+    );
   }
 
   public updateMatchControlButton(phase: MatchPhase, isAdmin?: boolean): void {
@@ -121,6 +140,7 @@ export class TeamSelectModal {
     this.matchToggleBtn.disabled = !this.isUserAdmin;
     const isStopped = phase === MatchPhase.STOPPED;
 
+    const prevClass = this.matchToggleBtn.className;
     if (isStopped) {
       this.matchToggleBtn.textContent = '▶ Iniciar Partido';
       this.matchToggleBtn.className = 'btn btn-success btn-match-toggle';
@@ -128,11 +148,23 @@ export class TeamSelectModal {
       this.matchToggleBtn.textContent = '■ Detener Partido';
       this.matchToggleBtn.className = 'btn btn-danger btn-match-toggle';
     }
+
+    // Micro-animación de pulso con Motion si la clase cambió
+    if (prevClass && prevClass !== this.matchToggleBtn.className) {
+      try {
+        if (typeof this.matchToggleBtn.animate === 'function') {
+          animate(this.matchToggleBtn, { scale: [0.96, 1.02, 1] }, { duration: 0.25 });
+        }
+      } catch {
+        // En entornos sin Web Animations API continúa sin fallar
+      }
+    }
   }
 
   public updateMatchState(newState: MatchPhase | MatchState | string, outcomeText?: string, isAdmin?: boolean): void {
     const phase = typeof newState === 'number' ? newState : toMatchPhase(newState);
     this.currentMatchState = phase;
+    $matchPhase.set(phase);
     this.updateMatchControlButton(phase, isAdmin);
 
     // Actualizar visibilidad del botón de retorno y botón de cierre ('✕')
@@ -285,16 +317,20 @@ export class TeamSelectModal {
         el.setAttribute('draggable', 'false');
       }
 
-      const hostIcon = isHost ? '👑 ' : '';
-      const adminIcon = (!isHost && p.isAdmin) ? '⭐ ' : '';
+      // Iconos Lucide estilizados
+      const hostIcon = isHost ? renderIconHTML(Crown, { width: 14, height: 14, stroke: '#f59e0b', class: 'icon-host' }) + ' ' : '';
+      const adminIcon = (!isHost && p.isAdmin) ? renderIconHTML(ShieldCheck, { width: 14, height: 14, stroke: '#00C2FF', class: 'icon-admin' }) + ' ' : '';
       const adminRoleText = isHost ? 'Host' : (p.isAdmin ? 'Admin' : '');
 
       el.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 4px; overflow: hidden; flex: 1;">
-          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-            ${hostIcon}${adminIcon}<strong>${p.name}</strong> [${p.avatar}]
+        <div style="display: flex; align-items: center; gap: 6px; overflow: hidden; flex: 1;">
+          <div class="player-avatar-circle" style="width: 20px; height: 20px; border-radius: 50%; background: rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 800; border: 1px solid rgba(255,255,255,0.25); flex-shrink: 0;">
+            ${p.avatar || '⚽'}
+          </div>
+          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600;">
+            ${hostIcon}${adminIcon}${p.name}
           </span>
-          ${adminRoleText ? `<span style="font-size: 0.65rem; color: #64748b;">${adminRoleText}</span>` : ''}
+          ${adminRoleText ? `<span style="font-size: 0.65rem; color: #94a3b8; font-family: var(--font-zen);">${adminRoleText}</span>` : ''}
         </div>
         ${isLocalAdmin ? `<button class="btn-player-options player-menu-btn" draggable="false" title="Acciones de Jugador" style="background: transparent; border: none; color: #94a3b8; font-size: 1.1rem; cursor: pointer; padding: 0 6px; border-radius: 4px; line-height: 1;">⋮</button>` : ''}
       `;
@@ -338,5 +374,12 @@ export class TeamSelectModal {
       const el = this.specListEl;
       spec.forEach(p => renderPlayer(p, el));
     }
+  }
+
+  public destroy(): void {
+    for (const unsub of this.unsubs) {
+      unsub();
+    }
+    this.unsubs = [];
   }
 }

@@ -21,6 +21,7 @@ import { RoomConfig } from '../server/signalingServer';
 import { MatchStatePayload } from '../net/protocol/ControlMessages';
 import { KeyBinds } from './InputManager';
 import { UIStateMachine, UIState } from '../ui/UIStateMachine';
+import { $matchPhase } from '../ui/stores/gameStore';
 
 export function canChangeTeam(
   senderPeerId: string,
@@ -836,6 +837,7 @@ export class GameApp {
 
     engine.onPostHit = () => {
       this.audioManager.playPostHit();
+      this.canvasRenderer.triggerPostHitShake();
     };
 
     engine.onMatchEnd = (winner) => {
@@ -1075,6 +1077,7 @@ export class GameApp {
           if (snap.soundMask) {
             if (snap.soundMask & SOUND_POST_HIT) {
               this.audioManager.playPostHit();
+              this.canvasRenderer.triggerPostHitShake();
             }
             if (snap.soundMask & SOUND_KICK) {
               this.audioManager.playKick();
@@ -1631,6 +1634,7 @@ export class GameApp {
 
   public enforceMenuState(state: MatchPhase | MatchState | string, outcomeText?: string): void {
     const phase = typeof state === 'number' ? state : toMatchPhase(state);
+    $matchPhase.set(phase);
     if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') {
       this.teamSelect.close(true);
       return;
