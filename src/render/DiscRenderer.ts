@@ -24,13 +24,13 @@ export class DiscRenderer {
 
     ctx.save();
 
-    // 1. Sombra Elíptica Proyectada sobre el Suelo
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    // 1. Sombra Difusa Proyectada sobre el Césped Blanco
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.22)';
     ctx.beginPath();
     if (typeof (ctx as any).ellipse === 'function') {
-      ctx.ellipse(x + 2, y + radius * 0.35, radius * 0.95, radius * 0.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + 1.5, y + radius * 0.45, radius * 0.95, radius * 0.55, 0, 0, Math.PI * 2);
     } else {
-      ctx.arc(x + 2, y + 3, radius, 0, Math.PI * 2);
+      ctx.arc(x + 1.5, y + 3, radius, 0, Math.PI * 2);
     }
     ctx.fill();
 
@@ -43,19 +43,19 @@ export class DiscRenderer {
       y,
       radius
     );
-    grad.addColorStop(0, '#ffffff'); // Brillo especular
-    grad.addColorStop(0.35, '#f8fafc');
-    grad.addColorStop(0.75, '#cbd5e1');
-    grad.addColorStop(1, '#94a3b8');
+    grad.addColorStop(0, '#FFFFFF'); // Reflejo especular brillante
+    grad.addColorStop(0.35, '#F8FAFC');
+    grad.addColorStop(0.7, '#CBD5E1');
+    grad.addColorStop(1, '#94A3B8');
 
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // 3. Contorno Técnico Nítido
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineWidth = 1.6;
+    // 3. Contorno Técnico Aero Nítido
+    ctx.strokeStyle = '#0284C7';
+    ctx.lineWidth = 1.4;
     ctx.stroke();
 
     ctx.restore();
@@ -69,16 +69,16 @@ export class DiscRenderer {
     const { x, y, radius, team, avatar, kicking } = disc;
     const isRed = team === 1;
     const neonColor = isRed ? '#FF0055' : '#00E5FF';
-    const neonGlow = isRed ? 'rgba(255, 0, 85, 0.45)' : 'rgba(0, 229, 255, 0.45)';
+    const neonGlow = isRed ? 'rgba(255, 0, 85, 0.5)' : 'rgba(0, 229, 255, 0.5)';
 
     ctx.save();
 
     // 1. Anillo de Pulso Expansivo Blanco al Activar Patada (Kick)
     if (kicking) {
       ctx.save();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+      ctx.strokeStyle = '#FFFFFF';
       ctx.lineWidth = 3.5;
-      ctx.shadowColor = '#ffffff';
+      ctx.shadowColor = '#FFFFFF';
       ctx.shadowBlur = 12;
       ctx.beginPath();
       ctx.arc(x, y, radius + 5.5, 0, Math.PI * 2);
@@ -86,13 +86,13 @@ export class DiscRenderer {
       ctx.restore();
     }
 
-    // 2. Sombra Elíptica Proyectada
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    // 2. Sombra Elíptica Proyectada sobre el Césped Glacial
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.2)';
     ctx.beginPath();
-    ctx.arc(x + 2.5, y + 3.5, radius, 0, Math.PI * 2);
+    ctx.arc(x + 2, y + 3, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // 3. Gradiente Radial Analítico simulando Esfera Esmaltada en 3D con Reflejo Especular
+    // 3. Gradiente Radial Analítico simulando Esfera Esmaltada con Núcleo Neón
     const grad = ctx.createRadialGradient(
       x - radius * 0.35,
       y - radius * 0.35,
@@ -103,15 +103,15 @@ export class DiscRenderer {
     );
 
     if (isRed) {
-      grad.addColorStop(0, '#ffffff'); // Brillo especular
-      grad.addColorStop(0.2, '#ff3377');
-      grad.addColorStop(0.65, '#ff0055');
+      grad.addColorStop(0, '#FFFFFF'); // Brillo especular
+      grad.addColorStop(0.2, '#FF4D88');
+      grad.addColorStop(0.65, '#FF0055');
       grad.addColorStop(1, '#990033');
     } else {
-      grad.addColorStop(0, '#ffffff'); // Brillo especular
-      grad.addColorStop(0.2, '#33ecff');
-      grad.addColorStop(0.65, '#00e5ff');
-      grad.addColorStop(1, '#007a99');
+      grad.addColorStop(0, '#FFFFFF'); // Brillo especular
+      grad.addColorStop(0.2, '#4DEFFF');
+      grad.addColorStop(0.65, '#00E5FF');
+      grad.addColorStop(1, '#007A99');
     }
 
     ctx.fillStyle = grad;
@@ -119,33 +119,38 @@ export class DiscRenderer {
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // 4. Anillo Exterior Neón con Resplandor Perimetral
+    // 4. Anillo Exterior Neón con Resplandor Perimetral para Alto Contraste
     ctx.save();
     ctx.strokeStyle = neonColor;
-    ctx.lineWidth = 2.2;
+    ctx.lineWidth = 2.4;
     ctx.shadowColor = neonGlow;
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = 9;
     ctx.beginPath();
-    ctx.arc(x, y, radius - 0.8, 0, Math.PI * 2);
+    ctx.arc(x, y, radius - 0.6, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
 
     // 5. Borde Interior Blanco Fino para Definición Especular
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.arc(x, y, radius - 2.8, 0, Math.PI * 2);
     ctx.stroke();
 
-    // 6. Avatar / Dorsal con Tipografía Zen Dots / Inter
+    // 6. Avatar / Dorsal con Tipografía Zen Dots / Inter y Contorno Nítido
     if (avatar) {
       ctx.save();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = `bold ${Math.round(radius * 0.9)}px "Zen Dots", "Inter", sans-serif`;
+      ctx.font = `bold ${Math.round(radius * 0.88)}px "Zen Dots", "Inter", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-      ctx.shadowBlur = 3;
+
+      // Contorno oscuro para legibilidad absoluta
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.7)';
+      ctx.lineWidth = 2.5;
+      ctx.strokeText(avatar, x, y + 1);
+
+      // Texto blanco nítido
+      ctx.fillStyle = '#FFFFFF';
       ctx.fillText(avatar, x, y + 1);
       ctx.restore();
     }
@@ -154,9 +159,9 @@ export class DiscRenderer {
     if (isLocal) {
       ctx.save();
       ctx.strokeStyle = '#00E599';
-      ctx.lineWidth = 2;
-      ctx.shadowColor = 'rgba(0, 229, 153, 0.6)';
-      ctx.shadowBlur = 6;
+      ctx.lineWidth = 2.2;
+      ctx.shadowColor = 'rgba(0, 229, 153, 0.7)';
+      ctx.shadowBlur = 8;
       ctx.beginPath();
       ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
       ctx.stroke();
@@ -166,3 +171,4 @@ export class DiscRenderer {
     ctx.restore();
   }
 }
+

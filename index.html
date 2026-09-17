@@ -195,29 +195,30 @@
     <button id="ctxBan" class="context-menu-item danger">🚫 Banear (Ban)</button>
   </div>
 
-  <!-- Nickname Gatekeeper Modal (Blocking until valid nickname entered) -->
+  <!-- Nickname Gatekeeper Modal (Futurism Aero Floating White Glass) -->
   <div id="nicknameGatekeeperModal" class="modal-overlay modal-nickname u-hidden" style="z-index: 300;">
-    <div class="modal-content" style="max-width: 380px;">
-      <h2 class="modal-title">⚽ Bienvenido a BallHax</h2>
-      <p style="color: #94a3b8; font-size: 0.85rem; text-align: center;">
-        Por favor ingresa tu nickname para comenzar a jugar.
+    <div class="modal-content" id="gatekeeperModalContent" style="max-width: 390px; text-align: center;">
+      <div id="gatekeeperAvatar" class="avatar-holo"></div>
+      <h2 class="modal-title" style="margin-top: 2px;">Bienvenido a BallHax</h2>
+      <p style="color: var(--text-secondary); font-size: 0.88rem; font-weight: 500; margin-top: -4px;">
+        Ingresa tu nombre de piloto para unirte a la arena P2P.
       </p>
-      <div class="form-group">
+      <div class="form-group" style="text-align: left; margin-top: 8px;">
         <label class="form-label" for="gatekeeperNicknameInput">Tu Nickname (2 a 15 caracteres)</label>
         <input id="gatekeeperNicknameInput" class="form-input" type="text" placeholder="Ej. Maradona" maxlength="15" autofocus />
-        <div id="gatekeeperError" style="display: none; color: #ef4444; font-size: 0.75rem; margin-top: 4px;"></div>
+        <div id="gatekeeperError" style="display: none; color: #ef4444; font-size: 0.75rem; margin-top: 4px; font-weight: 600;"></div>
       </div>
-      <button id="btnSaveNickname" class="btn btn-primary" style="width: 100%; padding: 10px; font-size: 0.95rem;">
+      <button id="btnSaveNickname" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 0.95rem; margin-top: 4px;">
         Guardar y Continuar
       </button>
     </div>
   </div>
 
 
-  <!-- Room Lobby Modal Overlay -->
+  <!-- Room Lobby Modal Overlay (Futurism Aero White Glass) -->
   <div id="lobbyModal" class="modal-overlay lobby-container u-hidden" style="z-index: 250;">
-    <div class="modal-content" style="position: relative;">
-      <h2 class="modal-title" style="margin-bottom: 4px;">Haxball P2P Arena</h2>
+    <div class="modal-content" style="position: relative; width: 480px;">
+      <h2 class="modal-title" style="margin-bottom: 2px;">Haxball P2P Arena</h2>
 
       <!-- Barra Superior de Usuario y Estado de Señalización -->
       <div class="lobby-user-bar">
@@ -240,81 +241,111 @@
         <button id="btnCancelConnecting" class="btn btn-danger btn-xs" type="button" style="margin-top: 6px;">Cancelar</button>
       </div>
 
-      <div class="form-group">
-        <button id="btnPracticeMode" class="btn btn-primary" style="width: 100%; padding: 10px; font-size: 0.95rem;">
-          ⚽ Modo Práctica (Jugar Ahora)
+      <div style="display: flex; gap: 8px; margin-top: 4px;">
+        <button id="btnPracticeMode" class="btn btn-secondary" style="flex: 1; padding: 10px; font-size: 0.88rem;">
+          ⚽ Modo Práctica
+        </button>
+        <button id="btnOpenCreateRoomModal" class="btn btn-primary" style="flex: 1.3; padding: 10px; font-size: 0.88rem;">
+          <span id="openCreateRoomIconSlot" style="display: inline-flex; align-items: center;"></span>
+          <span>Crear Sala</span>
         </button>
       </div>
 
-      <div style="text-align: center; color: #64748b; font-size: 0.75rem; margin: 8px 0;">— SALAS MULTIJUGADOR P2P —</div>
+      <div style="text-align: center; color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 1px; margin: 4px 0;">
+        — EXPLORADOR DE SALAS P2P —
+      </div>
 
-      <!-- Creación Avanzada de Sala -->
-      <details class="create-room-details" id="createRoomDetails">
-        <summary class="btn btn-secondary" style="width: 100%; text-align: center; cursor: pointer; padding: 8px;">
-          ➕ Configurar y Crear Nueva Sala
-        </summary>
-        <div style="background: rgba(0,0,0,0.25); border-radius: 6px; padding: 10px; margin-top: 6px;">
-          <div class="form-group">
-            <label class="form-label" for="lobbyRoomName">Nombre de la Sala</label>
-            <input id="lobbyRoomName" class="form-input" type="text" placeholder="Mi Partido Épico" />
-          </div>
-
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-            <div class="form-group">
-              <label class="form-label" for="lobbyMaxPlayers">Máx. Jugadores (2-16)</label>
-              <input id="lobbyMaxPlayers" class="form-input" type="number" min="2" max="16" value="12" />
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="lobbyTimeLimit">Tiempo Límite</label>
-              <select id="lobbyTimeLimit" class="form-input">
-                <option value="0">Indefinido</option>
-                <option value="3" selected>3 minutos</option>
-                <option value="5">5 minutos</option>
-                <option value="7">7 minutos</option>
-                <option value="10">10 minutos</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="lobbyScoreLimit">Límite de Goles</label>
-            <select id="lobbyScoreLimit" class="form-input">
-              <option value="0">Indefinido</option>
-              <option value="1">1 gol</option>
-              <option value="3" selected>3 goles</option>
-              <option value="5">5 goles</option>
-              <option value="10">10 goles</option>
-            </select>
-          </div>
-
-          <div class="form-group" style="margin-top: 6px;">
-            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem; cursor: pointer;">
-              <input type="checkbox" id="lobbyIsPrivate" />
-              <span>🔒 Sala Privada (Requiere Contraseña)</span>
-            </label>
-          </div>
-
-          <div class="form-group" id="lobbyPasswordContainer" style="display: none;">
-            <label class="form-label" for="lobbyPassword">Contraseña de Acceso</label>
-            <input id="lobbyPassword" class="form-input" type="password" placeholder="Contraseña de la sala" />
-          </div>
-
-          <button id="btnCreateRoom" class="btn btn-primary" style="width: 100%; margin-top: 8px;">
-            🚀 Crear y Abrir Sala
-          </button>
+      <!-- Barra de Búsqueda y Filtro de Salas -->
+      <div class="lobby-search-bar">
+        <div class="lobby-search-input-wrap">
+          <span class="lobby-search-icon" id="lobbySearchIconSlot"></span>
+          <input id="lobbySearchInput" class="form-input lobby-search-input" type="text" placeholder="Buscar sala por nombre o ID..." />
         </div>
-      </details>
+        <button id="btnRefreshRooms" class="btn btn-secondary" title="Actualizar Salas" style="padding: 8px 12px;">
+          <span id="refreshRoomsIconSlot" style="display: inline-flex; align-items: center;"></span>
+        </button>
+      </div>
 
-      <div class="form-group" style="margin-top: 12px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <label class="form-label" for="lobbyRoomId">Explorador de Salas Activas</label>
-          <button id="btnRefreshRooms" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.7rem;">Refrescar</button>
+      <div id="lobbyRoomList" class="room-list"></div>
+
+      <!-- Conexión Directa por ID -->
+      <div style="display: flex; gap: 6px; margin-top: 4px;">
+        <input id="lobbyRoomId" class="form-input" type="text" placeholder="Unirse directo con ID de sala" style="flex: 1; padding: 8px 12px; font-size: 0.85rem;" />
+        <button id="btnJoinRoom" class="btn btn-secondary" style="padding: 8px 14px;">Unirse</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated Create Room Modal (Pop-up independiente Futurism Aero) -->
+  <div id="createRoomModal" class="modal-overlay u-hidden" style="display: none; z-index: 280;">
+    <div class="create-room-card" id="createRoomCard">
+      <div class="create-room-header">
+        <div class="create-room-header-title">
+          <span id="createRoomModalIconSlot" style="display: inline-flex; align-items: center;"></span>
+          <span>Crear Nueva Sala</span>
         </div>
-        <div style="display: flex; gap: 6px;">
-          <input id="lobbyRoomId" class="form-input" type="text" placeholder="Unirse directo con ID" style="flex: 1;" />
-          <button id="btnJoinRoom" class="btn btn-secondary">Unirse</button>
+        <button id="btnCloseCreateRoomModal" class="icon-btn-close" type="button" title="Cerrar ventana">✕</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="newRoomNameInput">Nombre de la Sala</label>
+        <input id="newRoomNameInput" class="form-input" type="text" placeholder="Ej. Estadio Aero 3v3" maxlength="30" />
+      </div>
+
+      <div class="create-room-grid">
+        <div class="form-group">
+          <label class="form-label" for="newRoomMaxPlayersInput">Máx. Jugadores (2-16)</label>
+          <input id="newRoomMaxPlayersInput" class="form-input" type="number" min="2" max="16" value="12" />
         </div>
-        <div id="lobbyRoomList" class="room-list" style="margin-top: 8px; max-height: 140px; overflow-y: auto;"></div>
+        <div class="form-group">
+          <label class="form-label" for="newRoomTimeLimitInput">Tiempo Límite</label>
+          <select id="newRoomTimeLimitInput" class="form-input">
+            <option value="0">Indefinido</option>
+            <option value="1">1 minuto</option>
+            <option value="2">2 minutos</option>
+            <option value="3" selected>3 minutos</option>
+            <option value="4">4 minutos</option>
+            <option value="5">5 minutos</option>
+            <option value="7">7 minutos</option>
+            <option value="10">10 minutos</option>
+            <option value="15">15 minutos</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="newRoomScoreLimitInput">Límite de Goles</label>
+        <select id="newRoomScoreLimitInput" class="form-input">
+          <option value="0">Indefinido</option>
+          <option value="1">1 gol</option>
+          <option value="2">2 goles</option>
+          <option value="3" selected>3 goles</option>
+          <option value="4">4 goles</option>
+          <option value="5">5 goles</option>
+          <option value="7">7 goles</option>
+          <option value="10">10 goles</option>
+          <option value="15">15 goles</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="margin-top: 2px;">
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
+          <input type="checkbox" id="newRoomIsPrivate" />
+          <span id="lockIconSlot" style="display: inline-flex; align-items: center; color: var(--aero-sky-500);"></span>
+          <span>Sala Privada (Requiere Contraseña)</span>
+        </label>
+      </div>
+
+      <div class="form-group" id="newRoomPasswordContainer" style="display: none;">
+        <label class="form-label" for="newRoomPasswordInput">Contraseña de Acceso</label>
+        <input id="newRoomPasswordInput" class="form-input" type="password" placeholder="Ingresa contraseña de la sala" />
+      </div>
+
+      <div style="display: flex; gap: 10px; margin-top: 8px;">
+        <button id="btnCancelCreateRoom" class="btn btn-secondary" type="button" style="flex: 1;">Cancelar</button>
+        <button id="btnCreateRoomSubmit" class="btn btn-primary" type="button" style="flex: 1.5;">
+          🚀 Crear y Abrir Sala
+        </button>
       </div>
     </div>
   </div>

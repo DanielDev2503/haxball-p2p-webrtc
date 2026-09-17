@@ -1,3 +1,6 @@
+import { CreateRoomModal, CreateRoomModalConfig } from './CreateRoomModal';
+import { renderIcon, PlusSquare, Search, RefreshCw } from '../utils/icons';
+
 export interface LobbyRoomConfig {
   name: string;
   maxPlayers: number;
@@ -17,6 +20,16 @@ export interface LobbyEvents {
   onCancelConnecting?: () => void;
 }
 
+export interface RoomListItem {
+  id: string;
+  name: string;
+  playerCount: number;
+  maxPlayers?: number;
+  isPrivate?: boolean;
+  timeLimit?: number;
+  scoreLimit?: number;
+}
+
 export class RoomLobby {
   private overlayEl: HTMLElement | null = null;
   private nicknameInput: HTMLInputElement | null = null;
@@ -29,16 +42,15 @@ export class RoomLobby {
   private loadingTextEl: HTMLElement | null = null;
   private cancelConnectingBtn: HTMLButtonElement | null = null;
 
-  private roomNameInput: HTMLInputElement | null = null;
-  private maxPlayersInput: HTMLInputElement | null = null;
-  private timeLimitSelect: HTMLSelectElement | null = null;
-  private scoreLimitSelect: HTMLSelectElement | null = null;
-  private isPrivateCheckbox: HTMLInputElement | null = null;
-  private passwordContainer: HTMLElement | null = null;
-  private passwordInput: HTMLInputElement | null = null;
+  private openCreateRoomBtn: HTMLButtonElement | null = null;
+  private searchInput: HTMLInputElement | null = null;
+  private refreshRoomsBtn: HTMLButtonElement | null = null;
   private roomIdInput: HTMLInputElement | null = null;
   private roomListContainer: HTMLElement | null = null;
+
+  public createRoomModal: CreateRoomModal;
   private events: LobbyEvents;
+  private cachedRooms: RoomListItem[] = [];
 
   constructor(events: LobbyEvents) {
     this.events = events;
@@ -47,110 +59,69 @@ export class RoomLobby {
     if (!this.overlayEl) console.warn('[RoomLobby] Element "#lobbyModal" was not found in DOM.');
 
     this.nicknameInput = document.getElementById('lobbyNickname') as HTMLInputElement | null;
-    if (!this.nicknameInput) console.warn('[RoomLobby] Element "#lobbyNickname" was not found in DOM.');
-
     this.userAvatarEl = document.getElementById('lobbyUserAvatar');
-    if (!this.userAvatarEl) console.warn('[RoomLobby] Element "#lobbyUserAvatar" was not found in DOM.');
-
     this.currentNickEl = document.getElementById('lobbyCurrentNick');
-    if (!this.currentNickEl) console.warn('[RoomLobby] Element "#lobbyCurrentNick" was not found in DOM.');
-
     this.editNickBtn = document.getElementById('btnEditNickname') as HTMLButtonElement | null;
-    if (!this.editNickBtn) console.warn('[RoomLobby] Element "#btnEditNickname" was not found in DOM.');
-
     this.signalingDotEl = document.getElementById('lobbySignalingDot');
-    if (!this.signalingDotEl) console.warn('[RoomLobby] Element "#lobbySignalingDot" was not found in DOM.');
-
     this.signalingTextEl = document.getElementById('lobbySignalingText');
-    if (!this.signalingTextEl) console.warn('[RoomLobby] Element "#lobbySignalingText" was not found in DOM.');
-
     this.loadingOverlayEl = document.getElementById('lobbyLoadingOverlay');
-    if (!this.loadingOverlayEl) console.warn('[RoomLobby] Element "#lobbyLoadingOverlay" was not found in DOM.');
-
     this.loadingTextEl = document.getElementById('lobbyLoadingText');
-    if (!this.loadingTextEl) console.warn('[RoomLobby] Element "#lobbyLoadingText" was not found in DOM.');
-
     this.cancelConnectingBtn = document.getElementById('btnCancelConnecting') as HTMLButtonElement | null;
-    if (!this.cancelConnectingBtn) console.warn('[RoomLobby] Element "#btnCancelConnecting" was not found in DOM.');
 
-    this.roomNameInput = document.getElementById('lobbyRoomName') as HTMLInputElement | null;
-    if (!this.roomNameInput) console.warn('[RoomLobby] Element "#lobbyRoomName" was not found in DOM.');
-
-    this.maxPlayersInput = document.getElementById('lobbyMaxPlayers') as HTMLInputElement | null;
-    if (!this.maxPlayersInput) console.warn('[RoomLobby] Element "#lobbyMaxPlayers" was not found in DOM.');
-
-    this.timeLimitSelect = document.getElementById('lobbyTimeLimit') as HTMLSelectElement | null;
-    if (!this.timeLimitSelect) console.warn('[RoomLobby] Element "#lobbyTimeLimit" was not found in DOM.');
-
-    this.scoreLimitSelect = document.getElementById('lobbyScoreLimit') as HTMLSelectElement | null;
-    if (!this.scoreLimitSelect) console.warn('[RoomLobby] Element "#lobbyScoreLimit" was not found in DOM.');
-
-    this.isPrivateCheckbox = document.getElementById('lobbyIsPrivate') as HTMLInputElement | null;
-    if (!this.isPrivateCheckbox) console.warn('[RoomLobby] Element "#lobbyIsPrivate" was not found in DOM.');
-
-    this.passwordContainer = document.getElementById('lobbyPasswordContainer');
-    if (!this.passwordContainer) console.warn('[RoomLobby] Element "#lobbyPasswordContainer" was not found in DOM.');
-
-    this.passwordInput = document.getElementById('lobbyPassword') as HTMLInputElement | null;
-    if (!this.passwordInput) console.warn('[RoomLobby] Element "#lobbyPassword" was not found in DOM.');
-
+    this.openCreateRoomBtn = document.getElementById('btnOpenCreateRoomModal') as HTMLButtonElement | null;
+    this.searchInput = document.getElementById('lobbySearchInput') as HTMLInputElement | null;
+    this.refreshRoomsBtn = document.getElementById('btnRefreshRooms') as HTMLButtonElement | null;
     this.roomIdInput = document.getElementById('lobbyRoomId') as HTMLInputElement | null;
-    if (!this.roomIdInput) console.warn('[RoomLobby] Element "#lobbyRoomId" was not found in DOM.');
-
     this.roomListContainer = document.getElementById('lobbyRoomList');
-    if (!this.roomListContainer) console.warn('[RoomLobby] Element "#lobbyRoomList" was not found in DOM.');
 
+    // Instantiate independent CreateRoomModal
+    this.createRoomModal = new CreateRoomModal({
+      onSubmit: (config: CreateRoomModalConfig) => {
+        const nick = this.getNickname();
+        const lobbyConfig: LobbyRoomConfig = {
+          ...config,
+          teamsLocked: false
+        };
+        this.events.onCreateRoom(nick, lobbyConfig);
+      }
+    });
+
+    this.renderIcons();
     this.setupListeners();
   }
 
-  private setupListeners(): void {
-    const createBtn = document.getElementById('btnCreateRoom');
-    const joinBtn = document.getElementById('btnJoinRoom');
-    const practiceBtn = document.getElementById('btnPracticeMode');
-    const refreshBtn = document.getElementById('btnRefreshRooms');
-
-    if (!createBtn) console.warn('[RoomLobby] Element "#btnCreateRoom" was not found in DOM.');
-    if (!joinBtn) console.warn('[RoomLobby] Element "#btnJoinRoom" was not found in DOM.');
-    if (!practiceBtn) console.warn('[RoomLobby] Element "#btnPracticeMode" was not found in DOM.');
-    if (!refreshBtn) console.warn('[RoomLobby] Element "#btnRefreshRooms" was not found in DOM.');
-
-    // Toggle password input based on private room checkbox
-    if (this.isPrivateCheckbox && this.passwordContainer) {
-      this.isPrivateCheckbox.addEventListener('change', () => {
-        if (this.passwordContainer && this.isPrivateCheckbox) {
-          this.passwordContainer.style.display = this.isPrivateCheckbox.checked ? 'block' : 'none';
-          if (this.isPrivateCheckbox.checked) {
-            this.passwordInput?.focus();
-          }
-        }
-      });
+  private renderIcons(): void {
+    const createIconSlot = document.getElementById('openCreateRoomIconSlot');
+    if (createIconSlot) {
+      renderIcon(createIconSlot, PlusSquare, { size: 16, color: '#FFFFFF' });
     }
 
-    createBtn?.addEventListener('click', () => {
+    const searchIconSlot = document.getElementById('lobbySearchIconSlot');
+    if (searchIconSlot) {
+      renderIcon(searchIconSlot, Search, { size: 16, color: '#0EA5E9' });
+    }
+
+    const refreshIconSlot = document.getElementById('refreshRoomsIconSlot');
+    if (refreshIconSlot) {
+      renderIcon(refreshIconSlot, RefreshCw, { size: 16, color: '#0284C7' });
+    }
+  }
+
+  private setupListeners(): void {
+    const joinBtn = document.getElementById('btnJoinRoom');
+    const practiceBtn = document.getElementById('btnPracticeMode');
+
+    // Open dedicated Create Room Modal
+    this.openCreateRoomBtn?.addEventListener('click', () => {
       const nick = this.getNickname();
-      const roomName = this.roomNameInput?.value.trim() || `${nick}'s Match`;
-      const maxPlayers = parseInt(this.maxPlayersInput?.value || '12', 10);
-      const timeLimit = parseInt(this.timeLimitSelect?.value || '3', 10);
-      const scoreLimit = parseInt(this.scoreLimitSelect?.value || '3', 10);
-      const isPrivate = this.isPrivateCheckbox ? this.isPrivateCheckbox.checked : false;
-      const password = this.passwordInput?.value.trim();
+      this.createRoomModal.show(`${nick}'s Match`);
+    });
 
-      if (isPrivate && !password) {
-        alert('Debes ingresar una contraseña para crear una sala privada');
-        return;
-      }
-
-      const config: LobbyRoomConfig = {
-        name: roomName,
-        maxPlayers: Math.max(2, Math.min(16, isNaN(maxPlayers) ? 12 : maxPlayers)),
-        timeLimit: isNaN(timeLimit) ? 3 : timeLimit,
-        scoreLimit: isNaN(scoreLimit) ? 3 : scoreLimit,
-        isPrivate,
-        password: isPrivate ? password : '',
-        teamsLocked: false
-      };
-
-      this.events.onCreateRoom(nick, config);
+    // Fallback legacy create button if present in DOM
+    const legacyCreateBtn = document.getElementById('btnCreateRoom');
+    legacyCreateBtn?.addEventListener('click', () => {
+      const nick = this.getNickname();
+      this.createRoomModal.show(`${nick}'s Match`);
     });
 
     joinBtn?.addEventListener('click', () => {
@@ -168,7 +139,7 @@ export class RoomLobby {
       this.events.onSinglePlayer(nick);
     });
 
-    refreshBtn?.addEventListener('click', () => {
+    this.refreshRoomsBtn?.addEventListener('click', () => {
       this.events.onRefreshRooms();
     });
 
@@ -183,6 +154,11 @@ export class RoomLobby {
       if (this.events.onCancelConnecting) {
         this.events.onCancelConnecting();
       }
+    });
+
+    // Real-time room filtering
+    this.searchInput?.addEventListener('input', () => {
+      this.filterAndRenderRooms();
     });
   }
 
@@ -249,6 +225,7 @@ export class RoomLobby {
       this.overlayEl.classList.add('u-hidden', 'ui-screen-hidden');
       this.overlayEl.style.display = 'none';
     }
+    this.createRoomModal.hide();
   }
 
   public show(): void {
@@ -258,46 +235,62 @@ export class RoomLobby {
     }
   }
 
-  public setRoomList(rooms: Array<{ id: string; name: string; playerCount: number; maxPlayers?: number; isPrivate?: boolean; timeLimit?: number; scoreLimit?: number }>): void {
+  public setRoomList(rooms: RoomListItem[]): void {
+    this.cachedRooms = rooms;
+    this.filterAndRenderRooms();
+  }
+
+  private filterAndRenderRooms(): void {
     if (!this.roomListContainer) return;
     this.roomListContainer.innerHTML = '';
 
-    if (rooms.length === 0) {
+    const query = this.searchInput?.value.trim().toLowerCase() || '';
+    const filtered = this.cachedRooms.filter((r) => {
+      if (!query) return true;
+      return (
+        r.name.toLowerCase().includes(query) ||
+        r.id.toLowerCase().includes(query)
+      );
+    });
+
+    if (filtered.length === 0) {
       const empty = document.createElement('div');
-      empty.style.padding = '12px';
-      empty.style.color = '#94a3b8';
+      empty.style.padding = '14px';
+      empty.style.color = 'var(--text-muted)';
       empty.style.textAlign = 'center';
       empty.style.fontSize = '0.85rem';
-      empty.textContent = 'No hay salas activas. ¡Crea una o juega en Práctica!';
+      empty.style.fontWeight = '600';
+      empty.textContent = query
+        ? `No se encontraron salas coincidentes con "${query}".`
+        : 'No hay salas activas. ¡Crea una o juega en Práctica!';
       this.roomListContainer.appendChild(empty);
       return;
     }
 
-    for (const r of rooms) {
+    for (const r of filtered) {
       const item = document.createElement('div');
       item.className = 'room-item';
-      const lockIcon = r.isPrivate ? '🔒' : '🌐';
       const maxP = r.maxPlayers ?? 12;
       const isFull = r.playerCount >= maxP;
       const timeStr = r.timeLimit === 0 ? 'Indef.' : `${r.timeLimit ?? 3}m`;
       const scoreStr = r.scoreLimit === 0 ? 'Indef.' : `${r.scoreLimit ?? 3}g`;
 
       item.innerHTML = `
-        <div>
-          <div style="font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; gap: 4px;">
-            <span>${lockIcon}</span>
-            <span>${r.name}</span>
-            ${r.isPrivate ? '<span style="font-size: 0.65rem; background: rgba(239, 68, 68, 0.3); color: #ef4444; padding: 1px 4px; border-radius: 4px;">Privada</span>' : ''}
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-weight: 800; font-size: 0.88rem; color: var(--text-primary); display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            <span>${r.isPrivate ? '🔒' : '🌐'}</span>
+            <span style="overflow: hidden; text-overflow: ellipsis;">${r.name}</span>
+            ${r.isPrivate ? '<span class="badge-private">Privada</span>' : ''}
           </div>
-          <div style="font-size: 0.7rem; color: #94a3b8;">
-            ID: <strong>${r.id}</strong> &bull; ⏱ ${timeStr} &bull; ⚽ ${scoreStr}
+          <div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px;">
+            ID: <strong style="color: var(--aero-sky-600);">${r.id}</strong> &bull; ⏱ ${timeStr} &bull; ⚽ ${scoreStr}
           </div>
         </div>
-        <div style="text-align: right;">
-          <div style="font-size: 0.75rem; font-weight: 600; color: ${isFull ? '#ef4444' : '#38bdf8'};">
-            ${r.playerCount}/${maxP} jugadores
-          </div>
-          <button class="btn btn-secondary btn-join-direct" style="padding: 2px 8px; font-size: 0.7rem; margin-top: 2px;" ${isFull ? 'disabled' : ''}>
+        <div style="display: flex; align-items: center; gap: 8px; margin-left: 8px;">
+          <span class="${isFull ? 'badge-full' : 'badge-sky'}">
+            ${r.playerCount}/${maxP}
+          </span>
+          <button class="btn btn-secondary btn-xs btn-join-direct" ${isFull ? 'disabled' : ''}>
             ${isFull ? 'Llena' : 'Entrar'}
           </button>
         </div>

@@ -39,7 +39,7 @@ export class CanvasRenderer {
   }
 
   public clear(): void {
-    this.ctx.fillStyle = '#060e18';
+    this.ctx.fillStyle = '#E0F2FE';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
@@ -106,8 +106,8 @@ export class CanvasRenderer {
     const ctx = this.ctx;
 
     ctx.save();
-    // Fondo perimetral técnico Futurism Aero
-    ctx.fillStyle = '#060e18';
+    // Fondo perimetral técnico Futurism Aero (Cielo Luminoso #E0F2FE)
+    ctx.fillStyle = '#E0F2FE';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     // Transformaciones High-DPI, Centrado y Desplazamiento de Cámara GSAP
@@ -254,14 +254,14 @@ export class CanvasRenderer {
     const bannerHeight = subtext ? 96 : 72;
     const yOffset = -20;
 
-    // Fondo oscuro aero con resplandor neón reactivo
-    ctx.fillStyle = 'rgba(6, 14, 24, 0.92)';
+    // Fondo de cristal blanco aero con resplandor neón reactivo
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
     ctx.shadowColor = color;
-    ctx.shadowBlur = 20;
+    ctx.shadowBlur = 18;
     ctx.shadowOffsetY = 2;
 
     ctx.beginPath();
-    ctx.roundRect(-bannerWidth / 2, yOffset - bannerHeight / 2, bannerWidth, bannerHeight, 14);
+    ctx.roundRect(-bannerWidth / 2, yOffset - bannerHeight / 2, bannerWidth, bannerHeight, 16);
     ctx.fill();
 
     // Borde de cristal reactivo
@@ -282,7 +282,7 @@ export class CanvasRenderer {
       ctx.shadowColor = 'transparent';
       ctx.shadowBlur = 0;
       ctx.font = '600 15px "Inter", sans-serif';
-      ctx.fillStyle = '#cbd5e1';
+      ctx.fillStyle = '#475569';
       ctx.fillText(subtext, 0, yOffset + 22);
     }
 

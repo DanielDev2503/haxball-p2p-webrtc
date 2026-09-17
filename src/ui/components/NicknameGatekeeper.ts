@@ -1,3 +1,6 @@
+import { animate } from 'motion';
+import { renderIcon, User } from '../utils/icons';
+
 export const STORAGE_KEY_NICKNAME = 'haxball_nickname';
 export const LEGACY_STORAGE_KEY_NICKNAME = 'haxball_player_name';
 
@@ -6,6 +9,7 @@ export class NicknameGatekeeper {
   private inputEl: HTMLInputElement | null = null;
   private saveBtn: HTMLButtonElement | null = null;
   private errorEl: HTMLElement | null = null;
+  private avatarEl: HTMLElement | null = null;
 
   public onNicknameConfirmed?: (nickname: string) => void;
 
@@ -30,7 +34,16 @@ export class NicknameGatekeeper {
       console.warn('[NicknameGatekeeper] Error element "#gatekeeperError" was not found in DOM.');
     }
 
+    this.avatarEl = document.getElementById('gatekeeperAvatar');
+
+    this.renderAvatar();
     this.setupListeners();
+  }
+
+  private renderAvatar(): void {
+    if (this.avatarEl) {
+      renderIcon(this.avatarEl, User, { size: 36, color: '#0284C7' });
+    }
   }
 
   public checkOrPrompt(): string | null {
@@ -90,6 +103,20 @@ export class NicknameGatekeeper {
       if (this.errorEl) {
         this.errorEl.style.display = 'none';
       }
+
+      const card = this.modalEl.querySelector('.modal-content') as HTMLElement | null;
+      if (card) {
+        try {
+          animate(
+            card,
+            { opacity: [0, 1], transform: ['translateY(18px) scale(0.95)', 'translateY(0px) scale(1)'] },
+            { duration: 0.25, ease: [0.16, 1, 0.3, 1] }
+          );
+        } catch {
+          // Graceful fallback for test environments without full web animations
+        }
+      }
+
       setTimeout(() => {
         this.inputEl?.focus();
         this.inputEl?.select();
