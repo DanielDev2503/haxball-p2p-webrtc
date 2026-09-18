@@ -164,8 +164,17 @@ export class CanvasRenderer {
         this.drawPauseOverlay(ctx);
         break;
       case MatchPhase.MATCH_ENDED: {
-        const title = winningTeam ? `¡VICTORIA ${winningTeam}!` : '¡EMPATE!';
-        this.drawCenterBanner(ctx, title, winningTeamColor);
+        let title = winningTeam ? `¡VICTORIA ${winningTeam}!` : '¡EMPATE!';
+        let bannerColor = winningTeamColor;
+        let subText: string | undefined = undefined;
+
+        if (snapshot.isGoldenGoal && winningTeam) {
+          title = `¡GOL DE ORO! - VICTORIA ${winningTeam}`;
+          bannerColor = '#FFB800';
+          subText = 'PRÓRROGA CONCLUIDA POR GOL SÚBITO';
+        }
+
+        this.drawCenterBanner(ctx, title, bannerColor, subText);
         break;
       }
       case MatchPhase.PLAYING:

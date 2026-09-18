@@ -5,6 +5,7 @@ export class ScoreboardHUD {
   private redScoreEl: HTMLElement | null = null;
   private blueScoreEl: HTMLElement | null = null;
   private timerEl: HTMLElement | null = null;
+  private goldenGoalBadgeEl: HTMLElement | null = null;
   private pingEl: HTMLElement | null = null;
   private pingDotEl: HTMLElement | null = null;
   private fpsEl: HTMLElement | null = null;
@@ -25,6 +26,8 @@ export class ScoreboardHUD {
     if (!this.timerEl) {
       console.warn('[ScoreboardHUD] Element "#matchTimer" was not found in DOM.');
     }
+
+    this.goldenGoalBadgeEl = document.getElementById('goldenGoalBadge');
 
     this.pingEl = document.getElementById('pingValue');
     if (!this.pingEl) {
@@ -89,10 +92,11 @@ export class ScoreboardHUD {
     }
   }
 
-  public update(redScore: number, blueScore: number, timerSeconds: number): void {
+  public update(redScore: number, blueScore: number, timerSeconds: number, isGoldenGoal?: boolean): void {
     const mins = Math.floor(timerSeconds / 60);
     const secs = timerSeconds % 60;
-    const timeStr = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    const prefix = isGoldenGoal ? '+' : '';
+    const timeStr = `${prefix}${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
     // Sincronizar átomos en el almacén reactivo
     $score.set({ red: redScore, blue: blueScore });
@@ -102,6 +106,16 @@ export class ScoreboardHUD {
     if (this.redScoreEl) this.redScoreEl.textContent = redScore.toString();
     if (this.blueScoreEl) this.blueScoreEl.textContent = blueScore.toString();
     if (this.timerEl) this.timerEl.textContent = timeStr;
+
+    if (this.goldenGoalBadgeEl) {
+      if (isGoldenGoal) {
+        this.goldenGoalBadgeEl.classList.remove('u-hidden', 'ui-screen-hidden');
+        this.goldenGoalBadgeEl.style.display = 'inline-flex';
+      } else {
+        this.goldenGoalBadgeEl.classList.add('u-hidden');
+        this.goldenGoalBadgeEl.style.display = 'none';
+      }
+    }
   }
 
   public updateStats(pingMs: number, fps: number): void {

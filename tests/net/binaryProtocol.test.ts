@@ -116,4 +116,34 @@ describe('Binary Protocol Serialization', () => {
     expect(decoded!.discs[2].kicking).toBe(false);
     expect(decoded!.discs[2].avatar).toBe('M9');
   });
+
+  it('correctly encodes and decodes the isGoldenGoal flag in SnapshotPacket header bit 3', () => {
+    const snapGolden: GameSnapshot = {
+      tick: 500,
+      matchPhase: MatchPhase.PLAYING,
+      timerSeconds: 45,
+      subStateTimer: 0,
+      targetTeam: 0,
+      scoreRed: 1,
+      scoreBlue: 1,
+      matchState: MatchPhase.PLAYING,
+      matchTimerSeconds: 45,
+      redScore: 1,
+      blueScore: 1,
+      isGoldenGoal: true,
+      discs: []
+    };
+
+    const buf = SnapshotPacket.encode(snapGolden);
+    expect(buf.byteLength).toBe(SnapshotPacket.HEADER_LENGTH); // Exactly 17 bytes!
+    const decoded = SnapshotPacket.decode(buf);
+    expect(decoded).not.toBeNull();
+    expect(decoded!.isGoldenGoal).toBe(true);
+
+    // Verify false case
+    snapGolden.isGoldenGoal = false;
+    const buf2 = SnapshotPacket.encode(snapGolden);
+    const decoded2 = SnapshotPacket.decode(buf2);
+    expect(decoded2!.isGoldenGoal).toBe(false);
+  });
 });

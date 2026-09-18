@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveGoalAndPitchBoundaries,
-  resolvePredictivePlayerCollision
+  resolvePredictivePlayerCollision,
+  resolvePredictiveBallCollision
 } from '../../src/core/physics/Collision';
 
 describe('Goal Net Depth & Client Predictive Anti-Clipping', () => {
@@ -135,6 +136,108 @@ describe('Goal Net Depth & Client Predictive Anti-Clipping', () => {
       expect(localPos.x).toBe(0);
       expect(localPos.y).toBe(0);
       expect(localVel.x).toBe(5);
+      expect(localVel.y).toBe(5);
+    });
+  });
+
+  describe('resolvePredictiveBallCollision (Player-Ball Anti-Clipping)', () => {
+    it('resolves instant positional separation and cancels incoming velocity component', () => {
+      const localPos = { x: 10, y: 0 };
+      const localVel = { x: 25, y: 0 }; // Moving rightwards into ball
+      const playerRadius = 15;
+
+      const ballPos = { x: 30, y: 0 }; // d = 20 < 15 + 10 = 25 -> overlap = 5
+      const ballRadius = 10;
+
+      const collided = resolvePredictiveBallCollision(
+        localPos,
+        localVel,
+        playerRadius,
+        ballPos,
+        ballRadius
+      );
+
+      expect(collided).toBe(true);
+
+      // Normal is (10 - 30) / 20 = -1 in X.
+      // localPos moves along normal by overlap: 10 + (-1 * 5) = 5
+      expect(localPos.x).toBeCloseTo(5, 4);
+      expect(localPos.y).toBe(0);
+
+      // New distance is exactly 25
+      const newDist = Math.hypot(localPos.x - ballPos.x, localPos.y - ballPos.y);
+      expect(newDist).toBeCloseTo(25, 4);
+
+      // vPerp = (25 * -1) = -25 < 0
+      // localVel.x -= (-25) * (-1) = 25 - 25 = 0
+      expect(localVel.x).toBeCloseTo(0, 4);
+      expect(localVel.y).toBe(0);
+    });
+
+    it('preserves tangential and outgoing velocity components when separating from ball', () => {
+      const localPos = { x: 10, y: 0 };
+      const localVel = { x: -30, y: 15 }; // Moving leftwards away from ball and upwards tangentially
+      const playerRadius = 15;
+      const ballPos = { x: 30, y: 0 }; // Overlap = 5
+      const ballRadius = 10;
+
+      const collided = resolvePredictiveBallCollision(
+        localPos,
+        localVel,
+        playerRadius,
+        ballPos,
+        ballRadius
+      );
+
+      expect(collided).toBe(true);
+      expect(localPos.x).toBeCloseTo(5, 4);
+
+      // Since normal is (-1, 0), vPerp = (-30 * -1) = 30 >= 0 (moving away)
+      // Velocity should NOT be reduced or canceled
+      expect(localVel.x).toBeCloseTo(-30, 4);
+      expect(localVel.y).toBeCloseTo(15, 4);
+    });
+
+    it('handles exact center overlap (d = 0) with non-zero fallback normal', () => {
+      const localPos = { x: 50, y: 50 };
+      const localVel = { x: 0, y: 0 };
+      const playerRadius = 15;
+      const ballPos = { x: 50, y: 50 };
+      const ballRadius = 10;
+
+      const collided = resolvePredictiveBallCollision(
+        localPos,
+        localVel,
+        playerRadius,
+        ballPos,
+        ballRadius
+      );
+
+      expect(collided).toBe(true);
+      // Pushed out to exactly 25 units away
+      const newDist = Math.hypot(localPos.x - ballPos.x, localPos.y - ballPos.y);
+      expect(newDist).toBeCloseTo(25, 4);
+    });
+
+    it('returns false and does not modify player when distance >= sum of radii', () => {
+      const localPos = { x: 0, y: 0 };
+      const localVel = { x: 10, y: 5 };
+      const playerRadius = 15;
+      const ballPos = { x: 50, y: 0 }; // d = 50 > 25
+      const ballRadius = 10;
+
+      const collided = resolvePredictiveBallCollision(
+        localPos,
+        localVel,
+        playerRadius,
+        ballPos,
+        ballRadius
+      );
+
+      expect(collided).toBe(false);
+      expect(localPos.x).toBe(0);
+      expect(localPos.y).toBe(0);
+      expect(localVel.x).toBe(10);
       expect(localVel.y).toBe(5);
     });
   });

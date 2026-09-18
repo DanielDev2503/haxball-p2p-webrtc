@@ -26,6 +26,7 @@ export class GameEngine {
   public config: MatchConfig;
   public lastScoringTeam: 'red' | 'blue' | null = null;
   public soundMask: number = 0;
+  public isGoldenGoal: boolean = false;
 
   // Event callbacks
   public onGoal?: (scoringTeam: 'red' | 'blue', redScore: number, blueScore: number) => void;
@@ -190,6 +191,7 @@ export class GameEngine {
     this.redScore = 0;
     this.blueScore = 0;
     this.lastScoringTeam = null;
+    this.isGoldenGoal = false;
     this.kickoffState = {
       active: true,
       mode: 'NEUTRAL',
@@ -207,6 +209,7 @@ export class GameEngine {
     this.redScore = 0;
     this.blueScore = 0;
     this.lastScoringTeam = null;
+    this.isGoldenGoal = false;
     this.kickoffState = {
       active: false,
       mode: 'NEUTRAL',
@@ -321,7 +324,10 @@ export class GameEngine {
     if (this.fsm.currentState === MatchPhase.PLAYING) {
       // Advance match timer (every 60 ticks = 1 second) únicamente en PLAYING
       if (this.tickCount % 60 === 0) {
-        if (this.config.timeLimitSeconds > 0) {
+        if (this.isGoldenGoal) {
+          // En prórroga (Gol de Oro): el cronómetro avanza como tiempo extra suplementario
+          this.matchTimerSeconds++;
+        } else if (this.config.timeLimitSeconds > 0) {
           if (this.matchTimerSeconds > 0) {
             this.matchTimerSeconds--;
             if (this.matchTimerSeconds === 0) {
@@ -430,11 +436,19 @@ export class GameEngine {
           this.onGoal(goalScored, this.redScore, this.blueScore);
         }
 
-        const matchEnded = this.checkMatchConclusion();
-        if (!matchEnded) {
-          this.fsm.startGoalCelebration(180);
+        if (this.isGoldenGoal) {
+          // ¡GOL DE ORO! En prórroga cualquier gol concluye la partida inmediatamente
+          this.fsm.startMatchEnded(goalScored, 180);
           if (this.onStateChange) {
             this.onStateChange(this.fsm.currentState);
+          }
+        } else {
+          const matchEnded = this.checkMatchConclusion();
+          if (!matchEnded) {
+            this.fsm.startGoalCelebration(180);
+            if (this.onStateChange) {
+              this.onStateChange(this.fsm.currentState);
+            }
           }
         }
       }
@@ -469,13 +483,18 @@ export class GameEngine {
         return true;
       }
     }
-    if (this.config.timeLimitSeconds > 0 && this.matchTimerSeconds <= 0) {
-      let winner: 'red' | 'blue' | null = null;
-      if (this.redScore > this.blueScore) winner = 'red';
-      else if (this.blueScore > this.redScore) winner = 'blue';
-      this.fsm.startMatchEnded(winner, 180);
-      if (this.onStateChange) this.onStateChange(this.fsm.currentState);
-      return true;
+    if (this.config.timeLimitSeconds > 0 && this.matchTimerSeconds <= 0 && !this.isGoldenGoal) {
+      if (this.redScore === this.blueScore) {
+        // Empate reglamentario al agotarse el tiempo: activar prórroga indefinida de Gol de Oro
+        this.isGoldenGoal = true;
+        this.matchTimerSeconds = 0;
+        return false;
+      } else {
+        const winner = this.redScore > this.blueScore ? 'red' : 'blue';
+        this.fsm.startMatchEnded(winner, 180);
+        if (this.onStateChange) this.onStateChange(this.fsm.currentState);
+        return true;
+      }
     }
     return false;
   }
@@ -537,6 +556,7 @@ export class GameEngine {
       kickoffActive: this.kickoffState.active,
       kickoffMode: this.kickoffState.mode,
       possessingTeam: this.kickoffState.possessingTeam,
+      isGoldenGoal: this.isGoldenGoal,
       discs: discSnapshots,
 
       // Compatibilidad

@@ -22,7 +22,7 @@ import { MatchStatePayload } from '../net/protocol/ControlMessages';
 import { KeyBinds } from './InputManager';
 import { UIStateMachine, UIState } from '../ui/UIStateMachine';
 import { $matchPhase } from '../ui/stores/gameStore';
-import { resolveGoalAndPitchBoundaries, resolvePredictivePlayerCollision } from '../core/physics/Collision';
+import { resolveGoalAndPitchBoundaries, resolvePredictivePlayerCollision, resolvePredictiveBallCollision } from '../core/physics/Collision';
 
 export function canChangeTeam(
   senderPeerId: string,
@@ -846,7 +846,10 @@ export class GameApp {
 
     engine.onMatchEnd = (winner) => {
       this.audioManager.playGoalWhistle();
-      const outcomeText = winner ? `¡Victoria del Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}!` : '¡Empate!';
+      let outcomeText = winner ? `¡Victoria del Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}!` : '¡Empate!';
+      if (engine.isGoldenGoal && winner) {
+        outcomeText = `¡Gol de Oro! Victoria del Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}`;
+      }
       this.enforceMenuState(MatchPhase.STOPPED, outcomeText);
       this.broadcastMatchStateSync();
       this.broadcastSnapshot();
@@ -1921,6 +1924,21 @@ export class GameApp {
           other.radius || 15
         );
       }
+
+      // 4. Colisión Predictiva Jugador-Balón (Anti-Clipping en No-Host, cero GC)
+      for (let i = 0; i < currentSnap.discs.length; i++) {
+        const disc = currentSnap.discs[i];
+        if (disc.team === 0) {
+          resolvePredictiveBallCollision(
+            this.predictedPos,
+            this.predictedVel,
+            15,
+            disc,
+            disc.radius || 10
+          );
+          break;
+        }
+      }
     }
   }
 
@@ -2069,6 +2087,18 @@ export class GameApp {
                 myDisc.vx = this.predictedVel.x;
                 myDisc.vy = this.predictedVel.y;
                 myDisc.kicking = (this.inputManager.getMask() & INPUT_KICK) !== 0;
+
+                // Anti-clipping visual instantáneo con el balón para tasas de refresco elevadas
+                const ball = activeSnapshot.discs.find(d => d.team === 0);
+                if (ball) {
+                  resolvePredictiveBallCollision(
+                    myDisc,
+                    myDisc,
+                    myDisc.radius || 15,
+                    ball,
+                    ball.radius || 10
+                  );
+                }
               }
             }
           }
@@ -2079,7 +2109,8 @@ export class GameApp {
           this.hud.update(
             activeSnapshot.scoreRed ?? activeSnapshot.redScore,
             activeSnapshot.scoreBlue ?? activeSnapshot.blueScore,
-            activeSnapshot.timerSeconds ?? activeSnapshot.matchTimerSeconds
+            activeSnapshot.timerSeconds ?? activeSnapshot.matchTimerSeconds,
+            activeSnapshot.isGoldenGoal
           );
 
           // Sincronización reactiva autoritativa de fases en cliente
@@ -2107,7 +2138,9 @@ export class GameApp {
               if (currentPhase === MatchPhase.STOPPED) {
                 const red = activeSnapshot.scoreRed ?? activeSnapshot.redScore;
                 const blue = activeSnapshot.scoreBlue ?? activeSnapshot.blueScore;
-                if (red > blue) {
+                if (activeSnapshot.isGoldenGoal && red !== blue) {
+                  outcomeText = red > blue ? '¡Gol de Oro! Victoria del Equipo Rojo' : '¡Gol de Oro! Victoria del Equipo Azul';
+                } else if (red > blue) {
                   outcomeText = '¡Victoria del Equipo Rojo!';
                 } else if (blue > red) {
                   outcomeText = '¡Victoria del Equipo Azul!';

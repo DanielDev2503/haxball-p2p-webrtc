@@ -260,3 +260,46 @@ export function resolvePredictivePlayerCollision(
 
   return true;
 }
+
+/**
+ * Resuelve la colisión predictiva analítica entre el jugador local y el balón (No-Host anti-clipping).
+ * Erradica la penetración o superposición visual proyectando al jugador fuera del radio del balón
+ * y anulando la componente de velocidad entrante sin generar alocaciones en el GC.
+ */
+export function resolvePredictiveBallCollision(
+  localPos: { x: number; y: number },
+  localVel: { x: number; y: number },
+  playerRadius: number,
+  ballPos: { x: number; y: number },
+  ballRadius: number = 10
+): boolean {
+  const dx = localPos.x - ballPos.x;
+  const dy = localPos.y - ballPos.y;
+  const distSq = dx * dx + dy * dy;
+  const minDist = playerRadius + ballRadius;
+
+  if (distSq >= minDist * minDist) return false;
+
+  const dist = Math.sqrt(distSq);
+  let nx = 1;
+  let ny = 0;
+
+  if (dist > 1e-9) {
+    nx = dx / dist;
+    ny = dy / dist;
+  }
+
+  // Penetración posicional instantánea: proyecta al jugador fuera del volumen del balón
+  const overlap = minDist - dist;
+  localPos.x += nx * overlap;
+  localPos.y += ny * overlap;
+
+  // Anulación de componente de velocidad entrante perpendicular hacia el centro del balón
+  const vPerp = localVel.x * nx + localVel.y * ny;
+  if (vPerp < 0) {
+    localVel.x -= vPerp * nx;
+    localVel.y -= vPerp * ny;
+  }
+
+  return true;
+}

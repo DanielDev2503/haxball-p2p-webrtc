@@ -30,6 +30,7 @@ export interface GameSnapshot {
   kickoffActive?: boolean;
   kickoffMode?: 'NEUTRAL' | 'TEAM_KICKOFF';
   possessingTeam?: 'red' | 'blue' | null;
+  isGoldenGoal?: boolean;
   discs: DiscSnapshot[];
 
   // Compatibilidad hacia atrás

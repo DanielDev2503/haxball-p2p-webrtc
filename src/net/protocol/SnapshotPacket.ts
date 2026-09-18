@@ -25,6 +25,7 @@ export class SnapshotPacket {
     if (snapshot.kickoffMode === 'TEAM_KICKOFF') targetByte |= 0x40;
     if (snapshot.possessingTeam === 'blue') targetByte |= 0x20;
     else if (snapshot.possessingTeam === 'red') targetByte |= 0x10;
+    if (snapshot.isGoldenGoal) targetByte |= 0x08;
 
     const soundMask = snapshot.soundMask ?? 0;
 
@@ -84,6 +85,7 @@ export class SnapshotPacket {
     const subStateTimer = view.getFloat32(8, false);
     const rawTarget = view.getUint8(12);
     const targetTeam = rawTarget & 0x03;
+    const isGoldenGoal = (rawTarget & 0x08) !== 0;
     const kickoffActive = (rawTarget & 0x80) !== 0;
     const isTeamKickoff = (rawTarget & 0x40) !== 0;
     const kickoffMode: 'NEUTRAL' | 'TEAM_KICKOFF' = isTeamKickoff ? 'TEAM_KICKOFF' : 'NEUTRAL';
@@ -147,6 +149,7 @@ export class SnapshotPacket {
       kickoffActive,
       kickoffMode,
       possessingTeam,
+      isGoldenGoal,
       discs,
 
       // Compat
