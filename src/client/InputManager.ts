@@ -1,4 +1,4 @@
-import { INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK } from '../core/game/Player';
+import { INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK, INPUT_TURBO, INPUT_DASH } from '../core/game/Player';
 
 export interface KeyBinds {
   up: string[];
@@ -6,17 +6,29 @@ export interface KeyBinds {
   left: string[];
   right: string[];
   kick: string[];
+  curveUp: string[];
+  curveDown: string[];
+  curveLeft: string[];
+  curveRight: string[];
+  turbo: string[];
+  dash: string[];
   menu: string[];
   pause: string[];
   chat: string[];
 }
 
 export const DEFAULT_KEYBINDS: KeyBinds = {
-  up: ['KeyW', 'ArrowUp'],
-  down: ['KeyS', 'ArrowDown'],
-  left: ['KeyA', 'ArrowLeft'],
-  right: ['KeyD', 'ArrowRight'],
-  kick: ['Space', 'KeyX'],
+  up: ['KeyW'],
+  down: ['KeyS'],
+  left: ['KeyA'],
+  right: ['KeyD'],
+  kick: ['KeyX'],
+  curveUp: ['ArrowUp', 'KeyI'],
+  curveDown: ['ArrowDown', 'KeyK'],
+  curveLeft: ['ArrowLeft', 'KeyJ'],
+  curveRight: ['ArrowRight', 'KeyL'],
+  turbo: ['ShiftLeft', 'ShiftRight'],
+  dash: ['KeyE', 'Space'],
   menu: ['Escape'],
   pause: ['KeyP'],
   chat: ['Enter']
@@ -30,6 +42,7 @@ export class InputManager {
   public onInputChanged?: (mask: number) => void;
   public keyBinds: KeyBinds;
   public isEnabled: boolean = false;
+  private dashTriggered: boolean = false;
 
   constructor() {
     this.keyBinds = this.loadKeyBinds();
@@ -57,6 +70,12 @@ export class InputManager {
           left: Array.isArray(parsed.left) ? parsed.left : DEFAULT_KEYBINDS.left,
           right: Array.isArray(parsed.right) ? parsed.right : DEFAULT_KEYBINDS.right,
           kick: Array.isArray(parsed.kick) ? parsed.kick : DEFAULT_KEYBINDS.kick,
+          curveUp: Array.isArray(parsed.curveUp) ? parsed.curveUp : DEFAULT_KEYBINDS.curveUp,
+          curveDown: Array.isArray(parsed.curveDown) ? parsed.curveDown : DEFAULT_KEYBINDS.curveDown,
+          curveLeft: Array.isArray(parsed.curveLeft) ? parsed.curveLeft : DEFAULT_KEYBINDS.curveLeft,
+          curveRight: Array.isArray(parsed.curveRight) ? parsed.curveRight : DEFAULT_KEYBINDS.curveRight,
+          turbo: Array.isArray(parsed.turbo) ? parsed.turbo : DEFAULT_KEYBINDS.turbo,
+          dash: Array.isArray(parsed.dash) ? parsed.dash : DEFAULT_KEYBINDS.dash,
           menu: Array.isArray(parsed.menu) ? parsed.menu : DEFAULT_KEYBINDS.menu,
           pause: Array.isArray(parsed.pause) ? parsed.pause : DEFAULT_KEYBINDS.pause,
           chat: Array.isArray(parsed.chat) ? parsed.chat : DEFAULT_KEYBINDS.chat
@@ -94,7 +113,13 @@ export class InputManager {
       this.keyBinds.down.includes(code) ||
       this.keyBinds.left.includes(code) ||
       this.keyBinds.right.includes(code) ||
-      this.keyBinds.kick.includes(code)
+      this.keyBinds.kick.includes(code) ||
+      this.keyBinds.curveUp.includes(code) ||
+      this.keyBinds.curveDown.includes(code) ||
+      this.keyBinds.curveLeft.includes(code) ||
+      this.keyBinds.curveRight.includes(code) ||
+      this.keyBinds.turbo.includes(code) ||
+      this.keyBinds.dash.includes(code)
     );
   }
 
@@ -114,6 +139,10 @@ export class InputManager {
 
       if (this.isGameplayKey(e.code)) {
         e.preventDefault();
+      }
+
+      if (this.isActionKey('dash', e.code)) {
+        this.dashTriggered = true;
       }
 
       if (!this.keyStates.get(e.code)) {
@@ -149,6 +178,7 @@ export class InputManager {
 
   public resetMovement(): void {
     this.keyStates.clear();
+    this.dashTriggered = false;
     if (this.currentMask !== 0) {
       this.currentMask = 0;
       if (this.onInputChanged) {
@@ -164,6 +194,8 @@ export class InputManager {
     let left = false;
     let right = false;
     let kick = false;
+    let turbo = false;
+    let dash = false;
 
     for (const [code, isPressed] of this.keyStates.entries()) {
       if (!isPressed) continue;
@@ -172,6 +204,8 @@ export class InputManager {
       if (this.keyBinds.left.includes(code)) left = true;
       if (this.keyBinds.right.includes(code)) right = true;
       if (this.keyBinds.kick.includes(code)) kick = true;
+      if (this.keyBinds.turbo?.includes(code)) turbo = true;
+      if (this.keyBinds.dash?.includes(code)) dash = true;
     }
 
     if (up) mask |= INPUT_UP;
@@ -179,6 +213,8 @@ export class InputManager {
     if (left) mask |= INPUT_LEFT;
     if (right) mask |= INPUT_RIGHT;
     if (kick) mask |= INPUT_KICK;
+    if (turbo) mask |= INPUT_TURBO;
+    if (dash) mask |= INPUT_DASH;
 
     if (mask !== this.currentMask) {
       this.currentMask = mask;
@@ -190,5 +226,31 @@ export class InputManager {
 
   public getMask(): number {
     return this.currentMask;
+  }
+
+  public getCurveVector(): { x: number; y: number } {
+    let cx = 0;
+    let cy = 0;
+    for (const [code, isPressed] of this.keyStates.entries()) {
+      if (!isPressed) continue;
+      if (this.keyBinds.curveLeft?.includes(code)) cx -= 1;
+      if (this.keyBinds.curveRight?.includes(code)) cx += 1;
+      if (this.keyBinds.curveUp?.includes(code)) cy -= 1;
+      if (this.keyBinds.curveDown?.includes(code)) cy += 1;
+    }
+    return { x: cx, y: cy };
+  }
+
+  public isTurboActive(): boolean {
+    for (const [code, isPressed] of this.keyStates.entries()) {
+      if (isPressed && this.keyBinds.turbo?.includes(code)) return true;
+    }
+    return false;
+  }
+
+  public consumeDashTrigger(): boolean {
+    const triggered = this.dashTriggered;
+    this.dashTriggered = false;
+    return triggered;
   }
 }

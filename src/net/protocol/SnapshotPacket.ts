@@ -4,7 +4,7 @@ import { MatchPhase, toMatchPhase } from '../../core/game/GameFSM';
 
 export class SnapshotPacket {
   public static readonly HEADER_LENGTH = 17;
-  public static readonly DISC_LENGTH = 18;
+  public static readonly DISC_LENGTH = 20;
 
   public static encode(snapshot: GameSnapshot): ArrayBuffer {
     const discCount = snapshot.discs.length;
@@ -41,7 +41,7 @@ export class SnapshotPacket {
     view.setUint8(15, soundMask);
     view.setUint8(16, discCount);
 
-    // Disc records
+    // Disc records (20 bytes per disc)
     let offset = SnapshotPacket.HEADER_LENGTH;
     for (let i = 0; i < discCount; i++) {
       const disc = snapshot.discs[i];
@@ -50,6 +50,12 @@ export class SnapshotPacket {
 
       let flags = 0;
       if (disc.kicking) flags |= 1 << 0;
+      if (disc.team === 0) {
+        if (disc.isSpinActive) flags |= 1 << 1;
+      } else {
+        if (disc.isDashing) flags |= 1 << 1;
+        if (disc.isTurbo) flags |= 1 << 2;
+      }
       view.setUint8(offset + 3, flags);
 
       view.setFloat32(offset + 4, disc.x, false);
@@ -65,6 +71,12 @@ export class SnapshotPacket {
       const c1 = disc.avatar.charCodeAt(0) || 32;
       const c2 = disc.avatar.charCodeAt(1) || 32;
       view.setUint16(offset + 16, (c1 << 8) | c2, false);
+
+      // Stamina (UInt8: 0 a 100) y curveFactor (Int8: -128 a 127)
+      const staminaVal = disc.team !== 0 ? Math.max(0, Math.min(100, Math.round(disc.stamina ?? 100))) : 0;
+      const curveFactorVal = disc.team === 0 ? Math.max(-128, Math.min(127, Math.round(disc.curveFactor ?? 0))) : 0;
+      view.setUint8(offset + 18, staminaVal);
+      view.setInt8(offset + 19, curveFactorVal);
 
       offset += SnapshotPacket.DISC_LENGTH;
     }
@@ -100,8 +112,13 @@ export class SnapshotPacket {
     const soundMask = view.getUint8(15);
     const discCount = view.getUint8(16);
 
-    const expectedLength = SnapshotPacket.HEADER_LENGTH + discCount * SnapshotPacket.DISC_LENGTH;
-    if (view.byteLength < expectedLength) return null;
+    const discStride = discCount > 0
+      ? Math.floor((view.byteLength - SnapshotPacket.HEADER_LENGTH) / discCount)
+      : SnapshotPacket.DISC_LENGTH;
+
+    if (discStride < 18) return null;
+    const expectedMinLength = SnapshotPacket.HEADER_LENGTH + discCount * discStride;
+    if (view.byteLength < expectedMinLength) return null;
 
     const discs: DiscSnapshot[] = [];
     let offset = SnapshotPacket.HEADER_LENGTH;
@@ -111,6 +128,9 @@ export class SnapshotPacket {
       const team = view.getUint8(offset + 2) as 0 | 1 | 2;
       const flags = view.getUint8(offset + 3);
       const kicking = (flags & (1 << 0)) !== 0;
+      const isDashing = team !== 0 && (flags & (1 << 1)) !== 0;
+      const isTurbo = team !== 0 && (flags & (1 << 2)) !== 0;
+      const isSpinActive = team === 0 && (flags & (1 << 1)) !== 0;
 
       const x = view.getFloat32(offset + 4, false);
       const y = view.getFloat32(offset + 8, false);
@@ -122,6 +142,13 @@ export class SnapshotPacket {
       const c2 = String.fromCharCode(avatarChars & 0xff);
       const avatar = (c1 + c2).trim();
 
+      let stamina = 100;
+      let curveFactor = 0;
+      if (discStride >= 20) {
+        stamina = view.getUint8(offset + 18);
+        curveFactor = view.getInt8(offset + 19);
+      }
+
       discs.push({
         id,
         team,
@@ -131,10 +158,15 @@ export class SnapshotPacket {
         vy,
         radius: team === 0 ? 10 : 15,
         kicking,
-        avatar
+        avatar,
+        stamina: team !== 0 ? stamina : undefined,
+        isDashing: team !== 0 ? isDashing : undefined,
+        isTurbo: team !== 0 ? isTurbo : undefined,
+        isSpinActive: team === 0 ? isSpinActive : undefined,
+        curveFactor: team === 0 ? curveFactor : undefined
       });
 
-      offset += SnapshotPacket.DISC_LENGTH;
+      offset += discStride;
     }
 
     return {

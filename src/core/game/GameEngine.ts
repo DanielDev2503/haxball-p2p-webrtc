@@ -1,7 +1,7 @@
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Stadium } from '../entities/Stadium';
 import { Disc, COLLISION_GROUP_BALL, COLLISION_GROUP_RED, COLLISION_GROUP_BLUE } from '../entities/Disc';
-import { Player, INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK } from './Player';
+import { Player, INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK, INPUT_TURBO, INPUT_DASH } from './Player';
 import { GameFSM, MatchPhase } from './GameFSM';
 import { GameSnapshot, DiscSnapshot, MatchConfig, KickoffState } from './GameState';
 import { SOUND_KICK, SOUND_POST_HIT, SOUND_GOAL } from '../../net/protocol/BinaryProtocol';
@@ -254,6 +254,7 @@ export class GameEngine {
     this.ball.pos.set(0, 0);
     this.ball.vel.zero();
     this.ball.prevPos.set(0, 0);
+    this.ball.resetCurve();
 
     // Arrange Red and Blue players
     let redIndex = 0;
@@ -261,11 +262,21 @@ export class GameEngine {
 
     for (const [playerId, player] of this.players.entries()) {
       player.inputMask = 0;
+      player.stamina = 100;
+      player.isDashing = false;
+      player.dashTicksRemaining = 0;
+      player.isTurbo = false;
+      player.triggerDash = false;
+
       const disc = this.playerDiscs.get(playerId);
       if (!disc) continue;
 
       disc.vel.zero();
       disc.kicking = false;
+      disc.stamina = 100;
+      disc.isDashing = false;
+      disc.isTurbo = false;
+
       if (player.team === 'red') {
         const offset = redIndex * 40 - 20 * redIndex;
         disc.pos.set(-180, offset);
@@ -341,7 +352,8 @@ export class GameEngine {
       }
     }
 
-    // Apply player movement and kicking (tanto en PLAYING como en GOAL_CELEBRATION)
+    // Apply player movement, stamina, turbo, dash and kicking (tanto en PLAYING como en GOAL_CELEBRATION)
+    const dt = 1 / 60;
     const accel = 7.5;
     const kickStrength = 320.0;
     const kickReach = 15 + 10 + 6; // player radius (15) + ball radius (10) + reach margin (6)
@@ -361,13 +373,88 @@ export class GameEngine {
       if (mask & INPUT_LEFT) dirX -= 1;
       if (mask & INPUT_RIGHT) dirX += 1;
 
-      if (dirX !== 0 || dirY !== 0) {
-        const len = Math.sqrt(dirX * dirX + dirY * dirY);
-        disc.vel.x += (dirX / len) * accel;
-        disc.vel.y += (dirY / len) * accel;
+      const hasMoveInput = (dirX !== 0 || dirY !== 0);
+      let uMoveX = 0;
+      let uMoveY = 0;
+      if (hasMoveInput) {
+        const len = Math.hypot(dirX, dirY);
+        uMoveX = dirX / len;
+        uMoveY = dirY / len;
       }
 
-      // Kicking mechanic
+      const vSpeed = Math.hypot(disc.vel.x, disc.vel.y);
+
+      // Dash Mechanic (salto rápido predeterminado, consume 50% de estamina)
+      const wantsDash = ((mask & INPUT_DASH) !== 0) || player.triggerDash;
+      if (wantsDash && player.stamina >= 50 && !player.isDashing) {
+        player.stamina -= 50;
+        player.isDashing = true;
+        player.dashTicksRemaining = 4; // K = 4 ticks (66.6 ms)
+
+        if (hasMoveInput) {
+          player.dashDirX = uMoveX;
+          player.dashDirY = uMoveY;
+        } else if (vSpeed > 0.01) {
+          player.dashDirX = disc.vel.x / vSpeed;
+          player.dashDirY = disc.vel.y / vSpeed;
+        } else {
+          player.dashDirX = player.team === 'red' ? 1 : -1;
+          player.dashDirY = 0;
+        }
+        player.triggerDash = false;
+      }
+
+      if (player.isDashing) {
+        player.dashTicksRemaining--;
+        // v_dash = u_dir * 18.75 px/tick (18.75 * 60 = 1125 px/s)
+        const dashSpeed = 18.75 * 60;
+        disc.vel.x = player.dashDirX * dashSpeed;
+        disc.vel.y = player.dashDirY * dashSpeed;
+
+        if (player.dashTicksRemaining <= 0) {
+          player.isDashing = false;
+        }
+      } else {
+        // Turbo Mechanic (sprint continuo a 40%/s mientras se mantenga presionada la tecla y se mueva)
+        const wantsTurbo = ((mask & INPUT_TURBO) !== 0) || player.isTurbo;
+        if (wantsTurbo && hasMoveInput && player.stamina > 0) {
+          player.isTurbo = true;
+          player.stamina = Math.max(0, player.stamina - 40 * dt);
+          if (player.stamina <= 0) {
+            player.isTurbo = false;
+          }
+
+          // Aceleración de Turbo alcanzando v_turbo = 150 px/s (2.5 px/tick, ~45% sobre base)
+          disc.vel.x += uMoveX * (accel * 1.45);
+          disc.vel.y += uMoveY * (accel * 1.45);
+
+          const curSpeed = Math.hypot(disc.vel.x, disc.vel.y);
+          if (curSpeed > 150) {
+            disc.vel.x = (disc.vel.x / curSpeed) * 150;
+            disc.vel.y = (disc.vel.y / curSpeed) * 150;
+          }
+        } else {
+          player.isTurbo = false;
+          if (hasMoveInput) {
+            disc.vel.x += uMoveX * accel;
+            disc.vel.y += uMoveY * accel;
+          }
+        }
+      }
+
+      // Regla Estricta de Recarga en Inmovilidad Total
+      // Recarga activa <=> ||v_player|| < 0.01 && ||inputs_movimiento|| == 0 && !isDashing (+25%/s)
+      const isCompletelyStill = vSpeed < 0.01 && !hasMoveInput && !player.isDashing;
+      if (isCompletelyStill) {
+        player.stamina = Math.min(100, player.stamina + 25 * dt);
+      }
+
+      // Sincronizar escalares en disc para resolución de colisiones y renderizado
+      disc.stamina = player.stamina;
+      disc.isDashing = player.isDashing;
+      disc.isTurbo = player.isTurbo;
+
+      // Kicking mechanic con golpe potenciado (Dash x1.35, Turbo x1.15) y Efecto Magnus
       const isKicking = (mask & INPUT_KICK) !== 0;
       disc.kicking = isKicking;
 
@@ -381,8 +468,41 @@ export class GameEngine {
           const kickDirX = dist > 1e-6 ? diffX / dist : 1;
           const kickDirY = dist > 1e-6 ? diffY / dist : 0;
 
-          this.ball.vel.x += kickDirX * kickStrength;
-          this.ball.vel.y += kickDirY * kickStrength;
+          let effectiveKickStrength = kickStrength;
+          if (player.isDashing) {
+            effectiveKickStrength = kickStrength * 1.35;
+          } else if (player.isTurbo) {
+            effectiveKickStrength = kickStrength * 1.15;
+          }
+
+          this.ball.vel.x += kickDirX * effectiveKickStrength;
+          this.ball.vel.y += kickDirY * effectiveKickStrength;
+
+          // Iniciación del Efecto Magnus 2D Dirigido
+          let ex = player.curveX;
+          let ey = player.curveY;
+          if (ex !== 0 || ey !== 0) {
+            const eLen = Math.hypot(ex, ey);
+            ex /= eLen;
+            ey /= eLen;
+
+            const bSpeed = Math.hypot(this.ball.vel.x, this.ball.vel.y);
+            if (bSpeed > 1e-6) {
+              const ux = this.ball.vel.x / bSpeed;
+              const uy = this.ball.vel.y / bSpeed;
+              const uPerpX = -uy;
+              const uPerpY = ux;
+
+              const cParallel = ex * ux + ey * uy;
+              const cPerp = ex * uPerpX + ey * uPerpY;
+
+              this.ball.isCurving = true;
+              this.ball.curvePerp = cPerp;
+              this.ball.curveBrake = cParallel < 0 ? Math.abs(cParallel) : 0;
+            }
+          }
+
+          this.ball.lastKickerId = disc.id;
 
           if (this.kickoffState.active) {
             if (this.kickoffState.mode === 'NEUTRAL' || player.team === this.kickoffState.possessingTeam) {
@@ -398,8 +518,53 @@ export class GameEngine {
       }
     }
 
+    // Integración continua del Efecto Magnus en el bucle fijo a 60 Hz
+    if (this.ball.isCurving) {
+      const bvx = this.ball.vel.x;
+      const bvy = this.ball.vel.y;
+      const bSpeed = Math.hypot(bvx, bvy);
+      if (bSpeed > 0.1) {
+        const ux = bvx / bSpeed;
+        const uy = bvy / bSpeed;
+        const uPerpX = -uy;
+        const uPerpY = ux;
+
+        const kMagnus = 0.08;
+        const kBrake = 1.8;
+
+        const aCurveMag = kMagnus * this.ball.curvePerp * bSpeed;
+        const aCurveX = aCurveMag * uPerpX;
+        const aCurveY = aCurveMag * uPerpY;
+
+        const aBrakeMag = kBrake * this.ball.curveBrake * bSpeed;
+        const aBrakeX = -aBrakeMag * ux;
+        const aBrakeY = -aBrakeMag * uy;
+
+        this.ball.vel.x += (aCurveX + aBrakeX) * dt;
+        this.ball.vel.y += (aCurveY + aBrakeY) * dt;
+      } else {
+        this.ball.resetCurve();
+      }
+    }
+
     // Step physics simulation (activa en PLAYING y GOAL_CELEBRATION)
     this.physicsWorld.step();
+
+    // Resetear lastKickerId una vez el balón se separe completamente del pateador
+    if (this.ball.lastKickerId !== -1) {
+      for (let i = 0; i < this.physicsWorld.discs.length; i++) {
+        const d = this.physicsWorld.discs[i];
+        if (d.id === this.ball.lastKickerId) {
+          const dx = this.ball.pos.x - d.pos.x;
+          const dy = this.ball.pos.y - d.pos.y;
+          const minDist = this.ball.radius + d.radius + 1.0;
+          if (dx * dx + dy * dy >= minDist * minDist) {
+            this.ball.lastKickerId = -1;
+          }
+          break;
+        }
+      }
+    }
 
     // Detección de contacto con el balón para desactivar barreras de saque
     if (this.kickoffState.active) {
@@ -514,7 +679,9 @@ export class GameEngine {
       vy: isFrozen ? 0 : this.ball.vel.y,
       radius: this.ball.radius,
       kicking: false,
-      avatar: ''
+      avatar: '',
+      isSpinActive: this.ball.isCurving,
+      curveFactor: Math.round(this.ball.curvePerp * 10)
     });
 
     // Players
@@ -530,7 +697,10 @@ export class GameEngine {
           vy: isFrozen ? 0 : disc.vel.y,
           radius: disc.radius,
           kicking: disc.kicking,
-          avatar: player.avatar
+          avatar: player.avatar,
+          stamina: Math.round(player.stamina),
+          isDashing: player.isDashing,
+          isTurbo: player.isTurbo
         });
       }
     }

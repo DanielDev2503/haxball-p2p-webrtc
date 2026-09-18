@@ -38,6 +38,17 @@ export class Disc {
   public color: string;
   public kicking: boolean = false;
 
+  // Mecánicas de Efecto Magnus (solo balón, escalares puros, cero GC)
+  public isCurving: boolean = false;
+  public curvePerp: number = 0;   // c_perp
+  public curveBrake: number = 0;  // k_brake * |c_parallel|
+  public lastKickerId: number = -1;
+
+  // Mecánicas de Jugador (escalares para colisiones y snapshots)
+  public stamina: number = 100;
+  public isDashing: boolean = false;
+  public isTurbo: boolean = false;
+
   constructor(options: DiscOptions) {
     this.id = options.id;
     this.pos = new Vec2(options.x ?? 0, options.y ?? 0);
@@ -67,5 +78,12 @@ export class Disc {
 
   public canCollideWith(other: Disc): boolean {
     return (this.cGroup & other.cMask) !== 0 && (other.cGroup & this.cMask) !== 0;
+  }
+
+  public resetCurve(): void {
+    this.isCurving = false;
+    this.curvePerp = 0;
+    this.curveBrake = 0;
+    this.lastKickerId = -1;
   }
 }

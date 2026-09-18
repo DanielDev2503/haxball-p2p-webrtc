@@ -1,5 +1,5 @@
 import { GameEngine } from '../core/game/GameEngine';
-import { Player, TeamType, INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK } from '../core/game/Player';
+import { Player, TeamType, INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK, INPUT_TURBO, INPUT_DASH } from '../core/game/Player';
 import { MatchPhase, MatchState, toMatchPhase } from '../core/game/GameFSM';
 import { GameSnapshot, DiscSnapshot } from '../core/game/GameState';
 import { CanvasRenderer } from '../render/CanvasRenderer';
@@ -72,6 +72,11 @@ export class GameApp {
   private currentKickoffActive: boolean = false;
   private currentKickoffMode: 'NEUTRAL' | 'TEAM_KICKOFF' = 'NEUTRAL';
   private currentKickoffPossessingTeam: 'red' | 'blue' | null = null;
+  private clientStamina: number = 100;
+  private clientIsDashing: boolean = false;
+  private clientDashTicks: number = 0;
+  private clientDashDir: { x: number; y: number } = { x: 0, y: 0 };
+  private clientIsTurbo: boolean = false;
 
   // Handshake timeout: cancel if initial_state is received within 10s
   private joinTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -901,6 +906,10 @@ export class GameApp {
           const p = this.engine.players.get(peerId);
           if (p) {
             p.inputMask = input.inputMask;
+            if (input.curveX !== undefined) p.curveX = input.curveX;
+            if (input.curveY !== undefined) p.curveY = input.curveY;
+            if (input.isTurbo !== undefined) p.isTurbo = input.isTurbo;
+            if (input.triggerDash) p.triggerDash = true;
           }
         }
       } catch (err) {
@@ -1663,11 +1672,17 @@ export class GameApp {
     if (!modal || !listContainer) return;
 
     const actionLabels: Record<keyof KeyBinds, string> = {
-      up: 'Arriba',
-      down: 'Abajo',
-      left: 'Izquierda',
-      right: 'Derecha',
+      up: 'Arriba (Mover)',
+      down: 'Abajo (Mover)',
+      left: 'Izquierda (Mover)',
+      right: 'Derecha (Mover)',
       kick: 'Chutar',
+      curveUp: 'Comba Balón Arriba',
+      curveDown: 'Comba Balón Abajo',
+      curveLeft: 'Comba Balón Izquierda',
+      curveRight: 'Comba Balón Derecha',
+      turbo: 'Turbo / Sprint',
+      dash: 'Dash / Impulso',
       menu: 'Menú / Escapar',
       pause: 'Pausar (Admin)',
       chat: 'Enfocar Chat'
@@ -1828,13 +1843,14 @@ export class GameApp {
    * Predicción cinemática inmediata a 60 Hz para el jugador local en cliente (cero input lag).
    * p_local(t + dt) = p_local(t) + v_local * dt
    */
-  private stepClientPrediction(mask: number): void {
+  private stepClientPrediction(mask: number, _curve?: { x: number; y: number }, isTurbo?: boolean, triggerDash?: boolean): void {
     const isSimulationActive = this.currentMatchState === MatchPhase.PLAYING ||
                                this.currentMatchState === MatchPhase.GOAL_CELEBRATION;
     if (!isSimulationActive || !this.hasPredictedPos || this.localPlayer.team === 'spec') {
       return;
     }
 
+    const dt = 1 / 60;
     const accel = 7.5;
     let dirX = 0;
     let dirY = 0;
@@ -1843,11 +1859,78 @@ export class GameApp {
     if (mask & INPUT_LEFT) dirX -= 1;
     if (mask & INPUT_RIGHT) dirX += 1;
 
-    if (dirX !== 0 || dirY !== 0) {
+    const hasMoveInput = (dirX !== 0 || dirY !== 0);
+    let uMoveX = 0;
+    let uMoveY = 0;
+    if (hasMoveInput) {
       const len = Math.hypot(dirX, dirY);
-      this.predictedVel.x += (dirX / len) * accel;
-      this.predictedVel.y += (dirY / len) * accel;
+      uMoveX = dirX / len;
+      uMoveY = dirY / len;
     }
+
+    const vSpeed = Math.hypot(this.predictedVel.x, this.predictedVel.y);
+
+    // Predicción de Dash en No-Host
+    const wantsDash = Boolean(triggerDash) || ((mask & INPUT_DASH) !== 0);
+    if (wantsDash && this.clientStamina >= 50 && !this.clientIsDashing) {
+      this.clientStamina -= 50;
+      this.clientIsDashing = true;
+      this.clientDashTicks = 4;
+      if (hasMoveInput) {
+        this.clientDashDir.x = uMoveX;
+        this.clientDashDir.y = uMoveY;
+      } else if (vSpeed > 0.01) {
+        this.clientDashDir.x = this.predictedVel.x / vSpeed;
+        this.clientDashDir.y = this.predictedVel.y / vSpeed;
+      } else {
+        this.clientDashDir.x = this.localPlayer.team === 'red' ? 1 : -1;
+        this.clientDashDir.y = 0;
+      }
+    }
+
+    if (this.clientIsDashing) {
+      this.clientDashTicks--;
+      const dashSpeed = 18.75 * 60;
+      this.predictedVel.x = this.clientDashDir.x * dashSpeed;
+      this.predictedVel.y = this.clientDashDir.y * dashSpeed;
+      if (this.clientDashTicks <= 0) {
+        this.clientIsDashing = false;
+      }
+    } else {
+      // Predicción de Turbo en No-Host
+      const wantsTurbo = Boolean(isTurbo) || ((mask & INPUT_TURBO) !== 0);
+      if (wantsTurbo && hasMoveInput && this.clientStamina > 0) {
+        this.clientIsTurbo = true;
+        this.clientStamina = Math.max(0, this.clientStamina - 40 * dt);
+        if (this.clientStamina <= 0) {
+          this.clientIsTurbo = false;
+        }
+
+        this.predictedVel.x += uMoveX * (accel * 1.45);
+        this.predictedVel.y += uMoveY * (accel * 1.45);
+
+        const curSpeed = Math.hypot(this.predictedVel.x, this.predictedVel.y);
+        if (curSpeed > 150) {
+          this.predictedVel.x = (this.predictedVel.x / curSpeed) * 150;
+          this.predictedVel.y = (this.predictedVel.y / curSpeed) * 150;
+        }
+      } else {
+        this.clientIsTurbo = false;
+        if (hasMoveInput) {
+          this.predictedVel.x += uMoveX * accel;
+          this.predictedVel.y += uMoveY * accel;
+        }
+      }
+    }
+
+    // Regla estricta de recarga en reposo total (+25%/s)
+    if (vSpeed < 0.01 && !hasMoveInput && !this.clientIsDashing) {
+      this.clientStamina = Math.min(100, this.clientStamina + 25 * dt);
+    }
+
+    this.localPlayer.stamina = this.clientStamina;
+    this.localPlayer.isDashing = this.clientIsDashing;
+    this.localPlayer.isTurbo = this.clientIsTurbo;
 
     // Integración cinemática inmediata (dt = 1/60)
     this.predictedPos.x += this.predictedVel.x * (1 / 60);
@@ -1976,6 +2059,17 @@ export class GameApp {
 
     if (!authDisc) return;
 
+    if (authDisc.stamina !== undefined) {
+      this.clientStamina = authDisc.stamina;
+      this.localPlayer.stamina = authDisc.stamina;
+    }
+    if (authDisc.isDashing !== undefined) {
+      this.localPlayer.isDashing = authDisc.isDashing;
+    }
+    if (authDisc.isTurbo !== undefined) {
+      this.localPlayer.isTurbo = authDisc.isTurbo;
+    }
+
     const isSimulationActive = snap.matchPhase === MatchPhase.PLAYING ||
                                snap.matchPhase === MatchPhase.GOAL_CELEBRATION;
 
@@ -2026,7 +2120,17 @@ export class GameApp {
     if (this.mode === 'host' || this.mode === 'practice') {
       if (this.engine) {
         const inputs = new Map<string, number>();
-        inputs.set(this.localPlayer.id, this.inputManager.getMask());
+        const mask = this.inputManager.getMask();
+        inputs.set(this.localPlayer.id, mask);
+
+        const curve = this.inputManager.getCurveVector();
+        this.localPlayer.curveX = curve.x;
+        this.localPlayer.curveY = curve.y;
+        this.localPlayer.isTurbo = this.inputManager.isTurboActive();
+        if (this.inputManager.consumeDashTrigger()) {
+          this.localPlayer.triggerDash = true;
+        }
+
         this.engine.tick(inputs);
 
         // Si es Host, transmitir snapshot binario continuo ininterrumpidamente a 60 Hz
@@ -2035,17 +2139,25 @@ export class GameApp {
     } else if (this.mode === 'client') {
       this.clientInputSequence++;
       const mask = this.inputManager.getMask();
+      const curve = this.inputManager.getCurveVector();
+      const isTurbo = this.inputManager.isTurboActive();
+      const triggerDash = this.inputManager.consumeDashTrigger();
+
       if (this.hostPeer) {
         const inputBuf = InputPacket.encode({
           sequence: this.clientInputSequence,
           inputMask: mask,
-          clientTimestamp: Math.round(performance.now()) & 0xffff
+          clientTimestamp: Math.round(performance.now()) & 0xffff,
+          curveX: curve.x,
+          curveY: curve.y,
+          isTurbo,
+          triggerDash
         });
         this.hostPeer.sendUnreliable(inputBuf);
       }
 
       // Predicción cinemática local a 60 Hz para el disco asignado
-      this.stepClientPrediction(mask);
+      this.stepClientPrediction(mask, curve, isTurbo, triggerDash);
     }
   }
 
@@ -2103,6 +2215,9 @@ export class GameApp {
                 myDisc.vx = this.predictedVel.x;
                 myDisc.vy = this.predictedVel.y;
                 myDisc.kicking = (this.inputManager.getMask() & INPUT_KICK) !== 0;
+                myDisc.stamina = this.clientStamina;
+                myDisc.isDashing = this.clientIsDashing;
+                myDisc.isTurbo = this.clientIsTurbo;
               }
             }
           }

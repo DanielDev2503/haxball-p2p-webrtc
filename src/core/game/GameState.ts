@@ -10,6 +10,11 @@ export interface DiscSnapshot {
   radius: number;
   kicking: boolean;
   avatar: string;
+  stamina?: number | undefined;
+  isDashing?: boolean | undefined;
+  isTurbo?: boolean | undefined;
+  isSpinActive?: boolean | undefined;
+  curveFactor?: number | undefined;
 }
 
 export interface KickoffState {

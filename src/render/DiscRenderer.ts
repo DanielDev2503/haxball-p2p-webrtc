@@ -1,6 +1,44 @@
 import { DiscSnapshot } from '../core/game/GameState';
 
+interface GhostSlot {
+  x: number;
+  y: number;
+  alpha: number;
+  active: boolean;
+  color: string;
+  radius: number;
+}
+
+interface TurboParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  alpha: number;
+  active: boolean;
+  color: string;
+}
+
 export class DiscRenderer {
+  private ghostMap: Map<number, GhostSlot[]> = new Map();
+  private turboParticles: TurboParticle[] = [];
+  private nextParticleIdx: number = 0;
+
+  constructor() {
+    // Pre-alocación fija del pool de partículas de turbo (Zero GC en bucle de render)
+    for (let i = 0; i < 80; i++) {
+      this.turboParticles.push({
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        alpha: 0,
+        active: false,
+        color: 'rgba(0, 229, 255, '
+      });
+    }
+  }
+
   public render(
     ctx: CanvasRenderingContext2D,
     discs: DiscSnapshot[],
@@ -8,6 +46,25 @@ export class DiscRenderer {
   ): void {
     ctx.save();
 
+    // 1. Renderizar partículas de turbo dinámicas
+    this.renderTurboParticles(ctx);
+
+    // 2. Renderizar siluetas fantasma de dash (ghosting / after-images)
+    this.renderDashGhosts(ctx);
+
+    // 3. Procesar y registrar ráfagas de dash y turbo en buffers de efectos
+    for (const disc of discs) {
+      if (disc.team !== 0) {
+        if (disc.isDashing) {
+          this.recordDashGhost(disc);
+        }
+        if (disc.isTurbo) {
+          this.emitTurboParticle(disc);
+        }
+      }
+    }
+
+    // 4. Renderizar discos (balón y jugadores con barra de estamina dual)
     for (const disc of discs) {
       if (disc.team === 0) {
         this.renderBall(ctx, disc);
@@ -17,6 +74,104 @@ export class DiscRenderer {
     }
 
     ctx.restore();
+  }
+
+  private recordDashGhost(disc: DiscSnapshot): void {
+    let slots = this.ghostMap.get(disc.id);
+    if (!slots) {
+      slots = [
+        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: 15 },
+        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: 15 },
+        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: 15 },
+        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: 15 }
+      ];
+      this.ghostMap.set(disc.id, slots);
+    }
+
+    // Buscar el slot con menor alpha o inactivo
+    let targetSlot = slots[0];
+    for (let i = 1; i < slots.length; i++) {
+      if (!slots[i].active || slots[i].alpha < targetSlot.alpha) {
+        targetSlot = slots[i];
+      }
+    }
+
+    targetSlot.x = disc.x;
+    targetSlot.y = disc.y;
+    targetSlot.alpha = 0.65;
+    targetSlot.active = true;
+    targetSlot.color = disc.team === 1 ? '#FF0055' : '#00E5FF';
+    targetSlot.radius = disc.radius;
+  }
+
+  private renderDashGhosts(ctx: CanvasRenderingContext2D): void {
+    for (const slots of this.ghostMap.values()) {
+      for (let i = 0; i < slots.length; i++) {
+        const ghost = slots[i];
+        if (!ghost.active) continue;
+
+        ctx.save();
+        ctx.globalAlpha = ghost.alpha;
+        ctx.fillStyle = ghost.color;
+        ctx.shadowColor = ghost.color;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(ghost.x, ghost.y, ghost.radius * 0.96, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Decaimiento rápido de opacidad (alpha *= 0.7) desvaneciéndose en < 200 ms
+        ghost.alpha *= 0.7;
+        if (ghost.alpha < 0.02) {
+          ghost.active = false;
+        }
+      }
+    }
+  }
+
+  private emitTurboParticle(disc: DiscSnapshot): void {
+    const speed = Math.hypot(disc.vx, disc.vy);
+    if (speed < 0.5) return;
+
+    // Dirección opuesta al desplazamiento (-u)
+    const ux = -disc.vx / speed;
+    const uy = -disc.vy / speed;
+
+    const p = this.turboParticles[this.nextParticleIdx];
+    this.nextParticleIdx = (this.nextParticleIdx + 1) % this.turboParticles.length;
+
+    p.x = disc.x + ux * (disc.radius * 0.8) + (Math.random() - 0.5) * 6;
+    p.y = disc.y + uy * (disc.radius * 0.8) + (Math.random() - 0.5) * 6;
+    p.vx = ux * (speed * 0.25);
+    p.vy = uy * (speed * 0.25);
+    p.alpha = 0.7;
+    p.active = true;
+    p.color = disc.team === 1 ? 'rgba(255, 0, 85, ' : 'rgba(0, 229, 255, ';
+  }
+
+  private renderTurboParticles(ctx: CanvasRenderingContext2D): void {
+    for (let i = 0; i < this.turboParticles.length; i++) {
+      const p = this.turboParticles[i];
+      if (!p.active) continue;
+
+      p.x += p.vx * (1 / 60);
+      p.y += p.vy * (1 / 60);
+      p.alpha *= 0.84; // Disolución suave
+
+      if (p.alpha < 0.02) {
+        p.active = false;
+        continue;
+      }
+
+      ctx.save();
+      ctx.strokeStyle = `${p.color}${p.alpha})`;
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - p.vx * 0.06, p.y - p.vy * 0.06);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   private renderBall(ctx: CanvasRenderingContext2D, disc: DiscSnapshot): void {
@@ -155,15 +310,104 @@ export class DiscRenderer {
       ctx.restore();
     }
 
-    // 7. Indicador del Jugador Local en Verde Neovital
+    // 7. Barra Dual Perimétrica de Estamina (CADA jugador, Host y No-Host)
+    this.renderStaminaBar(ctx, disc);
+
+    // 8. Indicador del Jugador Local en Verde Neovital
     if (isLocal) {
       ctx.save();
       ctx.strokeStyle = '#00E599';
-      ctx.lineWidth = 2.2;
+      ctx.lineWidth = 2.0;
       ctx.shadowColor = 'rgba(0, 229, 153, 0.7)';
       ctx.shadowBlur = 8;
       ctx.beginPath();
-      ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+      ctx.arc(x, y, radius + 11, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Barra dual perimétrica de estamina concéntrica (R = r + 6px, lineWidth = 3.5).
+   * Dividida en 2 segmentos de 180°:
+   * - Semicírculo inferior (0° a 180°): primer 50% (Dash 1).
+   * - Semicírculo superior (180° a 360°): del 50% al 100% (Dash 2).
+   */
+  private renderStaminaBar(ctx: CanvasRenderingContext2D, disc: DiscSnapshot): void {
+    const { x, y, radius, stamina } = disc;
+    const E = stamina !== undefined ? Math.max(0, Math.min(100, stamina)) : 100;
+    const ringRadius = radius + 6;
+    const lineWidth = 3.5;
+    const gap = 0.08; // Separación angular estética entre semicírculos
+
+    ctx.save();
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'round';
+
+    // Pistas de fondo translúcidas (gris tenue)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+
+    // Semicírculo 1 Fondo (inferior: 0° a 180°)
+    ctx.beginPath();
+    ctx.arc(x, y, ringRadius, gap, Math.PI - gap);
+    ctx.stroke();
+
+    // Semicírculo 2 Fondo (superior: 180° a 360°)
+    ctx.beginPath();
+    ctx.arc(x, y, ringRadius, Math.PI + gap, Math.PI * 2 - gap);
+    ctx.stroke();
+
+    const isFull = E >= 99.5;
+    const now = typeof performance !== 'undefined' ? performance.now() : 0;
+    const pulse = isFull ? (0.7 + 0.3 * Math.sin(now * 0.008)) : 1.0;
+
+    // Segmento 1 Activo (0% - 50% de estamina)
+    const ratio1 = Math.min(1, E / 50);
+    if (ratio1 > 0) {
+      ctx.save();
+      const startAngle1 = gap;
+      const endAngle1 = gap + ratio1 * (Math.PI - 2 * gap);
+
+      if (E >= 50) {
+        // Iluminado en blanco glacial brillante con halo en Azul Cielo (#00E5FF)
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.shadowColor = '#00E5FF';
+        ctx.shadowBlur = 9 * pulse;
+      } else {
+        // En recarga: gris translúcido tenue
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+        ctx.shadowColor = 'rgba(0, 229, 255, 0.3)';
+        ctx.shadowBlur = 4;
+      }
+
+      ctx.beginPath();
+      ctx.arc(x, y, ringRadius, startAngle1, endAngle1);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Segmento 2 Activo (50% - 100% de estamina)
+    const ratio2 = Math.max(0, Math.min(1, (E - 50) / 50));
+    if (ratio2 > 0) {
+      ctx.save();
+      const startAngle2 = Math.PI + gap;
+      const endAngle2 = Math.PI + gap + ratio2 * (Math.PI - 2 * gap);
+
+      if (isFull) {
+        // Al 100%: ambos semicírculos se iluminan intensamente con pulso de luz neón
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.shadowColor = '#00E5FF';
+        ctx.shadowBlur = 12 * pulse;
+      } else {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+        ctx.shadowColor = 'rgba(0, 229, 255, 0.4)';
+        ctx.shadowBlur = 5;
+      }
+
+      ctx.beginPath();
+      ctx.arc(x, y, ringRadius, startAngle2, endAngle2);
       ctx.stroke();
       ctx.restore();
     }

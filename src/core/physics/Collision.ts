@@ -21,7 +21,20 @@ export function resolveDiscDiscCollision(
 ): boolean {
   if (!d1.canCollideWith(d2)) return false;
 
-  const totalInvMass = d1.invMass + d2.invMass;
+  // Mecánica de Tackle: si un jugador en Dash o Turbo impacta a otro, masa efectiva x1.8 (invMass / 1.8)
+  let invMass1 = d1.invMass;
+  let invMass2 = d2.invMass;
+
+  if (!d1.isBall && !d2.isBall) {
+    if (d1.isDashing || d1.isTurbo) {
+      invMass1 /= 1.8;
+    }
+    if (d2.isDashing || d2.isTurbo) {
+      invMass2 /= 1.8;
+    }
+  }
+
+  const totalInvMass = invMass1 + invMass2;
   if (totalInvMass <= 0) return false; // Both are static
 
   // Distance vector from d2 to d1
@@ -44,12 +57,12 @@ export function resolveDiscDiscCollision(
   // Penetration depth
   const penetration = radiusSum - dist;
 
-  // Positional correction based on inverse mass
+  // Positional correction based on effective inverse mass
   const percent = 1.0; // Full separation
   const correctionMagnitude = (penetration / totalInvMass) * percent;
 
-  d1.pos.addScaled(normal, correctionMagnitude * d1.invMass);
-  d2.pos.addScaled(normal, -correctionMagnitude * d2.invMass);
+  d1.pos.addScaled(normal, correctionMagnitude * invMass1);
+  d2.pos.addScaled(normal, -correctionMagnitude * invMass2);
 
   // Relative velocity along normal: (v1 - v2) . normal
   const relVel = Vec2.t2.copy(d1.vel).sub(d2.vel);
@@ -57,11 +70,19 @@ export function resolveDiscDiscCollision(
 
   // Do not resolve if velocities are already separating
   if (velAlongNormal < 0) {
+    // Extinción instantánea de la comba del balón al colisionar con cualquier disco (poste u otro jugador)
+    if (d1.isBall && d1.isCurving && d2.id !== d1.lastKickerId) {
+      d1.resetCurve();
+    }
+    if (d2.isBall && d2.isCurving && d1.id !== d2.lastKickerId) {
+      d2.resetCurve();
+    }
+
     const restitution = Math.min(d1.bounciness, d2.bounciness);
     const impulseMag = (-(1 + restitution) * velAlongNormal) / totalInvMass;
 
-    d1.vel.addScaled(normal, impulseMag * d1.invMass);
-    d2.vel.addScaled(normal, -impulseMag * d2.invMass);
+    d1.vel.addScaled(normal, impulseMag * invMass1);
+    d2.vel.addScaled(normal, -impulseMag * invMass2);
   }
 
   if (onCollision) {
@@ -89,6 +110,9 @@ export function resolveDiscSegmentCollision(
   const distSq = diff.lenSq();
 
   if (distSq >= disc.radius * disc.radius) return false;
+
+  // Extinción instantánea de la comba al chocar contra segmentos o paredes
+  if (disc.isBall && disc.isCurving) disc.resetCurve();
 
   const dist = Math.sqrt(distSq);
   const normal = Vec2.t2;
