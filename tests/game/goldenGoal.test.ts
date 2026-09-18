@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GameEngine } from '../../src/core/game/GameEngine';
-import { MatchState, MatchPhase } from '../../src/core/game/GameFSM';
+import { MatchPhase } from '../../src/core/game/GameFSM';
 import { Player } from '../../src/core/game/Player';
 
 describe('Golden Goal (Sudden Death) Overtime Mechanics', () => {

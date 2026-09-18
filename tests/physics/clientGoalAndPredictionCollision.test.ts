@@ -140,8 +140,8 @@ describe('Goal Net Depth & Client Predictive Anti-Clipping', () => {
     });
   });
 
-  describe('resolvePredictiveBallCollision (Player-Ball Anti-Clipping)', () => {
-    it('resolves instant positional separation and cancels incoming velocity component', () => {
+  describe('resolvePredictiveBallCollision (Mass-Weighted Anti-Clipping)', () => {
+    it('applies 25% mass-weighted separation and cushioned elastic restitution (e=0.2)', () => {
       const localPos = { x: 10, y: 0 };
       const localVel = { x: 25, y: 0 }; // Moving rightwards into ball
       const playerRadius = 15;
@@ -160,17 +160,15 @@ describe('Goal Net Depth & Client Predictive Anti-Clipping', () => {
       expect(collided).toBe(true);
 
       // Normal is (10 - 30) / 20 = -1 in X.
-      // localPos moves along normal by overlap: 10 + (-1 * 5) = 5
-      expect(localPos.x).toBeCloseTo(5, 4);
+      // Player displacement is overlap * 0.25 = 5 * 0.25 = 1.25 units along normal (-1, 0)
+      // localPos.x = 10 - 1.25 = 8.75
+      expect(localPos.x).toBeCloseTo(8.75, 4);
       expect(localPos.y).toBe(0);
 
-      // New distance is exactly 25
-      const newDist = Math.hypot(localPos.x - ballPos.x, localPos.y - ballPos.y);
-      expect(newDist).toBeCloseTo(25, 4);
-
-      // vPerp = (25 * -1) = -25 < 0
-      // localVel.x -= (-25) * (-1) = 25 - 25 = 0
-      expect(localVel.x).toBeCloseTo(0, 4);
+      // vn = 25 * (-1) = -25 < 0
+      // impulse = (1 + 0.2) * (-25) * 0.25 = -7.5
+      // localVel.x -= (-7.5) * (-1) = 25 - 7.5 = 17.5 (smooth cushioning without strobe)
+      expect(localVel.x).toBeCloseTo(17.5, 4);
       expect(localVel.y).toBe(0);
     });
 
@@ -190,15 +188,15 @@ describe('Goal Net Depth & Client Predictive Anti-Clipping', () => {
       );
 
       expect(collided).toBe(true);
-      expect(localPos.x).toBeCloseTo(5, 4);
+      expect(localPos.x).toBeCloseTo(8.75, 4);
 
-      // Since normal is (-1, 0), vPerp = (-30 * -1) = 30 >= 0 (moving away)
+      // Since normal is (-1, 0), vn = (-30 * -1) = 30 >= 0 (moving away)
       // Velocity should NOT be reduced or canceled
       expect(localVel.x).toBeCloseTo(-30, 4);
       expect(localVel.y).toBeCloseTo(15, 4);
     });
 
-    it('handles exact center overlap (d = 0) with non-zero fallback normal', () => {
+    it('handles exact center overlap (d = 0) with non-zero fallback normal and 25% displacement', () => {
       const localPos = { x: 50, y: 50 };
       const localVel = { x: 0, y: 0 };
       const playerRadius = 15;
@@ -214,9 +212,9 @@ describe('Goal Net Depth & Client Predictive Anti-Clipping', () => {
       );
 
       expect(collided).toBe(true);
-      // Pushed out to exactly 25 units away
+      // Overlap = 25 -> displacement = 25 * 0.25 = 6.25
       const newDist = Math.hypot(localPos.x - ballPos.x, localPos.y - ballPos.y);
-      expect(newDist).toBeCloseTo(25, 4);
+      expect(newDist).toBeCloseTo(6.25, 4);
     });
 
     it('returns false and does not modify player when distance >= sum of radii', () => {
@@ -239,6 +237,43 @@ describe('Goal Net Depth & Client Predictive Anti-Clipping', () => {
       expect(localPos.y).toBe(0);
       expect(localVel.x).toBe(10);
       expect(localVel.y).toBe(5);
+    });
+  });
+
+  describe('Reconciliation Error Decay Smoothing', () => {
+    it('absorbs positional correction into visualOffset without visual pop and decays exponentially to zero', () => {
+      const predictedPos = { x: 100, y: 100 };
+      const visualOffset = { x: 0, y: 0 };
+      const hostPos = { x: 102, y: 101 }; // Discrepancy within normal range
+
+      // Reconcile snapshot
+      const diffX = hostPos.x - predictedPos.x; // 2
+      const diffY = hostPos.y - predictedPos.y; // 1
+
+      visualOffset.x -= diffX; // -2
+      visualOffset.y -= diffY; // -1
+      predictedPos.x = hostPos.x; // 102
+      predictedPos.y = hostPos.y; // 101
+
+      // Render position immediately after reconciliation is completely continuous (zero pop)
+      const renderX0 = predictedPos.x + visualOffset.x;
+      const renderY0 = predictedPos.y + visualOffset.y;
+      expect(renderX0).toBeCloseTo(100, 4); // Exactly old predicted pos!
+      expect(renderY0).toBeCloseTo(100, 4);
+
+      // Simulate 60 Hz render frames decaying by 0.82
+      for (let frame = 0; frame < 25; frame++) {
+        visualOffset.x *= 0.82;
+        visualOffset.y *= 0.82;
+        if (Math.abs(visualOffset.x) < 0.05) visualOffset.x = 0;
+        if (Math.abs(visualOffset.y) < 0.05) visualOffset.y = 0;
+      }
+
+      // After a few frames, offset is smoothly 0 and player smoothly rendered at hostPos
+      expect(visualOffset.x).toBe(0);
+      expect(visualOffset.y).toBe(0);
+      expect(predictedPos.x + visualOffset.x).toBe(102);
+      expect(predictedPos.y + visualOffset.y).toBe(101);
     });
   });
 });

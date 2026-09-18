@@ -263,8 +263,9 @@ export function resolvePredictivePlayerCollision(
 
 /**
  * Resuelve la colisión predictiva analítica entre el jugador local y el balón (No-Host anti-clipping).
- * Erradica la penetración o superposición visual proyectando al jugador fuera del radio del balón
- * y anulando la componente de velocidad entrante sin generar alocaciones en el GC.
+ * Aplica ponderación estricta por masa inversa (ratio jugador = 0.25) y atenuación elástica del impulso (e = 0.2)
+ * para erradicar el efecto flash/strobing y evitar discrepancias oscilatorias con el Host.
+ * Zero GC: utiliza únicamente primitivas escalares.
  */
 export function resolvePredictiveBallCollision(
   localPos: { x: number; y: number },
@@ -289,16 +290,18 @@ export function resolvePredictiveBallCollision(
     ny = dy / dist;
   }
 
-  // Penetración posicional instantánea: proyecta al jugador fuera del volumen del balón
+  // Ponderación estricta por masa relativa: ratio_player = 0.25 (el 75% restante lo absorbe la pelota en el Host)
   const overlap = minDist - dist;
-  localPos.x += nx * overlap;
-  localPos.y += ny * overlap;
+  const playerDisplacement = overlap * 0.25;
+  localPos.x += nx * playerDisplacement;
+  localPos.y += ny * playerDisplacement;
 
-  // Anulación de componente de velocidad entrante perpendicular hacia el centro del balón
-  const vPerp = localVel.x * nx + localVel.y * ny;
-  if (vPerp < 0) {
-    localVel.x -= vPerp * nx;
-    localVel.y -= vPerp * ny;
+  // Atenuación elástica amortiguada del impulso normal (e = 0.2, ratio = 0.25)
+  const vn = localVel.x * nx + localVel.y * ny;
+  if (vn < 0) {
+    const impulse = (1 + 0.2) * vn * 0.25;
+    localVel.x -= impulse * nx;
+    localVel.y -= impulse * ny;
   }
 
   return true;

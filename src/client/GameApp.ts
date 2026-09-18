@@ -67,6 +67,7 @@ export class GameApp {
   // Predicción cinemática del jugador local (cero lag de controles, sin alocaciones GC en bucle caliente)
   private predictedPos: { x: number; y: number } = { x: 0, y: 0 };
   private predictedVel: { x: number; y: number } = { x: 0, y: 0 };
+  private visualOffset: { x: number; y: number } = { x: 0, y: 0 };
   private hasPredictedPos: boolean = false;
   private currentKickoffActive: boolean = false;
   private currentKickoffMode: 'NEUTRAL' | 'TEAM_KICKOFF' = 'NEUTRAL';
@@ -1819,6 +1820,8 @@ export class GameApp {
     this.predictedPos.y = 0;
     this.predictedVel.x = 0;
     this.predictedVel.y = 0;
+    this.visualOffset.x = 0;
+    this.visualOffset.y = 0;
   }
 
   /**
@@ -1983,27 +1986,33 @@ export class GameApp {
       this.predictedPos.y = authDisc.y;
       this.predictedVel.x = authDisc.vx;
       this.predictedVel.y = authDisc.vy;
+      this.visualOffset.x = 0;
+      this.visualOffset.y = 0;
       this.hasPredictedPos = true;
       return;
     }
 
-    // Reconciliación cinemática con umbral de tolerancia epsilon = 2.0 px
-    const dx = authDisc.x - this.predictedPos.x;
-    const dy = authDisc.y - this.predictedPos.y;
-    const distSq = dx * dx + dy * dy;
+    // Algoritmo de Suavizado de Error de Reconciliación (Error Decay)
+    const diffX = authDisc.x - this.predictedPos.x;
+    const diffY = authDisc.y - this.predictedPos.y;
+    const distSq = diffX * diffX + diffY * diffY;
 
     if (distSq > 40 * 40) {
-      // Discrepancia mayor (teletransporte / saque inicial tras gol): hard snap
+      // Discrepancia masiva (ej. gol, spawn, reset de partido): Hard-Snap inmediato
       this.predictedPos.x = authDisc.x;
       this.predictedPos.y = authDisc.y;
       this.predictedVel.x = authDisc.vx;
       this.predictedVel.y = authDisc.vy;
-    } else if (distSq > 2.0 * 2.0) {
-      // Soft snap: corrección suave e interpolada (factor 0.25)
-      this.predictedPos.x += dx * 0.25;
-      this.predictedPos.y += dy * 0.25;
-      this.predictedVel.x = this.predictedVel.x * 0.75 + authDisc.vx * 0.25;
-      this.predictedVel.y = this.predictedVel.y * 0.75 + authDisc.vy * 0.25;
+      this.visualOffset.x = 0;
+      this.visualOffset.y = 0;
+    } else if (distSq > 0.5 * 0.5) {
+      // Discrepancia menor / física en juego: Absorber el error en visualOffset y sincronizar física
+      this.visualOffset.x -= diffX;
+      this.visualOffset.y -= diffY;
+      this.predictedPos.x = authDisc.x;
+      this.predictedPos.y = authDisc.y;
+      this.predictedVel.x = authDisc.vx;
+      this.predictedVel.y = authDisc.vy;
     }
   }
 
@@ -2082,23 +2091,18 @@ export class GameApp {
                                          currentPhase === MatchPhase.GOAL_CELEBRATION;
 
               if (isSimulationActive) {
-                myDisc.x = this.predictedPos.x;
-                myDisc.y = this.predictedPos.y;
+                // Decaimiento exponencial del offset visual hacia cero (60 Hz)
+                this.visualOffset.x *= 0.82;
+                this.visualOffset.y *= 0.82;
+                if (Math.abs(this.visualOffset.x) < 0.05) this.visualOffset.x = 0;
+                if (Math.abs(this.visualOffset.y) < 0.05) this.visualOffset.y = 0;
+
+                // Renderiza el disco del jugador en p_render = p_predicted + visualOffset
+                myDisc.x = this.predictedPos.x + this.visualOffset.x;
+                myDisc.y = this.predictedPos.y + this.visualOffset.y;
                 myDisc.vx = this.predictedVel.x;
                 myDisc.vy = this.predictedVel.y;
                 myDisc.kicking = (this.inputManager.getMask() & INPUT_KICK) !== 0;
-
-                // Anti-clipping visual instantáneo con el balón para tasas de refresco elevadas
-                const ball = activeSnapshot.discs.find(d => d.team === 0);
-                if (ball) {
-                  resolvePredictiveBallCollision(
-                    myDisc,
-                    myDisc,
-                    myDisc.radius || 15,
-                    ball,
-                    ball.radius || 10
-                  );
-                }
               }
             }
           }
