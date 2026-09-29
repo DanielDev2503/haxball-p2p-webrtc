@@ -5,7 +5,6 @@ import { MatchPhase } from '../../src/core/game/GameFSM';
 import {
   DEFAULT_GAMEPLAY_CONFIG,
   sanitizeGameplayConfig,
-  GameplayConfig,
   GAMEPLAY_CONFIG_LIMITS
 } from '../../src/core/game/GameConfig';
 import { $theme, setTheme, toggleTheme } from '../../src/ui/stores/gameStore';
@@ -37,6 +36,11 @@ describe('Gameplay Modifiers & Continuous A/D Magnus Physics Suite', () => {
   });
 
   describe('GameConfig Sanitization & Sandbox Limits', () => {
+    it('initializes with default config and falls back properly', () => {
+      expect(engine.gameplayConfig).toEqual(DEFAULT_GAMEPLAY_CONFIG);
+      expect(sanitizeGameplayConfig({})).toEqual(DEFAULT_GAMEPLAY_CONFIG);
+    });
+
     it('clamps values below safe minimums to min limits', () => {
       const clamped = sanitizeGameplayConfig({
         playerMaxSpeed: 0.1, // min is 1.5
