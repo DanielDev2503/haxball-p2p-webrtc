@@ -1,7 +1,9 @@
 import { Stadium } from '../core/entities/Stadium';
+import { $theme } from '../ui/stores/gameStore';
 
 export class PitchRenderer {
   public render(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
+    const isDark = $theme.get() === 'dark';
     const hw = stadium.halfWidth;
     const hh = stadium.halfHeight;
     const gh = stadium.goalHalfHeight;
@@ -10,17 +12,25 @@ export class PitchRenderer {
 
     ctx.save();
 
-    // 1. Césped Glacial Blanco a Perlado (#FFFFFF a #F1F5F9)
+    // 1. Césped según el Tema
     const pitchGrad = ctx.createLinearGradient(0, -hh, 0, hh);
-    pitchGrad.addColorStop(0, '#FFFFFF');
-    pitchGrad.addColorStop(0.5, '#F8FAFC');
-    pitchGrad.addColorStop(1, '#F1F5F9');
+    if (isDark) {
+      // Modo Oscuro (Futurism Aero Cyber/Night): Césped azul marino técnico #070F1E
+      pitchGrad.addColorStop(0, '#0B111E');
+      pitchGrad.addColorStop(0.5, '#070F1E');
+      pitchGrad.addColorStop(1, '#050811');
+    } else {
+      // Modo Claro (Futurism Aero White): Césped blanco perla #F8FAFC
+      pitchGrad.addColorStop(0, '#FFFFFF');
+      pitchGrad.addColorStop(0.5, '#F8FAFC');
+      pitchGrad.addColorStop(1, '#F1F5F9');
+    }
     ctx.fillStyle = pitchGrad;
     ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
 
-    // 2. Rejilla Cyber-Aero Translúcida en Azul Cielo
+    // 2. Rejilla Cyber-Aero Translúcida
     ctx.save();
-    ctx.strokeStyle = 'rgba(14, 165, 233, 0.07)';
+    ctx.strokeStyle = isDark ? 'rgba(0, 229, 255, 0.04)' : 'rgba(14, 165, 233, 0.07)';
     ctx.lineWidth = 1;
     const gridSize = 28;
 
@@ -39,7 +49,7 @@ export class PitchRenderer {
     // 3. Áreas de Penal y Redes de Portería con Identidad de Equipo Neón
     // Área y Red Izquierda (Rojo Neón #FF0055)
     ctx.save();
-    ctx.fillStyle = 'rgba(255, 0, 85, 0.03)';
+    ctx.fillStyle = isDark ? 'rgba(255, 0, 85, 0.06)' : 'rgba(255, 0, 85, 0.03)';
     ctx.fillRect(-hw, -gh * 1.5, 90, gh * 3);
     ctx.strokeStyle = 'rgba(255, 0, 85, 0.35)';
     ctx.lineWidth = 1.5;
@@ -51,14 +61,14 @@ export class PitchRenderer {
     ctx.stroke();
 
     // Red Izquierda
-    ctx.fillStyle = 'rgba(255, 0, 85, 0.08)';
+    ctx.fillStyle = isDark ? 'rgba(255, 0, 85, 0.12)' : 'rgba(255, 0, 85, 0.08)';
     ctx.fillRect(-(hw + gd), -gh, gd, gh * 2);
     this.renderNetMesh(ctx, -(hw + gd), -gh, gd, gh * 2, 'rgba(255, 0, 85, 0.25)');
     ctx.restore();
 
     // Área y Red Derecha (Azul Neón #00E5FF)
     ctx.save();
-    ctx.fillStyle = 'rgba(0, 229, 255, 0.03)';
+    ctx.fillStyle = isDark ? 'rgba(0, 229, 255, 0.06)' : 'rgba(0, 229, 255, 0.03)';
     ctx.fillRect(hw - 90, -gh * 1.5, 90, gh * 3);
     ctx.strokeStyle = 'rgba(0, 229, 255, 0.35)';
     ctx.lineWidth = 1.5;
@@ -70,18 +80,23 @@ export class PitchRenderer {
     ctx.stroke();
 
     // Red Derecha
-    ctx.fillStyle = 'rgba(0, 229, 255, 0.08)';
+    ctx.fillStyle = isDark ? 'rgba(0, 229, 255, 0.12)' : 'rgba(0, 229, 255, 0.08)';
     ctx.fillRect(hw, -gh, gd, gh * 2);
     this.renderNetMesh(ctx, hw, -gh, gd, gh * 2, 'rgba(0, 229, 255, 0.25)');
     ctx.restore();
 
-    // 4. Líneas de Marcación Técnicas en Azul Cielo Brillante (#0EA5E9)
+    // 4. Líneas de Marcación Técnicas: Modo Claro (#0EA5E9) vs Modo Oscuro (rgba(0, 229, 255, 0.45))
     ctx.save();
-    ctx.strokeStyle = '#0EA5E9';
+    const lineColor = isDark ? 'rgba(0, 229, 255, 0.45)' : '#0EA5E9';
+    const shadowColor = isDark ? 'rgba(0, 229, 255, 0.35)' : 'rgba(14, 165, 233, 0.25)';
+    const dotColor = isDark ? '#00E5FF' : '#0EA5E9';
+    const dashLineColor = isDark ? 'rgba(0, 229, 255, 0.45)' : 'rgba(14, 165, 233, 0.5)';
+
+    ctx.strokeStyle = lineColor;
     ctx.lineWidth = 3.0;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.shadowColor = 'rgba(14, 165, 233, 0.25)';
+    ctx.shadowColor = shadowColor;
     ctx.shadowBlur = 4;
 
     // Perímetro y cajetines de portería
@@ -122,13 +137,13 @@ export class PitchRenderer {
     ctx.stroke();
 
     // Punto central
-    ctx.fillStyle = '#0EA5E9';
+    ctx.fillStyle = dotColor;
     ctx.beginPath();
     ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
     ctx.fill();
 
     // Líneas de gol discontinuas
-    ctx.strokeStyle = 'rgba(14, 165, 233, 0.5)';
+    ctx.strokeStyle = dashLineColor;
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 4]);
 

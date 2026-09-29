@@ -37,9 +37,10 @@ export class Player {
   public dashDirX: number = 0;
   public dashDirY: number = 0;
   public isTurbo: boolean = false;
+  public curveX: number = 0; // -1, 0, 1 (compatibilidad)
+  public curveY: number = 0; // -1, 0, 1 (compatibilidad)
+  public curveInput: number = 0; // 00 (ninguno), 01 (A - Izquierda), 10 (D - Derecha)
   public triggerDash: boolean = false;
-  public curveX: number = 0; // -1, 0, 1
-  public curveY: number = 0; // -1, 0, 1
 
   constructor(data: PlayerData) {
     this.id = data.id;

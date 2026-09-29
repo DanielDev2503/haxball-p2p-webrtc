@@ -21,6 +21,8 @@ import { RoomConfig } from '../server/signalingServer';
 import { MatchStatePayload } from '../net/protocol/ControlMessages';
 import { KeyBinds } from './InputManager';
 import { UIStateMachine, UIState } from '../ui/UIStateMachine';
+import { GameplayConfig, DEFAULT_GAMEPLAY_CONFIG } from '../core/game/GameConfig';
+import { GameplayModifierModal } from '../ui/components/GameplayModifierModal';
 import { $matchPhase } from '../ui/stores/gameStore';
 import { resolveGoalAndPitchBoundaries, resolvePredictivePlayerCollision, resolvePredictiveBallCollision } from '../core/physics/Collision';
 
@@ -102,6 +104,10 @@ export class GameApp {
   private currentFps: number = 60;
   private currentPing: number = 0;
 
+  public gameplayConfig: GameplayConfig = { ...DEFAULT_GAMEPLAY_CONFIG };
+  public modifierModal: GameplayModifierModal;
+  private btnOpenPhysicsModifiers: HTMLButtonElement | null = null;
+
   // UI elements
   // btnLeaveRoom removed from HUD header — only #btn-leave-room inside the menu exists
   private btnPauseResume: HTMLButtonElement | null;
@@ -138,11 +144,17 @@ export class GameApp {
     this.teamSelect = new TeamSelectModal();
     this.jitterBuffer = new JitterBuffer(70);
 
+    this.modifierModal = new GameplayModifierModal(
+      this.gameplayConfig,
+      (newConfig) => this.onGameplayConfigChanged(newConfig),
+      () => Boolean(this.mode === 'host' || this.localPlayer.isHost)
+    );
+
     // Physics Engine por defecto
     this.engine = new GameEngine({
       scoreLimit: this.roomConfig.scoreLimit,
       timeLimitSeconds: this.roomConfig.timeLimit * 60
-    });
+    }, this.gameplayConfig);
     this.setupEngineCallbacks(this.engine);
     this.canvasRenderer = new CanvasRenderer(canvas, this.engine.stadium);
 
@@ -163,6 +175,12 @@ export class GameApp {
     this.btnLockTeams = document.getElementById('btn-lock-teams') as HTMLButtonElement | null;
     this.selectTimeLimit = (document.getElementById('select-time-limit') || document.getElementById('time-limit')) as HTMLSelectElement | HTMLInputElement | null;
     this.selectScoreLimit = (document.getElementById('select-goal-limit') || document.getElementById('score-limit')) as HTMLSelectElement | HTMLInputElement | null;
+    this.btnOpenPhysicsModifiers = document.getElementById('btn-open-physics-modifiers') as HTMLButtonElement | null;
+    if (this.btnOpenPhysicsModifiers) {
+      this.btnOpenPhysicsModifiers.addEventListener('click', () => {
+        this.modifierModal.show();
+      });
+    }
     this.contextMenu = document.getElementById('playerContextMenu');
     this.menuPlayerName = document.getElementById('menuPlayerName');
     this.roomNameBadge = document.getElementById('roomNameBadge');
@@ -671,7 +689,7 @@ export class GameApp {
     this.currentHostId = this.localPlayer.id;
     this.currentRoomId = 'PRACTICE';
 
-    this.engine = new GameEngine({ scoreLimit: 0, timeLimitSeconds: 0 });
+    this.engine = new GameEngine({ scoreLimit: 0, timeLimitSeconds: 0 }, this.gameplayConfig);
     this.setupEngineCallbacks(this.engine);
     this.engine.addPlayer(this.localPlayer);
     this.engine.startMatch();
@@ -699,7 +717,7 @@ export class GameApp {
     this.engine = new GameEngine({
       scoreLimit: this.roomConfig.scoreLimit,
       timeLimitSeconds: this.roomConfig.timeLimit * 60
-    });
+    }, this.gameplayConfig);
     this.setupEngineCallbacks(this.engine);
     this.engine.addPlayer(this.localPlayer);
 
@@ -906,6 +924,7 @@ export class GameApp {
           const p = this.engine.players.get(peerId);
           if (p) {
             p.inputMask = input.inputMask;
+            if (input.curveInput !== undefined) p.curveInput = input.curveInput;
             if (input.curveX !== undefined) p.curveX = input.curveX;
             if (input.curveY !== undefined) p.curveY = input.curveY;
             if (input.isTurbo !== undefined) p.isTurbo = input.isTurbo;
@@ -970,7 +989,8 @@ export class GameApp {
               yourPlayerId: peerId,
               players,
               config: this.roomConfig,
-              matchState: matchStatePayload
+              matchState: matchStatePayload,
+              gameplayConfig: this.gameplayConfig
             }));
 
             // Also sync all other clients about the new player
@@ -1154,6 +1174,11 @@ export class GameApp {
             this.teamSelect.updateMatchState(ms.state);
           }
 
+          if (msg.gameplayConfig) {
+            this.gameplayConfig = { ...this.gameplayConfig, ...msg.gameplayConfig };
+            this.modifierModal.setConfig(this.gameplayConfig);
+          }
+
           this.updateAdminControlsUI();
           this.chat.addSystemMessage(`Conectado a la sala: ${this.roomConfig.name}`);
 
@@ -1161,6 +1186,12 @@ export class GameApp {
           this.lobby?.hideConnecting();
           this.uiStateMachine?.transitionTo('STATE_IN_GAME');
 
+        } else if (msg.type === 'GAME_CONFIG_SYNC') {
+          if (msg.config) {
+            this.gameplayConfig = { ...this.gameplayConfig, ...msg.config };
+            this.modifierModal.setConfig(this.gameplayConfig);
+            this.chat.addSystemMessage('⚡ Modificadores de físicas sincronizados por el Anfitrión.');
+          }
         } else if (msg.type === 'team_sync') {
           const self = msg.players.find((p: any) => p.id === this.localPlayer.id || p.id === this.signaling.peerId);
           if (self) {
@@ -1492,6 +1523,19 @@ export class GameApp {
     }
   }
 
+  private onGameplayConfigChanged(newConfig: GameplayConfig): void {
+    this.gameplayConfig = newConfig;
+    if (this.engine) {
+      this.engine.setGameplayConfig(newConfig);
+    }
+    if (this.mode === 'host') {
+      this.broadcastReliable(JSON.stringify({
+        type: 'GAME_CONFIG_SYNC',
+        config: newConfig
+      }));
+    }
+  }
+
   private applyRoomConfigToEngine(): void {
     if (this.engine) {
       this.engine.updateConfig({
@@ -1507,6 +1551,7 @@ export class GameApp {
 
   private updateAdminControlsUI(): void {
     const isAdmin = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost);
+    const isHost = this.mode === 'host' || Boolean(this.localPlayer.isHost);
     const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
 
     this.teamSelect.updateMatchControlButton(currentPhase, isAdmin);
@@ -1536,6 +1581,16 @@ export class GameApp {
     if (this.selectScoreLimit) {
       this.selectScoreLimit.disabled = !isAdmin;
       this.selectScoreLimit.value = this.roomConfig.scoreLimit.toString();
+    }
+
+    if (this.btnOpenPhysicsModifiers) {
+      if (isHost) {
+        this.btnOpenPhysicsModifiers.style.display = 'inline-flex';
+        this.btnOpenPhysicsModifiers.disabled = false;
+      } else {
+        this.btnOpenPhysicsModifiers.style.display = 'none';
+        this.btnOpenPhysicsModifiers.disabled = true;
+      }
     }
   }
 
@@ -1851,7 +1906,7 @@ export class GameApp {
     }
 
     const dt = 1 / 60;
-    const accel = 7.5;
+    const accel = (this.gameplayConfig.playerAcceleration ?? 0.11) * 60;
     let dirX = 0;
     let dirY = 0;
     if (mask & INPUT_UP) dirY -= 1;
@@ -1890,7 +1945,8 @@ export class GameApp {
 
     if (this.clientIsDashing) {
       this.clientDashTicks--;
-      const dashSpeed = 18.75 * 60;
+      const dashDist = this.gameplayConfig.dashDistance ?? 75;
+      const dashSpeed = (dashDist / 4) * 60;
       this.predictedVel.x = this.clientDashDir.x * dashSpeed;
       this.predictedVel.y = this.clientDashDir.y * dashSpeed;
       if (this.clientDashTicks <= 0) {
@@ -1906,13 +1962,16 @@ export class GameApp {
           this.clientIsTurbo = false;
         }
 
-        this.predictedVel.x += uMoveX * (accel * 1.45);
-        this.predictedVel.y += uMoveY * (accel * 1.45);
+        const turboAccel = accel * 2.0;
+        this.predictedVel.x += uMoveX * turboAccel;
+        this.predictedVel.y += uMoveY * turboAccel;
 
+        const turboMultiplier = this.gameplayConfig.boostMultiplier ?? 1.75;
+        const maxTurboSpeed = (this.gameplayConfig.playerMaxSpeed * 60) * turboMultiplier;
         const curSpeed = Math.hypot(this.predictedVel.x, this.predictedVel.y);
-        if (curSpeed > 150) {
-          this.predictedVel.x = (this.predictedVel.x / curSpeed) * 150;
-          this.predictedVel.y = (this.predictedVel.y / curSpeed) * 150;
+        if (curSpeed > maxTurboSpeed) {
+          this.predictedVel.x = (this.predictedVel.x / curSpeed) * maxTurboSpeed;
+          this.predictedVel.y = (this.predictedVel.y / curSpeed) * maxTurboSpeed;
         }
       } else {
         this.clientIsTurbo = false;
@@ -1923,9 +1982,10 @@ export class GameApp {
       }
     }
 
-    // Regla estricta de recarga en reposo total (+25%/s)
-    if (vSpeed < 0.01 && !hasMoveInput && !this.clientIsDashing) {
-      this.clientStamina = Math.min(100, this.clientStamina + 25 * dt);
+    // Regla de recarga dinámica: activa ssi no hay teclas de movimiento presionadas ni está en dash
+    if (!hasMoveInput && !this.clientIsDashing) {
+      const rechargeRate = this.gameplayConfig.staminaRechargeRate ?? 25;
+      this.clientStamina = Math.min(100, this.clientStamina + rechargeRate * dt);
     }
 
     this.localPlayer.stamina = this.clientStamina;
@@ -2124,6 +2184,8 @@ export class GameApp {
         inputs.set(this.localPlayer.id, mask);
 
         const curve = this.inputManager.getCurveVector();
+        const curveInput = this.inputManager.getCurveInput();
+        this.localPlayer.curveInput = curveInput;
         this.localPlayer.curveX = curve.x;
         this.localPlayer.curveY = curve.y;
         this.localPlayer.isTurbo = this.inputManager.isTurboActive();
@@ -2140,6 +2202,7 @@ export class GameApp {
       this.clientInputSequence++;
       const mask = this.inputManager.getMask();
       const curve = this.inputManager.getCurveVector();
+      const curveInput = this.inputManager.getCurveInput();
       const isTurbo = this.inputManager.isTurboActive();
       const triggerDash = this.inputManager.consumeDashTrigger();
 
@@ -2148,6 +2211,7 @@ export class GameApp {
           sequence: this.clientInputSequence,
           inputMask: mask,
           clientTimestamp: Math.round(performance.now()) & 0xffff,
+          curveInput,
           curveX: curve.x,
           curveY: curve.y,
           isTurbo,

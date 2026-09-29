@@ -52,6 +52,7 @@ export class SnapshotPacket {
       if (disc.kicking) flags |= 1 << 0;
       if (disc.team === 0) {
         if (disc.isSpinActive) flags |= 1 << 1;
+        if (disc.isCurvingAllowed) flags |= 1 << 2;
       } else {
         if (disc.isDashing) flags |= 1 << 1;
         if (disc.isTurbo) flags |= 1 << 2;
@@ -67,10 +68,15 @@ export class SnapshotPacket {
       view.setInt16(offset + 12, qvx, false);
       view.setInt16(offset + 14, qvy, false);
 
-      // Pack 2-char avatar ASCII
-      const c1 = disc.avatar.charCodeAt(0) || 32;
-      const c2 = disc.avatar.charCodeAt(1) || 32;
-      view.setUint16(offset + 16, (c1 << 8) | c2, false);
+      if (disc.team === 0) {
+        const kickerIdNum = typeof disc.lastKickerId === 'number' ? disc.lastKickerId : 0;
+        view.setUint16(offset + 16, kickerIdNum, false);
+      } else {
+        // Pack 2-char avatar ASCII
+        const c1 = disc.avatar.charCodeAt(0) || 32;
+        const c2 = disc.avatar.charCodeAt(1) || 32;
+        view.setUint16(offset + 16, (c1 << 8) | c2, false);
+      }
 
       // Stamina (UInt8: 0 a 100) y curveFactor (Int8: -128 a 127)
       const staminaVal = disc.team !== 0 ? Math.max(0, Math.min(100, Math.round(disc.stamina ?? 100))) : 0;
@@ -131,16 +137,27 @@ export class SnapshotPacket {
       const isDashing = team !== 0 && (flags & (1 << 1)) !== 0;
       const isTurbo = team !== 0 && (flags & (1 << 2)) !== 0;
       const isSpinActive = team === 0 && (flags & (1 << 1)) !== 0;
+      const isCurvingAllowed = team === 0 && (flags & (1 << 2)) !== 0;
 
       const x = view.getFloat32(offset + 4, false);
       const y = view.getFloat32(offset + 8, false);
       const vx = view.getInt16(offset + 12, false) / 20;
       const vy = view.getInt16(offset + 14, false) / 20;
 
-      const avatarChars = view.getUint16(offset + 16, false);
-      const c1 = String.fromCharCode((avatarChars >> 8) & 0xff);
-      const c2 = String.fromCharCode(avatarChars & 0xff);
-      const avatar = (c1 + c2).trim();
+      let avatar = '';
+      let lastKickerId: number | undefined = undefined;
+
+      if (team === 0) {
+        const rawKickerId = view.getUint16(offset + 16, false);
+        if (rawKickerId > 0 && rawKickerId !== 0x2020) {
+          lastKickerId = rawKickerId;
+        }
+      } else {
+        const avatarChars = view.getUint16(offset + 16, false);
+        const c1 = String.fromCharCode((avatarChars >> 8) & 0xff);
+        const c2 = String.fromCharCode(avatarChars & 0xff);
+        avatar = (c1 + c2).trim();
+      }
 
       let stamina = 100;
       let curveFactor = 0;
@@ -163,6 +180,8 @@ export class SnapshotPacket {
         isDashing: team !== 0 ? isDashing : undefined,
         isTurbo: team !== 0 ? isTurbo : undefined,
         isSpinActive: team === 0 ? isSpinActive : undefined,
+        isCurvingAllowed: team === 0 ? isCurvingAllowed : undefined,
+        lastKickerId: team === 0 ? lastKickerId : undefined,
         curveFactor: team === 0 ? curveFactor : undefined
       });
 

@@ -1,6 +1,6 @@
-import { createElement, IconNode, Crown, ShieldCheck, Lock, Unlock, Settings, Play, Square, Wifi, Timer, MoreVertical, User, PlusCircle, PlusSquare, Search, RefreshCw, X } from 'lucide';
+import { createElement, IconNode, Crown, ShieldCheck, Lock, Unlock, Settings, Play, Square, Wifi, Timer, MoreVertical, User, PlusCircle, PlusSquare, Search, RefreshCw, X, Sun, Moon } from 'lucide';
 
-export { Crown, ShieldCheck, Lock, Unlock, Settings, Play, Square, Wifi, Timer, MoreVertical, User, PlusCircle, PlusSquare, Search, RefreshCw, X };
+export { Crown, ShieldCheck, Lock, Unlock, Settings, Play, Square, Wifi, Timer, MoreVertical, User, PlusCircle, PlusSquare, Search, RefreshCw, X, Sun, Moon };
 
 function createIconElement(iconNode: IconNode, attrs: Record<string, string | number> = {}): SVGElement | HTMLElement {
   const normalizedAttrs: Record<string, string | number> = { ...attrs };

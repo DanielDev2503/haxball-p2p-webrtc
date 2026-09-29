@@ -91,9 +91,9 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     // Stamina should drain ~40% (leaving ~60%)
     expect(playerRed.stamina).toBeCloseTo(60, 0);
     expect(playerRed.isTurbo).toBe(true);
-    // Speed clamped to 150 px/s prior to substep integration, resulting in 150 * 0.96 = 144 post-damping
+    // Speed clamped to turboMaxSpeed (+75% over base ~181 px/s), resulting in 181 * 0.96 = 173.8 post-damping
     const speed = Math.hypot(disc.vel.x, disc.vel.y);
-    expect(speed).toBeCloseTo(150 * 0.96, 0.5);
+    expect(speed).toBeCloseTo(181 * 0.96, 0.5);
 
     // Drain remaining stamina (another 90 ticks = 1.5s, total 150 ticks = 2.5s)
     for (let i = 0; i < 90; i++) {
@@ -104,27 +104,28 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     expect(playerRed.isTurbo).toBe(false);
   });
 
-  it('strictly recharges stamina at +25%/s only upon total immobility (v < 0.01 and inputs == 0)', () => {
+  it('recharges stamina at +25%/s conditioned strictly on null movement inputs (gliding/inertia recharges)', () => {
     engine.ball.pos.set(1000, 1000);
     const disc = engine.playerDiscs.get('p1')!;
     playerRed.stamina = 0;
     disc.pos.set(0, 0);
     disc.prevPos.set(0, 0);
 
-    // Case 1: moving disc (vel > 0.01) with 0 inputs -> NO recharge
+    // Case 1: moving disc (vel = 50) gliding with 0 inputs -> RECHARGES immediately
     disc.vel.set(50, 0);
     const inputs = new Map<string, number>();
     inputs.set('p1', 0);
     engine.tick(inputs);
-    expect(playerRed.stamina).toBe(0);
+    expect(playerRed.stamina).toBeCloseTo(25 / 60, 4);
 
     // Case 2: holding move key even if stalled against a wall -> NO recharge
+    playerRed.stamina = 0;
     disc.vel.set(0, 0);
     inputs.set('p1', INPUT_UP);
     engine.tick(inputs);
     expect(playerRed.stamina).toBe(0);
 
-    // Case 3: complete stillness (vel < 0.01 && inputs == 0) -> recharge +25%/s
+    // Case 3: complete stillness with inputs == 0 -> recharge +25%/s
     disc.vel.set(0, 0);
     inputs.set('p1', 0);
     // 60 ticks = 1 second => +25%

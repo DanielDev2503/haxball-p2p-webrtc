@@ -14,6 +14,8 @@ export interface DiscSnapshot {
   isDashing?: boolean | undefined;
   isTurbo?: boolean | undefined;
   isSpinActive?: boolean | undefined;
+  isCurvingAllowed?: boolean | undefined;
+  lastKickerId?: string | number | null | undefined;
   curveFactor?: number | undefined;
 }
 

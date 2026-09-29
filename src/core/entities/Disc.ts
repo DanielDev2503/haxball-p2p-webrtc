@@ -38,11 +38,14 @@ export class Disc {
   public color: string;
   public kicking: boolean = false;
 
-  // Mecánicas de Efecto Magnus (solo balón, escalares puros, cero GC)
+  // Mecánicas de Efecto Magnus Continuo Dirigido (solo balón, cero GC)
   public isCurving: boolean = false;
+  public isCurvingAllowed: boolean = false;
   public curvePerp: number = 0;   // c_perp
   public curveBrake: number = 0;  // k_brake * |c_parallel|
-  public lastKickerId: number = -1;
+  public lastKickerId: string | null = null;
+  public lastKickerDiscId: number = -1;
+  public kickerHeading: Vec2 | null = null;
 
   // Mecánicas de Jugador (escalares para colisiones y snapshots)
   public stamina: number = 100;
@@ -82,8 +85,11 @@ export class Disc {
 
   public resetCurve(): void {
     this.isCurving = false;
+    this.isCurvingAllowed = false;
     this.curvePerp = 0;
     this.curveBrake = 0;
-    this.lastKickerId = -1;
+    this.lastKickerId = null;
+    this.lastKickerDiscId = -1;
+    this.kickerHeading = null;
   }
 }

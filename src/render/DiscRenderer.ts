@@ -1,4 +1,5 @@
 import { DiscSnapshot } from '../core/game/GameState';
+import { $theme } from '../ui/stores/gameStore';
 
 interface GhostSlot {
   x: number;
@@ -19,14 +20,22 @@ interface TurboParticle {
   color: string;
 }
 
+interface RibbonNode {
+  x: number;
+  y: number;
+  r: number;
+  team: number;
+}
+
 export class DiscRenderer {
   private ghostMap: Map<number, GhostSlot[]> = new Map();
   private turboParticles: TurboParticle[] = [];
   private nextParticleIdx: number = 0;
+  private ribbonMap: Map<number, RibbonNode[]> = new Map();
 
   constructor() {
     // Pre-alocación fija del pool de partículas de turbo (Zero GC en bucle de render)
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 120; i++) {
       this.turboParticles.push({
         x: 0,
         y: 0,
@@ -46,30 +55,137 @@ export class DiscRenderer {
   ): void {
     ctx.save();
 
-    // 1. Renderizar partículas de turbo dinámicas
-    this.renderTurboParticles(ctx);
-
-    // 2. Renderizar siluetas fantasma de dash (ghosting / after-images)
-    this.renderDashGhosts(ctx);
-
-    // 3. Procesar y registrar ráfagas de dash y turbo en buffers de efectos
+    // 1. Procesar ráfagas de turbo para registrar o decaer ribbon trails
+    const activeTurboIds = new Set<number>();
     for (const disc of discs) {
       if (disc.team !== 0) {
         if (disc.isDashing) {
           this.recordDashGhost(disc);
         }
         if (disc.isTurbo) {
+          activeTurboIds.add(disc.id);
+          this.recordRibbonPoint(disc);
           this.emitTurboParticle(disc);
         }
       }
     }
 
-    // 4. Renderizar discos (balón y jugadores con barra de estamina dual)
+    // Decaimiento natural de estelas de jugadores que ya no usan turbo
+    for (const [id, history] of this.ribbonMap.entries()) {
+      if (!activeTurboIds.has(id) && history.length > 0) {
+        history.pop();
+      }
+    }
+
+    // 2. Renderizar Ribbon Trails poligonales translúcidos de Turbo
+    this.renderRibbonTrails(ctx);
+
+    // 3. Renderizar partículas de turbo dinámicas con dispersión de 35°
+    this.renderTurboParticles(ctx);
+
+    // 4. Renderizar siluetas fantasma de dash (ghosting / after-images)
+    this.renderDashGhosts(ctx);
+
+    // 5. Renderizar discos (balón y jugadores con barra de estamina dual)
     for (const disc of discs) {
       if (disc.team === 0) {
         this.renderBall(ctx, disc);
       } else {
         this.renderPlayer(ctx, disc, disc.id === localDiscId);
+      }
+    }
+
+    ctx.restore();
+  }
+
+  private recordRibbonPoint(disc: DiscSnapshot): void {
+    let history = this.ribbonMap.get(disc.id);
+    if (!history) {
+      history = [];
+      this.ribbonMap.set(disc.id, history);
+    }
+    history.unshift({ x: disc.x, y: disc.y, r: disc.radius, team: disc.team });
+    if (history.length > 8) {
+      history.length = 8;
+    }
+  }
+
+  private renderRibbonTrails(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (const history of this.ribbonMap.values()) {
+      if (history.length < 2) continue;
+
+      const team = history[0].team;
+      const isRed = team === 1;
+      const neonColor = isRed ? 'rgba(255, 0, 85, ' : 'rgba(0, 229, 255, ';
+
+      const leftPts: Array<{ x: number; y: number }> = [];
+      const rightPts: Array<{ x: number; y: number }> = [];
+      const coreLeftPts: Array<{ x: number; y: number }> = [];
+      const coreRightPts: Array<{ x: number; y: number }> = [];
+
+      for (let i = 0; i < history.length; i++) {
+        const pt = history[i];
+        const next = i < history.length - 1 ? history[i + 1] : history[i];
+        const prev = i > 0 ? history[i - 1] : history[i];
+
+        let dx = next.x - prev.x;
+        let dy = next.y - prev.y;
+        let len = Math.hypot(dx, dy);
+        if (len < 0.001) {
+          dx = 1;
+          dy = 0;
+          len = 1;
+        }
+
+        const nx = -dy / len;
+        const ny = dx / len;
+
+        // Estrechamiento cónico hacia atrás: ancho inicial 2 * r_player hasta 0 en el frame 8
+        const taper = Math.max(0, 1 - i / 8);
+        const halfWidth = pt.r * taper;
+        const coreHalfWidth = halfWidth * 0.38;
+
+        leftPts.push({ x: pt.x + nx * halfWidth, y: pt.y + ny * halfWidth });
+        rightPts.push({ x: pt.x - nx * halfWidth, y: pt.y - ny * halfWidth });
+
+        coreLeftPts.push({ x: pt.x + nx * coreHalfWidth, y: pt.y + ny * coreHalfWidth });
+        coreRightPts.push({ x: pt.x - nx * coreHalfWidth, y: pt.y - ny * coreHalfWidth });
+      }
+
+      for (let i = 0; i < history.length - 1; i++) {
+        const alpha = Math.max(0, 0.55 * (1 - i / 8));
+        const nextAlpha = Math.max(0, 0.55 * (1 - (i + 1) / 8));
+
+        // 1. Estela poligonal con el neón del equipo
+        ctx.beginPath();
+        ctx.moveTo(leftPts[i].x, leftPts[i].y);
+        ctx.lineTo(leftPts[i + 1].x, leftPts[i + 1].y);
+        ctx.lineTo(rightPts[i + 1].x, rightPts[i + 1].y);
+        ctx.lineTo(rightPts[i].x, rightPts[i].y);
+        ctx.closePath();
+
+        const grad = ctx.createLinearGradient(history[i].x, history[i].y, history[i + 1].x, history[i + 1].y);
+        grad.addColorStop(0, `${neonColor}${alpha})`);
+        grad.addColorStop(1, `${neonColor}${nextAlpha})`);
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // 2. Núcleo blanco brillante
+        ctx.beginPath();
+        ctx.moveTo(coreLeftPts[i].x, coreLeftPts[i].y);
+        ctx.lineTo(coreLeftPts[i + 1].x, coreLeftPts[i + 1].y);
+        ctx.lineTo(coreRightPts[i + 1].x, coreRightPts[i + 1].y);
+        ctx.lineTo(coreRightPts[i].x, coreRightPts[i].y);
+        ctx.closePath();
+
+        const coreGrad = ctx.createLinearGradient(history[i].x, history[i].y, history[i + 1].x, history[i + 1].y);
+        coreGrad.addColorStop(0, `rgba(255, 255, 255, ${alpha * 0.95})`);
+        coreGrad.addColorStop(1, `rgba(255, 255, 255, ${nextAlpha * 0.95})`);
+        ctx.fillStyle = coreGrad;
+        ctx.fill();
       }
     }
 
@@ -88,7 +204,6 @@ export class DiscRenderer {
       this.ghostMap.set(disc.id, slots);
     }
 
-    // Buscar el slot con menor alpha o inactivo
     let targetSlot = slots[0];
     for (let i = 1; i < slots.length; i++) {
       if (!slots[i].active || slots[i].alpha < targetSlot.alpha) {
@@ -120,7 +235,6 @@ export class DiscRenderer {
         ctx.fill();
         ctx.restore();
 
-        // Decaimiento rápido de opacidad (alpha *= 0.7) desvaneciéndose en < 200 ms
         ghost.alpha *= 0.7;
         if (ghost.alpha < 0.02) {
           ghost.active = false;
@@ -133,18 +247,20 @@ export class DiscRenderer {
     const speed = Math.hypot(disc.vx, disc.vy);
     if (speed < 0.5) return;
 
-    // Dirección opuesta al desplazamiento (-u)
-    const ux = -disc.vx / speed;
-    const uy = -disc.vy / speed;
+    // Dirección opuesta al desplazamiento (-u) con dispersión angular de 35°
+    const baseAngle = Math.atan2(-disc.vy, -disc.vx);
+    const spreadRad = (35 * Math.PI) / 180;
+    const angle = baseAngle + (Math.random() - 0.5) * spreadRad;
+    const pSpeed = speed * (0.55 + Math.random() * 0.45) + 40;
 
     const p = this.turboParticles[this.nextParticleIdx];
     this.nextParticleIdx = (this.nextParticleIdx + 1) % this.turboParticles.length;
 
-    p.x = disc.x + ux * (disc.radius * 0.8) + (Math.random() - 0.5) * 6;
-    p.y = disc.y + uy * (disc.radius * 0.8) + (Math.random() - 0.5) * 6;
-    p.vx = ux * (speed * 0.25);
-    p.vy = uy * (speed * 0.25);
-    p.alpha = 0.7;
+    p.x = disc.x - (disc.vx / speed) * (disc.radius * 0.8) + (Math.random() - 0.5) * 6;
+    p.y = disc.y - (disc.vy / speed) * (disc.radius * 0.8) + (Math.random() - 0.5) * 6;
+    p.vx = Math.cos(angle) * pSpeed;
+    p.vy = Math.sin(angle) * pSpeed;
+    p.alpha = 0.85;
     p.active = true;
     p.color = disc.team === 1 ? 'rgba(255, 0, 85, ' : 'rgba(0, 229, 255, ';
   }
@@ -156,7 +272,7 @@ export class DiscRenderer {
 
       p.x += p.vx * (1 / 60);
       p.y += p.vy * (1 / 60);
-      p.alpha *= 0.84; // Disolución suave
+      p.alpha *= 0.84;
 
       if (p.alpha < 0.02) {
         p.active = false;
@@ -179,7 +295,7 @@ export class DiscRenderer {
 
     ctx.save();
 
-    // 1. Sombra Difusa Proyectada sobre el Césped Blanco
+    // 1. Sombra Difusa Proyectada
     ctx.fillStyle = 'rgba(15, 23, 42, 0.22)';
     ctx.beginPath();
     if (typeof (ctx as any).ellipse === 'function') {
@@ -198,7 +314,7 @@ export class DiscRenderer {
       y,
       radius
     );
-    grad.addColorStop(0, '#FFFFFF'); // Reflejo especular brillante
+    grad.addColorStop(0, '#FFFFFF');
     grad.addColorStop(0.35, '#F8FAFC');
     grad.addColorStop(0.7, '#CBD5E1');
     grad.addColorStop(1, '#94A3B8');
@@ -241,13 +357,13 @@ export class DiscRenderer {
       ctx.restore();
     }
 
-    // 2. Sombra Elíptica Proyectada sobre el Césped Glacial
+    // 2. Sombra Elíptica Proyectada
     ctx.fillStyle = 'rgba(15, 23, 42, 0.2)';
     ctx.beginPath();
     ctx.arc(x + 2, y + 3, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // 3. Gradiente Radial Analítico simulando Esfera Esmaltada con Núcleo Neón
+    // 3. Gradiente Radial simulando Esfera Esmaltada con Núcleo Neón
     const grad = ctx.createRadialGradient(
       x - radius * 0.35,
       y - radius * 0.35,
@@ -258,12 +374,12 @@ export class DiscRenderer {
     );
 
     if (isRed) {
-      grad.addColorStop(0, '#FFFFFF'); // Brillo especular
+      grad.addColorStop(0, '#FFFFFF');
       grad.addColorStop(0.2, '#FF4D88');
       grad.addColorStop(0.65, '#FF0055');
       grad.addColorStop(1, '#990033');
     } else {
-      grad.addColorStop(0, '#FFFFFF'); // Brillo especular
+      grad.addColorStop(0, '#FFFFFF');
       grad.addColorStop(0.2, '#4DEFFF');
       grad.addColorStop(0.65, '#00E5FF');
       grad.addColorStop(1, '#007A99');
@@ -274,7 +390,7 @@ export class DiscRenderer {
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // 4. Anillo Exterior Neón con Resplandor Perimetral para Alto Contraste
+    // 4. Anillo Exterior Neón con Resplandor Perimetral
     ctx.save();
     ctx.strokeStyle = neonColor;
     ctx.lineWidth = 2.4;
@@ -285,32 +401,30 @@ export class DiscRenderer {
     ctx.stroke();
     ctx.restore();
 
-    // 5. Borde Interior Blanco Fino para Definición Especular
+    // 5. Borde Interior Blanco Fino
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.arc(x, y, radius - 2.8, 0, Math.PI * 2);
     ctx.stroke();
 
-    // 6. Avatar / Dorsal con Tipografía Zen Dots / Inter y Contorno Nítido
+    // 6. Avatar / Dorsal
     if (avatar) {
       ctx.save();
       ctx.font = `bold ${Math.round(radius * 0.88)}px "Zen Dots", "Inter", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
-      // Contorno oscuro para legibilidad absoluta
       ctx.strokeStyle = 'rgba(15, 23, 42, 0.7)';
       ctx.lineWidth = 2.5;
       ctx.strokeText(avatar, x, y + 1);
 
-      // Texto blanco nítido
       ctx.fillStyle = '#FFFFFF';
       ctx.fillText(avatar, x, y + 1);
       ctx.restore();
     }
 
-    // 7. Barra Dual Perimétrica de Estamina (CADA jugador, Host y No-Host)
+    // 7. Barra Dual Perimétrica de Estamina (con alto contraste dinámico)
     this.renderStaminaBar(ctx, disc);
 
     // 8. Indicador del Jugador Local en Verde Neovital
@@ -331,23 +445,40 @@ export class DiscRenderer {
 
   /**
    * Barra dual perimétrica de estamina concéntrica (R = r + 6px, lineWidth = 3.5).
-   * Dividida en 2 segmentos de 180°:
-   * - Semicírculo inferior (0° a 180°): primer 50% (Dash 1).
-   * - Semicírculo superior (180° a 360°): del 50% al 100% (Dash 2).
+   * Alto contraste: anillo base oscuro (rgba(15, 23, 42, 0.75)) lineWidth 5.0 debajo de los arcos.
+   * Modo Claro:
+   *  - Segmento no cargado: rgba(30, 41, 59, 0.4)
+   *  - Segmento cargado (>= 50%): Azul Eléctrico #0284C7 con borde exterior blanco puro.
+   *  - Barra al 100%: Glow dinámico cian oscuro y blanco contrastado.
+   * Modo Oscuro:
+   *  - Brillo blanco glacial y Azul Neón #00E5FF.
    */
   private renderStaminaBar(ctx: CanvasRenderingContext2D, disc: DiscSnapshot): void {
+    const isDark = $theme.get() === 'dark';
     const { x, y, radius, stamina } = disc;
     const E = stamina !== undefined ? Math.max(0, Math.min(100, stamina)) : 100;
     const ringRadius = radius + 6;
     const lineWidth = 3.5;
-    const gap = 0.08; // Separación angular estética entre semicírculos
+    const gap = 0.08;
 
     ctx.save();
-    ctx.lineWidth = lineWidth;
     ctx.lineCap = 'round';
 
-    // Pistas de fondo translúcidas (gris tenue)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+    // 1. Anillo base de contraste oscuro (rgba(15, 23, 42, 0.75)) lineWidth: 5 justo debajo de los arcos
+    ctx.lineWidth = 5.0;
+    ctx.strokeStyle = isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(15, 23, 42, 0.75)';
+
+    ctx.beginPath();
+    ctx.arc(x, y, ringRadius, gap, Math.PI - gap);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(x, y, ringRadius, Math.PI + gap, Math.PI * 2 - gap);
+    ctx.stroke();
+
+    // 2. Pistas de fondo para segmentos no cargados
+    ctx.lineWidth = lineWidth;
+    ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(30, 41, 59, 0.4)';
 
     // Semicírculo 1 Fondo (inferior: 0° a 180°)
     ctx.beginPath();
@@ -363,56 +494,99 @@ export class DiscRenderer {
     const now = typeof performance !== 'undefined' ? performance.now() : 0;
     const pulse = isFull ? (0.7 + 0.3 * Math.sin(now * 0.008)) : 1.0;
 
-    // Segmento 1 Activo (0% - 50% de estamina)
+    // 3. Segmento 1 Activo (0% - 50% de estamina)
     const ratio1 = Math.min(1, E / 50);
     if (ratio1 > 0) {
       ctx.save();
       const startAngle1 = gap;
       const endAngle1 = gap + ratio1 * (Math.PI - 2 * gap);
 
-      if (E >= 50) {
-        // Iluminado en blanco glacial brillante con halo en Azul Cielo (#00E5FF)
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.shadowColor = '#00E5FF';
-        ctx.shadowBlur = 9 * pulse;
+      if (isDark) {
+        if (E >= 50) {
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.shadowColor = '#00E5FF';
+          ctx.shadowBlur = 9 * pulse;
+        } else {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+          ctx.shadowColor = 'rgba(0, 229, 255, 0.3)';
+          ctx.shadowBlur = 4;
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, ringRadius, startAngle1, endAngle1);
+        ctx.stroke();
       } else {
-        // En recarga: gris translúcido tenue
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
-        ctx.shadowColor = 'rgba(0, 229, 255, 0.3)';
-        ctx.shadowBlur = 4;
-      }
+        // Modo Claro
+        if (E >= 50) {
+          // Borde exterior blanco puro bajo el arco para contraste máximo
+          ctx.save();
+          ctx.lineWidth = lineWidth + 1.6;
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.beginPath();
+          ctx.arc(x, y, ringRadius, startAngle1, endAngle1);
+          ctx.stroke();
+          ctx.restore();
 
-      ctx.beginPath();
-      ctx.arc(x, y, ringRadius, startAngle1, endAngle1);
-      ctx.stroke();
+          // Azul Eléctrico profundo #0284C7
+          ctx.strokeStyle = '#0284C7';
+          ctx.shadowColor = 'rgba(2, 132, 199, 0.5)';
+          ctx.shadowBlur = 4;
+        } else {
+          ctx.strokeStyle = 'rgba(2, 132, 199, 0.7)';
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, ringRadius, startAngle1, endAngle1);
+        ctx.stroke();
+      }
       ctx.restore();
     }
 
-    // Segmento 2 Activo (50% - 100% de estamina)
+    // 4. Segmento 2 Activo (50% - 100% de estamina)
     const ratio2 = Math.max(0, Math.min(1, (E - 50) / 50));
     if (ratio2 > 0) {
       ctx.save();
       const startAngle2 = Math.PI + gap;
       const endAngle2 = Math.PI + gap + ratio2 * (Math.PI - 2 * gap);
 
-      if (isFull) {
-        // Al 100%: ambos semicírculos se iluminan intensamente con pulso de luz neón
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.shadowColor = '#00E5FF';
-        ctx.shadowBlur = 12 * pulse;
+      if (isDark) {
+        if (isFull) {
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.shadowColor = '#00E5FF';
+          ctx.shadowBlur = 12 * pulse;
+        } else {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+          ctx.shadowColor = 'rgba(0, 229, 255, 0.4)';
+          ctx.shadowBlur = 5;
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, ringRadius, startAngle2, endAngle2);
+        ctx.stroke();
       } else {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-        ctx.shadowColor = 'rgba(0, 229, 255, 0.4)';
-        ctx.shadowBlur = 5;
-      }
+        // Modo Claro
+        if (isFull) {
+          ctx.save();
+          ctx.lineWidth = lineWidth + 1.6;
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.beginPath();
+          ctx.arc(x, y, ringRadius, startAngle2, endAngle2);
+          ctx.stroke();
+          ctx.restore();
 
-      ctx.beginPath();
-      ctx.arc(x, y, ringRadius, startAngle2, endAngle2);
-      ctx.stroke();
+          // Barra al 100%: Glow dinámico cian oscuro y blanco contrastado
+          ctx.strokeStyle = '#0284C7';
+          ctx.shadowColor = '#00E5FF';
+          ctx.shadowBlur = 11 * pulse;
+        } else {
+          ctx.strokeStyle = 'rgba(2, 132, 199, 0.85)';
+          ctx.shadowColor = 'rgba(2, 132, 199, 0.35)';
+          ctx.shadowBlur = 4;
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, ringRadius, startAngle2, endAngle2);
+        ctx.stroke();
+      }
       ctx.restore();
     }
 
     ctx.restore();
   }
 }
-

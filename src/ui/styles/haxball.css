@@ -1,7 +1,19 @@
 @import "tailwindcss";
 
-:root {
-  /* Futurism Aero (White & Sky Blue Edition) Tokens */
+:root, [data-theme="light"] {
+  /* Modo Claro (Futurism Aero White) */
+  --bg-radial-start: #FFFFFF;
+  --bg-radial-end: #BAE6FD;
+  --bg-gradient: radial-gradient(circle at 50% 10%, #FFFFFF 0%, #BAE6FD 100%);
+  --aero-surface: rgba(255, 255, 255, 0.85);
+  --aero-border: rgba(14, 165, 233, 0.3);
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
+  --text-muted: #64748B;
+  --pitch-grass: #F8FAFC;
+  --pitch-lines: #0EA5E9;
+  --pitch-viewport-bg: #E0F2FE;
+
   --aero-white-pure: #FFFFFF;
   --aero-white-surface: rgba(255, 255, 255, 0.85);
   --aero-white-subtle: rgba(248, 250, 252, 0.92);
@@ -28,26 +40,56 @@
   --neovital-green: #00E599;
   --gold-accent: #f59e0b;
 
-  /* Typography & Surfaces */
-  --text-primary: #0F172A;
-  --text-secondary: #475569;
-  --text-muted: #94A3B8;
   --border-color: rgba(14, 165, 233, 0.22);
   --bg-dark: #F0F9FF;
   --bg-panel: rgba(255, 255, 255, 0.88);
 
-  /* Pitch Aero Tokens */
-  --pitch-white-turf: #FFFFFF;
+  --pitch-white-turf: #F8FAFC;
   --pitch-lines-sky: #0EA5E9;
 
-  /* Glassmorphism Aero */
   --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-filter: blur(20px) saturate(180%);
   --glass-border: 1px solid rgba(14, 165, 233, 0.25);
   --glass-shadow: 0 20px 40px -15px rgba(14, 165, 233, 0.12), inset 0 1px 2px rgba(255, 255, 255, 0.95);
 
-  /* Fonts */
   --font-zen: 'Zen Dots', cursive, system-ui, sans-serif;
+}
+
+[data-theme="dark"] {
+  /* Modo Oscuro (Futurism Aero Cyber/Night) */
+  --bg-radial-start: #0B111E;
+  --bg-radial-end: #050811;
+  --bg-gradient: radial-gradient(circle at 50% 10%, #0B111E 0%, #050811 100%);
+  --aero-surface: rgba(15, 23, 42, 0.82);
+  --aero-border: rgba(255, 255, 255, 0.12);
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --pitch-grass: #070F1E;
+  --pitch-lines: rgba(0, 229, 255, 0.45);
+  --pitch-viewport-bg: #050811;
+
+  --aero-white-pure: #1E293B;
+  --aero-white-surface: rgba(15, 23, 42, 0.82);
+  --aero-white-subtle: rgba(15, 23, 42, 0.92);
+  --aero-sky-50: #0B111E;
+  --aero-sky-100: #0F172A;
+  --aero-sky-200: #1E293B;
+  --aero-sky-400: #38BDF8;
+  --aero-sky-500: #00E5FF;
+  --aero-sky-600: #38BDF8;
+
+  --border-color: rgba(255, 255, 255, 0.12);
+  --bg-dark: #070F1E;
+  --bg-panel: rgba(15, 23, 42, 0.82);
+
+  --pitch-white-turf: #070F1E;
+  --pitch-lines-sky: rgba(0, 229, 255, 0.45);
+
+  --glass-bg: rgba(15, 23, 42, 0.82);
+  --glass-filter: blur(20px) saturate(180%);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.12);
+  --glass-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.08);
 }
 
 * {
@@ -60,7 +102,7 @@ body, html {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 10%, #FFFFFF 0%, #E0F2FE 60%, #BAE6FD 100%) !important;
+  background: var(--bg-gradient) !important;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: var(--text-primary);
   user-select: none;
@@ -85,7 +127,7 @@ body, html {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 10%, #FFFFFF 0%, #E0F2FE 60%, #BAE6FD 100%) !important;
+  background: var(--bg-gradient) !important;
 }
 
 /* TOP HUD (Futurism Aero Capsule & Controls) */

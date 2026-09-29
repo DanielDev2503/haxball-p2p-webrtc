@@ -26,11 +26,15 @@ export function resolveDiscDiscCollision(
   let invMass2 = d2.invMass;
 
   if (!d1.isBall && !d2.isBall) {
-    if (d1.isDashing || d1.isTurbo) {
+    if (d1.isDashing) {
       invMass1 /= 1.8;
+    } else if (d1.isTurbo) {
+      invMass1 /= 2.17; // Impulso de choque incrementado proporcionalmente a velocidad (+75%)
     }
-    if (d2.isDashing || d2.isTurbo) {
+    if (d2.isDashing) {
       invMass2 /= 1.8;
+    } else if (d2.isTurbo) {
+      invMass2 /= 2.17;
     }
   }
 
@@ -71,10 +75,10 @@ export function resolveDiscDiscCollision(
   // Do not resolve if velocities are already separating
   if (velAlongNormal < 0) {
     // Extinción instantánea de la comba del balón al colisionar con cualquier disco (poste u otro jugador)
-    if (d1.isBall && d1.isCurving && d2.id !== d1.lastKickerId) {
+    if (d1.isBall && (d1.isCurving || d1.isCurvingAllowed) && d2.id !== d1.lastKickerDiscId) {
       d1.resetCurve();
     }
-    if (d2.isBall && d2.isCurving && d1.id !== d2.lastKickerId) {
+    if (d2.isBall && (d2.isCurving || d2.isCurvingAllowed) && d1.id !== d2.lastKickerDiscId) {
       d2.resetCurve();
     }
 
@@ -112,7 +116,7 @@ export function resolveDiscSegmentCollision(
   if (distSq >= disc.radius * disc.radius) return false;
 
   // Extinción instantánea de la comba al chocar contra segmentos o paredes
-  if (disc.isBall && disc.isCurving) disc.resetCurve();
+  if (disc.isBall && (disc.isCurving || disc.isCurvingAllowed)) disc.resetCurve();
 
   const dist = Math.sqrt(distSq);
   const normal = Vec2.t2;

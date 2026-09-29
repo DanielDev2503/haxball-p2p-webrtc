@@ -3,6 +3,7 @@ import { GameSnapshot } from '../core/game/GameState';
 import { MatchPhase, toMatchPhase } from '../core/game/GameFSM';
 import { PitchRenderer } from './PitchRenderer';
 import { DiscRenderer } from './DiscRenderer';
+import { $theme } from '../ui/stores/gameStore';
 import gsap from 'gsap';
 import confetti from 'canvas-confetti';
 
@@ -39,7 +40,8 @@ export class CanvasRenderer {
   }
 
   public clear(): void {
-    this.ctx.fillStyle = '#E0F2FE';
+    const isDark = $theme.get() === 'dark';
+    this.ctx.fillStyle = isDark ? '#050811' : '#E0F2FE';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
@@ -106,8 +108,9 @@ export class CanvasRenderer {
     const ctx = this.ctx;
 
     ctx.save();
-    // Fondo perimetral técnico Futurism Aero (Cielo Luminoso #E0F2FE)
-    ctx.fillStyle = '#E0F2FE';
+    // Fondo perimetral técnico según Tema (Modo Oscuro #050811 vs Modo Claro #E0F2FE)
+    const isDark = $theme.get() === 'dark';
+    ctx.fillStyle = isDark ? '#050811' : '#E0F2FE';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     // Transformaciones High-DPI, Centrado y Desplazamiento de Cámara GSAP

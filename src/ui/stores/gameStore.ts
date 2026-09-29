@@ -22,3 +22,36 @@ export const $roomConfig = atom<RoomConfigState>({
   goalLimit: 3,
   teamsLocked: false
 });
+
+const getSavedTheme = (): 'light' | 'dark' => {
+  if (typeof localStorage !== 'undefined') {
+    const saved = localStorage.getItem('haxball_theme');
+    if (saved === 'dark' || saved === 'light') return saved;
+  }
+  return 'light';
+};
+
+const initialTheme = getSavedTheme();
+
+export const $theme = atom<'light' | 'dark'>(initialTheme);
+
+export function setTheme(mode: 'light' | 'dark'): void {
+  $theme.set(mode);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('haxball_theme', mode);
+  }
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-theme', mode);
+  }
+}
+
+export function toggleTheme(): 'light' | 'dark' {
+  const next = $theme.get() === 'dark' ? 'light' : 'dark';
+  setTheme(next);
+  return next;
+}
+
+if (typeof document !== 'undefined') {
+  document.documentElement.setAttribute('data-theme', initialTheme);
+}
+

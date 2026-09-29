@@ -241,6 +241,25 @@ export class InputManager {
     return { x: cx, y: cy };
   }
 
+  /**
+   * Retorna los 2 bits de comba continua:
+   * 00 (0): ninguno
+   * 01 (1): A / Tecla Izquierda
+   * 10 (2): D / Tecla Derecha
+   */
+  public getCurveInput(): number {
+    let left = false;
+    let right = false;
+    for (const [code, isPressed] of this.keyStates.entries()) {
+      if (!isPressed) continue;
+      if (code === 'KeyA' || this.keyBinds.curveLeft?.includes(code)) left = true;
+      if (code === 'KeyD' || this.keyBinds.curveRight?.includes(code)) right = true;
+    }
+    if (left && !right) return 1; // 01: Left (A)
+    if (right && !left) return 2; // 10: Right (D)
+    return 0; // 00: Ninguno
+  }
+
   public isTurboActive(): boolean {
     for (const [code, isPressed] of this.keyStates.entries()) {
       if (isPressed && this.keyBinds.turbo?.includes(code)) return true;

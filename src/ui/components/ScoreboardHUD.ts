@@ -1,5 +1,5 @@
-import { $score, $timer, $ping } from '../stores/gameStore';
-import { renderIconHTML, Timer, Wifi } from '../utils/icons';
+import { $score, $timer, $ping, $theme, toggleTheme } from '../stores/gameStore';
+import { renderIconHTML, renderIcon, Timer, Wifi, Sun, Moon } from '../utils/icons';
 
 export class ScoreboardHUD {
   private redScoreEl: HTMLElement | null = null;
@@ -50,6 +50,23 @@ export class ScoreboardHUD {
     const wifiSlot = document.getElementById('wifiIconSlot');
     if (wifiSlot && !wifiSlot.innerHTML) {
       wifiSlot.innerHTML = renderIconHTML(Wifi, { width: 14, height: 14, stroke: '#00C2FF' });
+    }
+
+    // Botón Switch de Modo Oscuro / Claro en el HUD superior
+    const themeBtn = document.getElementById('theme-toggle-btn');
+    if (themeBtn) {
+      themeBtn.addEventListener('click', () => {
+        toggleTheme();
+      });
+
+      this.unsubs.push(
+        $theme.subscribe((theme) => {
+          const isDark = theme === 'dark';
+          themeBtn.innerHTML = '';
+          renderIcon(themeBtn, isDark ? Sun : Moon, { width: 16, height: 16, stroke: isDark ? '#F59E0B' : '#0284C7' });
+          themeBtn.title = isDark ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Oscuro';
+        })
+      );
     }
 
     // Suscripción atómica y granular a Nano Stores para actualizaciones quirúrgicas

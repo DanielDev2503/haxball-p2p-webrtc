@@ -1,4 +1,5 @@
 import { MatchState } from '../../core/game/GameFSM';
+import { GameplayConfig } from '../../core/game/GameConfig';
 
 export type ControlMessageType =
   | 'kick_player'
@@ -17,11 +18,13 @@ export type ControlMessageType =
   | 'banned'
   | 'client_hello'
   | 'initial_state'
+  | 'INITIAL_STATE'
   | 'match_control'
   | 'MATCH_CONTROL_REQUEST'
   | 'MATCH_STOPPED_EVENT'
   | 'ROOM_SETTINGS_REQUEST'
-  | 'ROOM_SETTINGS_SYNC';
+  | 'ROOM_SETTINGS_SYNC'
+  | 'GAME_CONFIG_SYNC';
 
 export interface RoomConfig {
   name: string;
@@ -114,7 +117,7 @@ export interface ClientHelloMessage {
 }
 
 export interface InitialStateMessage {
-  type: 'initial_state';
+  type: 'initial_state' | 'INITIAL_STATE';
   yourPlayerId: string;
   players: Array<{
     id: string;
@@ -123,9 +126,16 @@ export interface InitialStateMessage {
     team: 'red' | 'blue' | 'spec';
     isHost: boolean;
     isAdmin: boolean;
+    discId?: number | null;
   }>;
   config: RoomConfig;
+  gameplayConfig?: GameplayConfig;
   matchState: MatchStatePayload;
+}
+
+export interface GameConfigSyncMessage {
+  type: 'GAME_CONFIG_SYNC';
+  config: GameplayConfig;
 }
 
 export interface MatchControlMessage {
