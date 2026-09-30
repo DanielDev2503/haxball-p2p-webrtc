@@ -4,11 +4,16 @@ import { $theme } from '../ui/stores/gameStore';
 export class PitchRenderer {
   public render(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
     const isDark = $theme.get() === 'dark';
-    const hw = stadium.halfWidth;
-    const hh = stadium.halfHeight;
-    const gh = stadium.goalHalfHeight;
+    const width = stadium.width ?? (stadium.halfWidth * 2);
+    const height = stadium.height ?? (stadium.halfHeight * 2);
+    const hw = width / 2;
+    const hh = height / 2;
+    const goalSize = stadium.goals[0]?.size ?? (stadium.goalSize ?? (stadium.goalHalfHeight * 2));
+    const gh = goalSize / 2;
     const gd = stadium.goalDepth;
     const cr = stadium.centerRadius;
+    const penaltyAreaWidth = width * 0.075; // Proporcional al ancho del estadio
+    const penaltyAreaHeight = gh * 3;
 
     ctx.save();
 
@@ -26,7 +31,7 @@ export class PitchRenderer {
       pitchGrad.addColorStop(1, '#F1F5F9');
     }
     ctx.fillStyle = pitchGrad;
-    ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
+    ctx.fillRect(-hw, -hh, width, height);
 
     // 2. Rejilla Cyber-Aero Translúcida
     ctx.save();
@@ -50,39 +55,39 @@ export class PitchRenderer {
     // Área y Red Izquierda (Rojo Neón #FF0055)
     ctx.save();
     ctx.fillStyle = isDark ? 'rgba(255, 0, 85, 0.06)' : 'rgba(255, 0, 85, 0.03)';
-    ctx.fillRect(-hw, -gh * 1.5, 90, gh * 3);
+    ctx.fillRect(-hw, -penaltyAreaHeight / 2, penaltyAreaWidth, penaltyAreaHeight);
     ctx.strokeStyle = 'rgba(255, 0, 85, 0.35)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(-hw, -gh * 1.5);
-    ctx.lineTo(-hw + 90, -gh * 1.5);
-    ctx.lineTo(-hw + 90, gh * 1.5);
-    ctx.lineTo(-hw, gh * 1.5);
+    ctx.moveTo(-hw, -penaltyAreaHeight / 2);
+    ctx.lineTo(-hw + penaltyAreaWidth, -penaltyAreaHeight / 2);
+    ctx.lineTo(-hw + penaltyAreaWidth, penaltyAreaHeight / 2);
+    ctx.lineTo(-hw, penaltyAreaHeight / 2);
     ctx.stroke();
 
     // Red Izquierda
     ctx.fillStyle = isDark ? 'rgba(255, 0, 85, 0.12)' : 'rgba(255, 0, 85, 0.08)';
-    ctx.fillRect(-(hw + gd), -gh, gd, gh * 2);
-    this.renderNetMesh(ctx, -(hw + gd), -gh, gd, gh * 2, 'rgba(255, 0, 85, 0.25)');
+    ctx.fillRect(-(hw + gd), -gh, gd, goalSize);
+    this.renderNetMesh(ctx, -(hw + gd), -gh, gd, goalSize, 'rgba(255, 0, 85, 0.25)');
     ctx.restore();
 
     // Área y Red Derecha (Azul Neón #00E5FF)
     ctx.save();
     ctx.fillStyle = isDark ? 'rgba(0, 229, 255, 0.06)' : 'rgba(0, 229, 255, 0.03)';
-    ctx.fillRect(hw - 90, -gh * 1.5, 90, gh * 3);
+    ctx.fillRect(hw - penaltyAreaWidth, -penaltyAreaHeight / 2, penaltyAreaWidth, penaltyAreaHeight);
     ctx.strokeStyle = 'rgba(0, 229, 255, 0.35)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(hw, -gh * 1.5);
-    ctx.lineTo(hw - 90, -gh * 1.5);
-    ctx.lineTo(hw - 90, gh * 1.5);
-    ctx.lineTo(hw, gh * 1.5);
+    ctx.moveTo(hw, -penaltyAreaHeight / 2);
+    ctx.lineTo(hw - penaltyAreaWidth, -penaltyAreaHeight / 2);
+    ctx.lineTo(hw - penaltyAreaWidth, penaltyAreaHeight / 2);
+    ctx.lineTo(hw, penaltyAreaHeight / 2);
     ctx.stroke();
 
     // Red Derecha
     ctx.fillStyle = isDark ? 'rgba(0, 229, 255, 0.12)' : 'rgba(0, 229, 255, 0.08)';
-    ctx.fillRect(hw, -gh, gd, gh * 2);
-    this.renderNetMesh(ctx, hw, -gh, gd, gh * 2, 'rgba(0, 229, 255, 0.25)');
+    ctx.fillRect(hw, -gh, gd, goalSize);
+    this.renderNetMesh(ctx, hw, -gh, gd, goalSize, 'rgba(0, 229, 255, 0.25)');
     ctx.restore();
 
     // 4. Líneas de Marcación Técnicas: Modo Claro (#0EA5E9) vs Modo Oscuro (rgba(0, 229, 255, 0.45))

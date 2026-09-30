@@ -1,4 +1,5 @@
 import { atom } from 'nanostores';
+import { GameplayConfig, DEFAULT_GAMEPLAY_CONFIG } from '../../core/game/GameConfig';
 
 export interface ScoreState {
   red: number;
@@ -17,6 +18,7 @@ export const $timer = atom<string>('00:00');
 export const $subStateTimer = atom<number>(0);
 export const $ping = atom<number>(0);
 export const $players = atom<Array<any>>([]);
+export const $gameConfig = atom<GameplayConfig>(DEFAULT_GAMEPLAY_CONFIG);
 export const $roomConfig = atom<RoomConfigState>({
   timeLimit: 3,
   goalLimit: 3,

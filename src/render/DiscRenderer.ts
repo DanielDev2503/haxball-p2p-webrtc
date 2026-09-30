@@ -196,10 +196,10 @@ export class DiscRenderer {
     let slots = this.ghostMap.get(disc.id);
     if (!slots) {
       slots = [
-        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: 15 },
-        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: 15 },
-        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: 15 },
-        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: 15 }
+        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: disc.radius },
+        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: disc.radius },
+        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: disc.radius },
+        { x: 0, y: 0, alpha: 0, active: false, color: '', radius: disc.radius }
       ];
       this.ghostMap.set(disc.id, slots);
     }
@@ -291,7 +291,9 @@ export class DiscRenderer {
   }
 
   private renderBall(ctx: CanvasRenderingContext2D, disc: DiscSnapshot): void {
-    const { x, y, radius } = disc;
+    // Balón:
+    const radius = disc.radius; // No usar constantes estáticas
+    const { x, y } = disc;
 
     ctx.save();
 
@@ -337,7 +339,9 @@ export class DiscRenderer {
     disc: DiscSnapshot,
     isLocal: boolean
   ): void {
-    const { x, y, radius, team, avatar, kicking } = disc;
+    // Jugador:
+    const radius = disc.radius; // Dinámico según snapshot o config
+    const { x, y, team, avatar, kicking } = disc;
     const isRed = team === 1;
     const neonColor = isRed ? '#FF0055' : '#00E5FF';
     const neonGlow = isRed ? 'rgba(255, 0, 85, 0.5)' : 'rgba(0, 229, 255, 0.5)';

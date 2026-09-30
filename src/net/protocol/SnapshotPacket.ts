@@ -1,6 +1,7 @@
 import { OP_SNAPSHOT } from './BinaryProtocol';
 import { GameSnapshot, DiscSnapshot } from '../../core/game/GameState';
 import { MatchPhase, toMatchPhase } from '../../core/game/GameFSM';
+import { $gameConfig } from '../../ui/stores/gameStore';
 
 export class SnapshotPacket {
   public static readonly HEADER_LENGTH = 17;
@@ -166,6 +167,9 @@ export class SnapshotPacket {
         curveFactor = view.getInt8(offset + 19);
       }
 
+      const activeCfg = $gameConfig?.get?.();
+      const dynamicRadius = team === 0 ? (activeCfg?.ballRadius ?? 5.8) : (activeCfg?.playerRadius ?? 15.0);
+
       discs.push({
         id,
         team,
@@ -173,7 +177,7 @@ export class SnapshotPacket {
         y,
         vx,
         vy,
-        radius: team === 0 ? 10 : 15,
+        radius: dynamicRadius,
         kicking,
         avatar,
         stamina: team !== 0 ? stamina : undefined,

@@ -64,8 +64,7 @@ export class GameplayModifierModal {
       const val = this.currentConfig[key];
 
       const row = document.createElement('div');
-      row.style.background = 'rgba(240, 249, 255, 0.4)';
-      row.style.border = '1px solid var(--aero-border)';
+      row.className = 'modifier-row';
       row.style.borderRadius = '10px';
       row.style.padding = '10px 14px';
       row.style.display = 'flex';
@@ -88,9 +87,8 @@ export class GameplayModifierModal {
       labelText.textContent = meta.label;
 
       const codeBadge = document.createElement('span');
+      codeBadge.className = 'modifier-code-badge';
       codeBadge.style.fontSize = '0.72rem';
-      codeBadge.style.color = 'var(--text-muted)';
-      codeBadge.style.background = 'rgba(0,0,0,0.06)';
       codeBadge.style.padding = '2px 6px';
       codeBadge.style.borderRadius = '4px';
       codeBadge.style.fontFamily = 'monospace';
@@ -100,9 +98,9 @@ export class GameplayModifierModal {
       labelWrap.appendChild(codeBadge);
 
       const valBadge = document.createElement('span');
+      valBadge.className = 'modifier-val-badge';
       valBadge.style.fontWeight = '700';
       valBadge.style.fontSize = '0.9rem';
-      valBadge.style.color = 'var(--aero-sky-600)';
       valBadge.style.minWidth = '60px';
       valBadge.style.textAlign = 'right';
       valBadge.textContent = `${val}${meta.unit ? ' ' + meta.unit : ''}`;

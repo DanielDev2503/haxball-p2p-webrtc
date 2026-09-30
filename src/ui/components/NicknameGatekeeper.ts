@@ -1,5 +1,6 @@
 import { animate } from 'motion';
-import { renderIcon, User } from '../utils/icons';
+import { renderIcon, User, Sun, Moon } from '../utils/icons';
+import { $theme, toggleTheme } from '../stores/gameStore';
 
 export const STORAGE_KEY_NICKNAME = 'haxball_nickname';
 export const LEGACY_STORAGE_KEY_NICKNAME = 'haxball_player_name';
@@ -10,6 +11,7 @@ export class NicknameGatekeeper {
   private saveBtn: HTMLButtonElement | null = null;
   private errorEl: HTMLElement | null = null;
   private avatarEl: HTMLElement | null = null;
+  private themeBtn: HTMLButtonElement | null = null;
 
   public onNicknameConfirmed?: (nickname: string) => void;
 
@@ -35,9 +37,27 @@ export class NicknameGatekeeper {
     }
 
     this.avatarEl = document.getElementById('gatekeeperAvatar');
+    this.themeBtn = document.getElementById('gatekeeperThemeToggleBtn') as HTMLButtonElement | null;
 
     this.renderAvatar();
+    this.setupThemeToggle();
     this.setupListeners();
+  }
+
+  private setupThemeToggle(): void {
+    if (this.themeBtn) {
+      this.themeBtn.addEventListener('click', () => {
+        toggleTheme();
+      });
+      $theme.subscribe((theme) => {
+        const isDark = theme === 'dark';
+        if (this.themeBtn) {
+          this.themeBtn.innerHTML = '';
+          renderIcon(this.themeBtn, isDark ? Sun : Moon, { size: 18, color: isDark ? '#F59E0B' : '#0284C7' });
+          this.themeBtn.title = isDark ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Oscuro';
+        }
+      });
+    }
   }
 
   private renderAvatar(): void {

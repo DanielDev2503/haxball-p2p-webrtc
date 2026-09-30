@@ -6,29 +6,25 @@ export interface KeyBinds {
   left: string[];
   right: string[];
   kick: string[];
-  curveUp: string[];
-  curveDown: string[];
-  curveLeft: string[];
-  curveRight: string[];
   turbo: string[];
   dash: string[];
+  curveLeft: string[];
+  curveRight: string[];
   menu: string[];
   pause: string[];
   chat: string[];
 }
 
 export const DEFAULT_KEYBINDS: KeyBinds = {
-  up: ['KeyW'],
-  down: ['KeyS'],
-  left: ['KeyA'],
-  right: ['KeyD'],
+  up: ['ArrowUp'],
+  down: ['ArrowDown'],
+  left: ['ArrowLeft'],
+  right: ['ArrowRight'],
   kick: ['KeyX'],
-  curveUp: ['ArrowUp', 'KeyI'],
-  curveDown: ['ArrowDown', 'KeyK'],
-  curveLeft: ['ArrowLeft', 'KeyJ'],
-  curveRight: ['ArrowRight', 'KeyL'],
-  turbo: ['ShiftLeft', 'ShiftRight'],
-  dash: ['KeyE', 'Space'],
+  turbo: ['KeyZ'],
+  dash: ['KeyC'],
+  curveLeft: ['KeyA'],
+  curveRight: ['KeyD'],
   menu: ['Escape'],
   pause: ['KeyP'],
   chat: ['Enter']
@@ -70,12 +66,10 @@ export class InputManager {
           left: Array.isArray(parsed.left) ? parsed.left : DEFAULT_KEYBINDS.left,
           right: Array.isArray(parsed.right) ? parsed.right : DEFAULT_KEYBINDS.right,
           kick: Array.isArray(parsed.kick) ? parsed.kick : DEFAULT_KEYBINDS.kick,
-          curveUp: Array.isArray(parsed.curveUp) ? parsed.curveUp : DEFAULT_KEYBINDS.curveUp,
-          curveDown: Array.isArray(parsed.curveDown) ? parsed.curveDown : DEFAULT_KEYBINDS.curveDown,
-          curveLeft: Array.isArray(parsed.curveLeft) ? parsed.curveLeft : DEFAULT_KEYBINDS.curveLeft,
-          curveRight: Array.isArray(parsed.curveRight) ? parsed.curveRight : DEFAULT_KEYBINDS.curveRight,
           turbo: Array.isArray(parsed.turbo) ? parsed.turbo : DEFAULT_KEYBINDS.turbo,
           dash: Array.isArray(parsed.dash) ? parsed.dash : DEFAULT_KEYBINDS.dash,
+          curveLeft: Array.isArray(parsed.curveLeft) ? parsed.curveLeft : DEFAULT_KEYBINDS.curveLeft,
+          curveRight: Array.isArray(parsed.curveRight) ? parsed.curveRight : DEFAULT_KEYBINDS.curveRight,
           menu: Array.isArray(parsed.menu) ? parsed.menu : DEFAULT_KEYBINDS.menu,
           pause: Array.isArray(parsed.pause) ? parsed.pause : DEFAULT_KEYBINDS.pause,
           chat: Array.isArray(parsed.chat) ? parsed.chat : DEFAULT_KEYBINDS.chat
@@ -114,8 +108,6 @@ export class InputManager {
       this.keyBinds.left.includes(code) ||
       this.keyBinds.right.includes(code) ||
       this.keyBinds.kick.includes(code) ||
-      this.keyBinds.curveUp.includes(code) ||
-      this.keyBinds.curveDown.includes(code) ||
       this.keyBinds.curveLeft.includes(code) ||
       this.keyBinds.curveRight.includes(code) ||
       this.keyBinds.turbo.includes(code) ||
@@ -128,6 +120,7 @@ export class InputManager {
 
     window.addEventListener('keydown', (e) => {
       if (!this.isEnabled) return;
+      if (e.repeat) return; // Edge-trigger estricto: descartar auto-repeticiones del sistema operativo
 
       // Si el foco está en un input/textarea, no capturamos controles de juego
       if (
@@ -230,15 +223,12 @@ export class InputManager {
 
   public getCurveVector(): { x: number; y: number } {
     let cx = 0;
-    let cy = 0;
     for (const [code, isPressed] of this.keyStates.entries()) {
       if (!isPressed) continue;
       if (this.keyBinds.curveLeft?.includes(code)) cx -= 1;
       if (this.keyBinds.curveRight?.includes(code)) cx += 1;
-      if (this.keyBinds.curveUp?.includes(code)) cy -= 1;
-      if (this.keyBinds.curveDown?.includes(code)) cy += 1;
     }
-    return { x: cx, y: cy };
+    return { x: cx, y: 0 };
   }
 
   /**

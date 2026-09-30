@@ -398,10 +398,12 @@ export class GameEngine {
 
       const vSpeed = Math.hypot(disc.vel.x, disc.vel.y);
 
-      // Dash Mechanic (salto rápido predeterminado, consume 50% de estamina)
-      const wantsDash = ((mask & INPUT_DASH) !== 0) || player.triggerDash;
-      if (wantsDash && player.stamina >= 50 && !player.isDashing) {
-        player.stamina -= 50;
+      // Dash Mechanic (salto rápido por flanco ascendente, consume 50% exacto de estamina)
+      const isDashKeyDown = (mask & INPUT_DASH) !== 0;
+      const wantsDash = player.triggerDash || (isDashKeyDown && !player.prevDashState);
+
+      if (wantsDash && !player.prevDashState && player.stamina >= 50 && !player.isDashing) {
+        player.stamina = Math.max(0, player.stamina - 50);
         player.isDashing = true;
         player.dashTicksRemaining = 4; // K = 4 ticks (66.6 ms)
 
@@ -415,8 +417,9 @@ export class GameEngine {
           player.dashDirX = player.team === 'red' ? 1 : -1;
           player.dashDirY = 0;
         }
-        player.triggerDash = false;
       }
+      player.prevDashState = isDashKeyDown;
+      player.triggerDash = false;
 
       const wasDashing = player.isDashing;
       if (player.isDashing) {
@@ -430,7 +433,7 @@ export class GameEngine {
           player.isDashing = false;
         }
       } else {
-        // Turbo Mechanic: aceleración x2.0 y velocidad máxima +75% sobre base (boostMultiplier)
+        // Turbo Mechanic: aceleración x1.8 y velocidad máxima +75% sobre base (boostMultiplier)
         const wantsTurbo = ((mask & INPUT_TURBO) !== 0) || player.isTurbo;
         if (wantsTurbo && hasMoveInput && player.stamina > 0) {
           player.isTurbo = true;
@@ -439,10 +442,10 @@ export class GameEngine {
             player.isTurbo = false;
           }
 
-          // Aceleración explosiva x2.0 y velocidad tope potenciada a +75%
-          const turboAccel = accel * 2.0;
+          // Aceleración x1.8 y velocidad tope +75%
+          const turboAccel = accel * 1.8;
           const baseSpeed = (this.gameplayConfig.playerMaxSpeed / 2.8) * 103.45;
-          const turboMaxSpeed = baseSpeed * this.gameplayConfig.boostMultiplier;
+          const turboMaxSpeed = baseSpeed * 1.75;
 
           disc.vel.x += uMoveX * turboAccel;
           disc.vel.y += uMoveY * turboAccel;

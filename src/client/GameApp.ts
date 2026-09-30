@@ -19,11 +19,11 @@ import { JitterBuffer } from '../net/transport/JitterBuffer';
 import { PhysicsTicker } from '../core/physics/PhysicsTicker';
 import { RoomConfig } from '../server/signalingServer';
 import { MatchStatePayload } from '../net/protocol/ControlMessages';
-import { KeyBinds } from './InputManager';
 import { UIStateMachine, UIState } from '../ui/UIStateMachine';
 import { GameplayConfig, DEFAULT_GAMEPLAY_CONFIG } from '../core/game/GameConfig';
 import { GameplayModifierModal } from '../ui/components/GameplayModifierModal';
-import { $matchPhase } from '../ui/stores/gameStore';
+import { KeybindModal } from '../ui/components/KeybindModal';
+import { $matchPhase, $gameConfig } from '../ui/stores/gameStore';
 import { resolveGoalAndPitchBoundaries, resolvePredictivePlayerCollision, resolvePredictiveBallCollision } from '../core/physics/Collision';
 
 export function canChangeTeam(
@@ -106,6 +106,8 @@ export class GameApp {
 
   public gameplayConfig: GameplayConfig = { ...DEFAULT_GAMEPLAY_CONFIG };
   public modifierModal: GameplayModifierModal;
+  public keybindModal: KeybindModal;
+  private clientPrevDashState: boolean = false;
   private btnOpenPhysicsModifiers: HTMLButtonElement | null = null;
 
   // UI elements
@@ -149,6 +151,7 @@ export class GameApp {
       (newConfig) => this.onGameplayConfigChanged(newConfig),
       () => Boolean(this.mode === 'host' || this.localPlayer.isHost)
     );
+    this.keybindModal = new KeybindModal(this.inputManager);
 
     // Physics Engine por defecto
     this.engine = new GameEngine({
@@ -225,7 +228,14 @@ export class GameApp {
     });
 
     this.setupUIEvents();
-    this.setupKeybindsModal();
+    const toggleSettingsBtn = document.getElementById('btn-settings-toggle');
+    toggleSettingsBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.keybindModal.open();
+    });
+    this.teamSelect.onOpenKeybinds = () => {
+      this.keybindModal.open();
+    };
     this.handleUIStateChange(initialUIState, initialUIState);
     this.setupSignaling();
   }
@@ -238,6 +248,7 @@ export class GameApp {
       this.enforceMenuState(matchState);
       this.canvasRenderer.resize();
       this.startRenderLoop();
+      this.chat.addSystemMessage('Controles: Flechas = Moverse | X = Patear | Z = Turbo | C = Dash | A/D = Efecto Izq/Der');
     } else {
       this.inputManager.setEnabled(false);
       this.physicsTicker.stop();
@@ -1176,7 +1187,9 @@ export class GameApp {
 
           if (msg.gameplayConfig) {
             this.gameplayConfig = { ...this.gameplayConfig, ...msg.gameplayConfig };
+            $gameConfig.set(this.gameplayConfig);
             this.modifierModal.setConfig(this.gameplayConfig);
+            this.canvasRenderer?.handleResize();
           }
 
           this.updateAdminControlsUI();
@@ -1189,8 +1202,9 @@ export class GameApp {
         } else if (msg.type === 'GAME_CONFIG_SYNC') {
           if (msg.config) {
             this.gameplayConfig = { ...this.gameplayConfig, ...msg.config };
+            $gameConfig.set(this.gameplayConfig);
             this.modifierModal.setConfig(this.gameplayConfig);
-            this.chat.addSystemMessage('⚡ Modificadores de físicas sincronizados por el Anfitrión.');
+            this.canvasRenderer?.handleResize();
           }
         } else if (msg.type === 'team_sync') {
           const self = msg.players.find((p: any) => p.id === this.localPlayer.id || p.id === this.signaling.peerId);
@@ -1525,6 +1539,8 @@ export class GameApp {
 
   private onGameplayConfigChanged(newConfig: GameplayConfig): void {
     this.gameplayConfig = newConfig;
+    $gameConfig.set(newConfig);
+    this.canvasRenderer?.handleResize();
     if (this.engine) {
       this.engine.setGameplayConfig(newConfig);
     }
@@ -1716,129 +1732,6 @@ export class GameApp {
     this.updateAdminControlsUI();
   }
 
-  private setupKeybindsModal(): void {
-    const modal = document.getElementById('settingsModal');
-    const toggleBtn = document.getElementById('btn-settings-toggle');
-    const closeBtn = document.getElementById('btnCloseSettings');
-    const saveBtn = document.getElementById('btnSaveKeybinds');
-    const resetBtn = document.getElementById('btnResetKeybinds');
-    const listContainer = document.getElementById('keybindsList');
-
-    if (!modal || !listContainer) return;
-
-    const actionLabels: Record<keyof KeyBinds, string> = {
-      up: 'Arriba (Mover)',
-      down: 'Abajo (Mover)',
-      left: 'Izquierda (Mover)',
-      right: 'Derecha (Mover)',
-      kick: 'Chutar',
-      curveUp: 'Comba Balón Arriba',
-      curveDown: 'Comba Balón Abajo',
-      curveLeft: 'Comba Balón Izquierda',
-      curveRight: 'Comba Balón Derecha',
-      turbo: 'Turbo / Sprint',
-      dash: 'Dash / Impulso',
-      menu: 'Menú / Escapar',
-      pause: 'Pausar (Admin)',
-      chat: 'Enfocar Chat'
-    };
-
-    let recordingAction: keyof KeyBinds | null = null;
-    let recordingBtn: HTMLButtonElement | null = null;
-
-    const renderKeybinds = () => {
-      listContainer.innerHTML = '';
-      const binds = this.inputManager.keyBinds;
-
-      for (const [actionKey, label] of Object.entries(actionLabels) as [keyof KeyBinds, string][]) {
-        const row = document.createElement('div');
-        row.className = 'keybind-row';
-
-        const labelEl = document.createElement('span');
-        labelEl.className = 'keybind-label';
-        labelEl.textContent = label;
-
-        const btn = document.createElement('button');
-        btn.className = 'keybind-btn';
-        btn.textContent = binds[actionKey].join(' / ') || 'Ninguna';
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (recordingBtn) {
-            recordingBtn.classList.remove('recording');
-            recordingBtn.textContent = binds[recordingAction!].join(' / ') || 'Ninguna';
-          }
-          recordingAction = actionKey;
-          recordingBtn = btn;
-          btn.classList.add('recording');
-          btn.textContent = 'Presiona tecla...';
-        });
-
-        row.appendChild(labelEl);
-        row.appendChild(btn);
-        listContainer.appendChild(row);
-      }
-    };
-
-    window.addEventListener('keydown', (e) => {
-      if (!recordingAction || !recordingBtn) return;
-      e.preventDefault();
-      e.stopPropagation();
-
-      const newBinds = { ...this.inputManager.keyBinds };
-      newBinds[recordingAction] = [e.code];
-      this.inputManager.saveKeyBinds(newBinds);
-
-      recordingBtn.classList.remove('recording');
-      recordingAction = null;
-      recordingBtn = null;
-      renderKeybinds();
-    }, true);
-
-    const openModal = () => {
-      renderKeybinds();
-      modal.classList.remove('u-hidden');
-      modal.classList.remove('ui-screen-hidden');
-      modal.style.display = 'flex';
-      modal.style.zIndex = '10001';
-      modal.style.pointerEvents = 'auto';
-    };
-
-    const closeModal = () => {
-      modal.style.display = 'none';
-      modal.classList.add('u-hidden');
-      if (recordingBtn) {
-        recordingBtn.classList.remove('recording');
-        recordingAction = null;
-        recordingBtn = null;
-      }
-    };
-
-    toggleBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openModal();
-    });
-
-    this.teamSelect.onOpenKeybinds = () => {
-      openModal();
-    };
-
-    closeBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeModal();
-    });
-
-    saveBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeModal();
-    });
-
-    resetBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.inputManager.resetToDefaultKeyBinds();
-      renderKeybinds();
-    });
-  }
-
   private broadcastReliable(text: string, excludePeerId?: string): void {
     for (const [id, peer] of this.peers.entries()) {
       if (id !== excludePeerId) {
@@ -1925,10 +1818,12 @@ export class GameApp {
 
     const vSpeed = Math.hypot(this.predictedVel.x, this.predictedVel.y);
 
-    // Predicción de Dash en No-Host
-    const wantsDash = Boolean(triggerDash) || ((mask & INPUT_DASH) !== 0);
-    if (wantsDash && this.clientStamina >= 50 && !this.clientIsDashing) {
-      this.clientStamina -= 50;
+    // Predicción de Dash en No-Host por flanco ascendente
+    const isDashKeyDown = (mask & INPUT_DASH) !== 0;
+    const wantsDash = Boolean(triggerDash) || (isDashKeyDown && !this.clientPrevDashState);
+
+    if (wantsDash && !this.clientPrevDashState && this.clientStamina >= 50 && !this.clientIsDashing) {
+      this.clientStamina = Math.max(0, this.clientStamina - 50);
       this.clientIsDashing = true;
       this.clientDashTicks = 4;
       if (hasMoveInput) {
@@ -1942,6 +1837,7 @@ export class GameApp {
         this.clientDashDir.y = 0;
       }
     }
+    this.clientPrevDashState = isDashKeyDown;
 
     if (this.clientIsDashing) {
       this.clientDashTicks--;
@@ -1953,7 +1849,7 @@ export class GameApp {
         this.clientIsDashing = false;
       }
     } else {
-      // Predicción de Turbo en No-Host
+      // Predicción de Turbo en No-Host: aceleración x1.8 y velocidad tope +75%
       const wantsTurbo = Boolean(isTurbo) || ((mask & INPUT_TURBO) !== 0);
       if (wantsTurbo && hasMoveInput && this.clientStamina > 0) {
         this.clientIsTurbo = true;
@@ -1962,12 +1858,12 @@ export class GameApp {
           this.clientIsTurbo = false;
         }
 
-        const turboAccel = accel * 2.0;
+        const turboAccel = accel * 1.8;
         this.predictedVel.x += uMoveX * turboAccel;
         this.predictedVel.y += uMoveY * turboAccel;
 
-        const turboMultiplier = this.gameplayConfig.boostMultiplier ?? 1.75;
-        const maxTurboSpeed = (this.gameplayConfig.playerMaxSpeed * 60) * turboMultiplier;
+        const baseSpeed = (this.gameplayConfig.playerMaxSpeed / 2.8) * 103.45;
+        const maxTurboSpeed = baseSpeed * 1.75;
         const curSpeed = Math.hypot(this.predictedVel.x, this.predictedVel.y);
         if (curSpeed > maxTurboSpeed) {
           this.predictedVel.x = (this.predictedVel.x / curSpeed) * maxTurboSpeed;

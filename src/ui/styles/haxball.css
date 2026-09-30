@@ -1267,3 +1267,255 @@ button:disabled, input:disabled, select:disabled {
   z-index: 10001 !important;
 }
 
+/* ==========================================================================
+   HOMOGENEIZACIÓN COMPLETA DARK / LIGHT MODE CASCADE
+   ========================================================================== */
+
+/* --- 1. CHAT COMPONENT THEME CASCADE --- */
+[data-theme="dark"] #chat-section,
+[data-theme="dark"] .chat-section {
+  background: rgba(11, 17, 30, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] #chat-container,
+[data-theme="dark"] .chat-box {
+  background: rgba(15, 23, 42, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] #chat-messages,
+[data-theme="dark"] .chat-messages {
+  scrollbar-color: rgba(56, 189, 248, 0.3) transparent;
+}
+
+[data-theme="dark"] .chat-msg {
+  color: #F8FAFC !important; /* Blanco perla puro */
+}
+
+[data-theme="dark"] .chat-msg .author {
+  color: #FDE047 !important; /* Amarillo suave para autores neutrales */
+}
+
+[data-theme="dark"] .chat-msg.blue .author {
+  color: #38BDF8 !important; /* Cian de alto contraste */
+}
+
+[data-theme="dark"] .chat-msg.red .author {
+  color: #FF0055 !important; /* Rojo neón */
+}
+
+[data-theme="dark"] .chat-input-form {
+  background: rgba(15, 23, 42, 0.7);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .chat-input {
+  background: rgba(30, 41, 59, 0.85);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  color: #F8FAFC;
+}
+
+[data-theme="dark"] .chat-input::placeholder {
+  color: #94A3B8;
+}
+
+[data-theme="dark"] .chat-input:focus {
+  border-color: #38BDF8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+}
+
+[data-theme="light"] #chat-section,
+[data-theme="light"] .chat-section {
+  background: rgba(255, 255, 255, 0.85);
+  border-top: 1px solid rgba(14, 165, 233, 0.25);
+}
+
+[data-theme="light"] #chat-container,
+[data-theme="light"] .chat-box {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(14, 165, 233, 0.28);
+}
+
+[data-theme="light"] .chat-msg {
+  color: #0F172A;
+}
+
+[data-theme="light"] .chat-msg .author {
+  color: #0284C7;
+}
+
+[data-theme="light"] .chat-msg.blue .author {
+  color: #0284C7;
+}
+
+[data-theme="light"] .chat-msg.red .author {
+  color: #FF0055;
+}
+
+[data-theme="light"] .chat-input {
+  background: #FFFFFF;
+  border: 1.5px solid rgba(14, 165, 233, 0.25);
+  color: #0F172A;
+}
+
+/* --- 2. TEAM SELECT MODAL THEME CASCADE --- */
+[data-theme="dark"] #ingame-menu .menu-modal-card {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  color: #F8FAFC;
+}
+
+[data-theme="dark"] #ingame-menu .menu-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] #ingame-menu .menu-header h3 {
+  color: #38BDF8;
+}
+
+[data-theme="dark"] .admin-controls {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] .admin-controls-title {
+  color: #38BDF8;
+}
+
+[data-theme="dark"] .admin-config-row {
+  color: #94A3B8;
+}
+
+[data-theme="dark"] .form-input-inline {
+  background: #0F172A;
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  color: #38BDF8;
+}
+
+[data-theme="dark"] .team-col {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .team-col.drag-over {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: #38BDF8;
+}
+
+[data-theme="dark"] .team-box-header.spec {
+  color: #94A3B8;
+}
+
+[data-theme="dark"] .player-item {
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #F8FAFC;
+}
+
+[data-theme="dark"] .player-item:hover {
+  background: #1E293B;
+  border-color: #38BDF8;
+}
+
+[data-theme="dark"] .menu-footer-hint {
+  color: #94A3B8;
+}
+
+/* --- 3. KEYBIND MODAL THEME CASCADE --- */
+[data-theme="dark"] #settingsModal .modal-content {
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #F8FAFC;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="dark"] #settingsModal .modal-title {
+  color: #38BDF8;
+}
+
+[data-theme="dark"] .keybind-row {
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] .keybind-label {
+  color: #CBD5E1;
+}
+
+[data-theme="dark"] .keybind-btn {
+  background: #0F172A;
+  border: 1.5px solid #38BDF8;
+  color: #38BDF8;
+}
+
+[data-theme="dark"] .keybind-btn:hover {
+  background: #1E293B;
+}
+
+[data-theme="dark"] .keybind-btn.recording {
+  background: #F59E0B;
+  border-color: #F59E0B;
+  color: #000000;
+}
+
+[data-theme="light"] .keybind-row {
+  background: rgba(240, 249, 255, 0.85);
+  border: 1px solid rgba(14, 165, 233, 0.2);
+}
+
+[data-theme="light"] .keybind-label {
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .keybind-btn {
+  background: #FFFFFF;
+  border: 1.5px solid var(--aero-sky-500);
+  color: var(--aero-sky-600);
+}
+
+/* --- 4. GAMEPLAY MODIFIER MODAL THEME CASCADE --- */
+[data-theme="dark"] #gameplay-modifiers-modal .menu-modal-card {
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #F8FAFC;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="dark"] #gameplay-modifiers-modal .menu-header h3 {
+  color: #38BDF8;
+}
+
+[data-theme="dark"] .modifier-row {
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] .modifier-code-badge {
+  background: rgba(255, 255, 255, 0.08);
+  color: #94A3B8;
+}
+
+[data-theme="dark"] .modifier-val-badge {
+  color: #38BDF8;
+}
+
+[data-theme="light"] .modifier-row {
+  background: rgba(240, 249, 255, 0.4);
+  border: 1px solid var(--aero-border);
+}
+
+[data-theme="light"] .modifier-code-badge {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-muted);
+}
+
+[data-theme="light"] .modifier-val-badge {
+  color: var(--aero-sky-600);
+}
+
+

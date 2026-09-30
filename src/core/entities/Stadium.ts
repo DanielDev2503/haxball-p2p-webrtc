@@ -5,6 +5,7 @@ export interface GoalDefinition {
   team: 'red' | 'blue';
   p0: { x: number; y: number };
   p1: { x: number; y: number };
+  size?: number;
 }
 
 export class Stadium {
@@ -16,6 +17,10 @@ export class Stadium {
   public goalHalfHeight: number = 85;
   public goalDepth: number = 35;
   public centerRadius: number = 80;
+
+  public get goalSize(): number {
+    return this.goalHalfHeight * 2;
+  }
 
   public segments: Segment[] = [];
   public posts: Disc[] = [];
@@ -72,12 +77,14 @@ export class Stadium {
     this.goals.push({
       team: 'red',
       p0: { x: -hw, y: -gh },
-      p1: { x: -hw, y: gh }
+      p1: { x: -hw, y: gh },
+      size: gh * 2
     });
     this.goals.push({
       team: 'blue',
       p0: { x: hw, y: -gh },
-      p1: { x: hw, y: gh }
+      p1: { x: hw, y: gh },
+      size: gh * 2
     });
   }
 

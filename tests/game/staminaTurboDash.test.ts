@@ -73,6 +73,35 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     expect(playerRed.dashTicksRemaining).toBe(0);
   });
 
+  it('strictly edge-triggers dash preventing auto-repeat while key is held', () => {
+    engine.ball.pos.set(1000, 1000);
+    const inputs = new Map<string, number>();
+
+    // Hold Dash key continuously
+    inputs.set('p1', INPUT_RIGHT | INPUT_DASH);
+    engine.tick(inputs);
+    expect(playerRed.stamina).toBe(50);
+    expect(playerRed.isDashing).toBe(true);
+
+    // Keep holding Dash key for 10 ticks: dash completes (4 ticks total) and does NOT auto-fire second dash
+    for (let i = 0; i < 10; i++) {
+      engine.tick(inputs);
+    }
+    expect(playerRed.isDashing).toBe(false);
+    expect(playerRed.stamina).toBe(50); // Still 50, second dash was NOT consumed while held!
+
+    // Release dash key
+    inputs.set('p1', INPUT_RIGHT);
+    engine.tick(inputs);
+    expect(playerRed.stamina).toBe(50);
+
+    // Press dash key again (rising edge)
+    inputs.set('p1', INPUT_RIGHT | INPUT_DASH);
+    engine.tick(inputs);
+    expect(playerRed.stamina).toBe(0); // Second dash successfully fired on new rising edge
+    expect(playerRed.isDashing).toBe(true);
+  });
+
   it('drains Turbo at 40%/s clamped to max speed of 150 px/s (375 px over 2.5s)', () => {
     engine.ball.pos.set(1000, 1000);
     const disc = engine.playerDiscs.get('p1')!;

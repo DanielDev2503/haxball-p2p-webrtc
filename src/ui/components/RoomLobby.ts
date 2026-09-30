@@ -1,5 +1,6 @@
 import { CreateRoomModal, CreateRoomModalConfig } from './CreateRoomModal';
-import { renderIcon, PlusSquare, Search, RefreshCw } from '../utils/icons';
+import { renderIcon, PlusSquare, Search, RefreshCw, Sun, Moon } from '../utils/icons';
+import { $theme, toggleTheme } from '../stores/gameStore';
 
 export interface LobbyRoomConfig {
   name: string;
@@ -87,7 +88,23 @@ export class RoomLobby {
     });
 
     this.renderIcons();
+    this.setupThemeToggle();
     this.setupListeners();
+  }
+
+  private setupThemeToggle(): void {
+    const lobbyThemeBtn = document.getElementById('lobbyThemeToggleBtn') as HTMLButtonElement | null;
+    if (lobbyThemeBtn) {
+      lobbyThemeBtn.addEventListener('click', () => {
+        toggleTheme();
+      });
+      $theme.subscribe((theme) => {
+        const isDark = theme === 'dark';
+        lobbyThemeBtn.innerHTML = '';
+        renderIcon(lobbyThemeBtn, isDark ? Sun : Moon, { size: 18, color: isDark ? '#F59E0B' : '#0284C7' });
+        lobbyThemeBtn.title = isDark ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Oscuro';
+      });
+    }
   }
 
   private renderIcons(): void {

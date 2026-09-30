@@ -103,7 +103,7 @@ export const GAMEPLAY_CONFIG_LIMITS: Record<keyof GameplayConfig, ConfigLimits> 
     min: 0.08,
     max: 0.70,
     step: 0.01,
-    default: 0.32,
+    default: 0.35,
     label: 'Fuerza de Curva Magnus',
     description: 'Curvatura de comba con teclas A / D.'
   }
@@ -119,7 +119,7 @@ export const DEFAULT_GAMEPLAY_CONFIG: Readonly<GameplayConfig> = Object.freeze({
   boostMultiplier: 1.75,
   dashDistance: 75.0,
   staminaRechargeRate: 25.0,
-  magnusCurveStrength: 0.32
+  magnusCurveStrength: 0.35
 });
 
 /**
