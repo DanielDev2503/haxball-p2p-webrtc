@@ -33,6 +33,10 @@ export class DiscRenderer {
   private nextParticleIdx: number = 0;
   private ribbonMap: Map<number, RibbonNode[]> = new Map();
 
+  public draw(ctx: CanvasRenderingContext2D, discs: DiscSnapshot[], localDiscId?: number | null): void {
+    this.render(ctx, discs, localDiscId);
+  }
+
   constructor() {
     // Pre-alocación fija del pool de partículas de turbo (Zero GC en bucle de render)
     for (let i = 0; i < 120; i++) {

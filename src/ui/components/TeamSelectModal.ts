@@ -16,6 +16,7 @@ export class TeamSelectModal {
   private redCountEl: HTMLElement | null;
   private blueCountEl: HTMLElement | null;
   private specCountEl: HTMLElement | null;
+  private selectStadiumEl: HTMLSelectElement | null = null;
   private currentMatchState: MatchPhase = MatchPhase.STOPPED;
   private unsubs: Array<() => void> = [];
 
@@ -24,6 +25,7 @@ export class TeamSelectModal {
   public onTeamChangeRequest?: (playerId: string, team: TeamType) => void;
   public onOpenKeybinds?: () => void;
   public onMatchToggle?: () => void;
+  public onMapChange?: (stadiumId: string) => void;
 
   constructor() {
     this.menuEl = document.getElementById('ingame-menu');
@@ -102,6 +104,16 @@ export class TeamSelectModal {
       });
     }
 
+    this.selectStadiumEl = (document.getElementById('select-stadium-size') || document.querySelector('.select-stadium-size')) as HTMLSelectElement | null;
+    if (this.selectStadiumEl && !this.selectStadiumEl.dataset?.listenerBound) {
+      if (this.selectStadiumEl.dataset) this.selectStadiumEl.dataset.listenerBound = 'true';
+      this.selectStadiumEl.addEventListener('change', () => {
+        if (this.selectStadiumEl && this.onMapChange) {
+          this.onMapChange(this.selectStadiumEl.value);
+        }
+      });
+    }
+
     this.setupDragAndDropColumns();
 
     // Suscripción reactiva con Nano Stores
@@ -120,9 +132,18 @@ export class TeamSelectModal {
     );
   }
 
+  public setStadium(stadiumId: string): void {
+    if (this.selectStadiumEl) {
+      this.selectStadiumEl.value = stadiumId;
+    }
+  }
+
   public updateMatchControlButton(phase: MatchPhase, isAdmin?: boolean): void {
     if (isAdmin !== undefined) {
       this.isUserAdmin = isAdmin;
+    }
+    if (this.selectStadiumEl) {
+      this.selectStadiumEl.disabled = !this.isUserAdmin;
     }
     if (!this.matchToggleBtn) {
       this.matchToggleBtn = (document.getElementById('btn-match-toggle') || document.getElementById('btn-start-stop')) as HTMLButtonElement | null;

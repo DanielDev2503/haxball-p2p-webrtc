@@ -1,4 +1,14 @@
-import { INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK, INPUT_TURBO, INPUT_DASH } from '../core/game/Player';
+import {
+  INPUT_UP,
+  INPUT_DOWN,
+  INPUT_LEFT,
+  INPUT_RIGHT,
+  INPUT_KICK,
+  INPUT_TURBO,
+  INPUT_DASH,
+  INPUT_MAGNUS_LEFT,
+  INPUT_MAGNUS_RIGHT
+} from '../core/game/Player';
 
 export interface KeyBinds {
   up: string[];
@@ -21,10 +31,10 @@ export const DEFAULT_KEYBINDS: KeyBinds = {
   left: ['ArrowLeft'],
   right: ['ArrowRight'],
   kick: ['KeyX'],
-  turbo: ['KeyZ'],
-  dash: ['KeyC'],
-  curveLeft: ['KeyA'],
-  curveRight: ['KeyD'],
+  turbo: ['ShiftLeft', 'ShiftRight'],
+  dash: ['Space'],
+  curveLeft: ['KeyZ'],
+  curveRight: ['KeyC'],
   menu: ['Escape'],
   pause: ['KeyP'],
   chat: ['Enter']
@@ -188,7 +198,8 @@ export class InputManager {
     let right = false;
     let kick = false;
     let turbo = false;
-    let dash = false;
+    let curveLeft = false;
+    let curveRight = false;
 
     for (const [code, isPressed] of this.keyStates.entries()) {
       if (!isPressed) continue;
@@ -198,7 +209,8 @@ export class InputManager {
       if (this.keyBinds.right.includes(code)) right = true;
       if (this.keyBinds.kick.includes(code)) kick = true;
       if (this.keyBinds.turbo?.includes(code)) turbo = true;
-      if (this.keyBinds.dash?.includes(code)) dash = true;
+      if (this.keyBinds.curveLeft?.includes(code)) curveLeft = true;
+      if (this.keyBinds.curveRight?.includes(code)) curveRight = true;
     }
 
     if (up) mask |= INPUT_UP;
@@ -207,7 +219,8 @@ export class InputManager {
     if (right) mask |= INPUT_RIGHT;
     if (kick) mask |= INPUT_KICK;
     if (turbo) mask |= INPUT_TURBO;
-    if (dash) mask |= INPUT_DASH;
+    if (curveLeft) mask |= INPUT_MAGNUS_LEFT;
+    if (curveRight) mask |= INPUT_MAGNUS_RIGHT;
 
     if (mask !== this.currentMask) {
       this.currentMask = mask;
@@ -217,7 +230,11 @@ export class InputManager {
     }
   }
 
-  public getMask(): number {
+  public getMask(withDashTrigger: boolean = false): number {
+    if (withDashTrigger && this.dashTriggered) {
+      this.dashTriggered = false;
+      return this.currentMask | INPUT_DASH;
+    }
     return this.currentMask;
   }
 
@@ -234,19 +251,19 @@ export class InputManager {
   /**
    * Retorna los 2 bits de comba continua:
    * 00 (0): ninguno
-   * 01 (1): A / Tecla Izquierda
-   * 10 (2): D / Tecla Derecha
+   * 01 (1): Z / Tecla Izquierda
+   * 10 (2): C / Tecla Derecha
    */
   public getCurveInput(): number {
     let left = false;
     let right = false;
     for (const [code, isPressed] of this.keyStates.entries()) {
       if (!isPressed) continue;
-      if (code === 'KeyA' || this.keyBinds.curveLeft?.includes(code)) left = true;
-      if (code === 'KeyD' || this.keyBinds.curveRight?.includes(code)) right = true;
+      if (code === 'KeyZ' || this.keyBinds.curveLeft?.includes(code)) left = true;
+      if (code === 'KeyC' || this.keyBinds.curveRight?.includes(code)) right = true;
     }
-    if (left && !right) return 1; // 01: Left (A)
-    if (right && !left) return 2; // 10: Right (D)
+    if (left && !right) return 1; // 01: Left (Z)
+    if (right && !left) return 2; // 10: Right (C)
     return 0; // 00: Ninguno
   }
 

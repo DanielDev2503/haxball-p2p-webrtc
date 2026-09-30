@@ -1281,7 +1281,7 @@ button:disabled, input:disabled, select:disabled {
 
 [data-theme="dark"] #chat-container,
 [data-theme="dark"] .chat-box {
-  background: rgba(15, 23, 42, 0.85) !important;
+  background: rgba(15, 23, 42, 0.88) !important;
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
   box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.08);
 }
@@ -1292,15 +1292,19 @@ button:disabled, input:disabled, select:disabled {
 }
 
 [data-theme="dark"] .chat-msg {
-  color: #F8FAFC !important; /* Blanco perla puro */
+  color: #F8FAFC !important; /* Blanco perla nítido de alto contraste */
 }
 
 [data-theme="dark"] .chat-msg .author {
-  color: #FDE047 !important; /* Amarillo suave para autores neutrales */
+  color: #38BDF8 !important; /* Azul cielo */
+}
+
+[data-theme="dark"] .chat-msg.spec .author {
+  color: #FDE047 !important; /* Amarillo cálido */
 }
 
 [data-theme="dark"] .chat-msg.blue .author {
-  color: #38BDF8 !important; /* Cian de alto contraste */
+  color: #38BDF8 !important; /* Azul cielo */
 }
 
 [data-theme="dark"] .chat-msg.red .author {
@@ -1313,13 +1317,13 @@ button:disabled, input:disabled, select:disabled {
 }
 
 [data-theme="dark"] .chat-input {
-  background: rgba(30, 41, 59, 0.85);
-  border: 1.5px solid rgba(255, 255, 255, 0.18);
-  color: #F8FAFC;
+  background: rgba(30, 41, 59, 0.9) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.18) !important;
+  color: #FFFFFF !important;
 }
 
 [data-theme="dark"] .chat-input::placeholder {
-  color: #94A3B8;
+  color: #94A3B8 !important;
 }
 
 [data-theme="dark"] .chat-input:focus {

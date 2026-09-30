@@ -10,6 +10,7 @@ export interface RoomConfigState {
   timeLimit: number;
   goalLimit: number;
   teamsLocked: boolean;
+  stadiumId?: string;
 }
 
 export const $matchPhase = atom<number>(0);
@@ -22,7 +23,8 @@ export const $gameConfig = atom<GameplayConfig>(DEFAULT_GAMEPLAY_CONFIG);
 export const $roomConfig = atom<RoomConfigState>({
   timeLimit: 3,
   goalLimit: 3,
-  teamsLocked: false
+  teamsLocked: false,
+  stadiumId: 'classic'
 });
 
 const getSavedTheme = (): 'light' | 'dark' => {
@@ -44,6 +46,9 @@ export function setTheme(mode: 'light' | 'dark'): void {
   }
   if (typeof document !== 'undefined') {
     document.documentElement.setAttribute('data-theme', mode);
+    if (document.body) {
+      document.body.setAttribute('data-theme', mode);
+    }
   }
 }
 
@@ -55,5 +60,12 @@ export function toggleTheme(): 'light' | 'dark' {
 
 if (typeof document !== 'undefined') {
   document.documentElement.setAttribute('data-theme', initialTheme);
+  if (document.body) {
+    document.body.setAttribute('data-theme', initialTheme);
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      document.body.setAttribute('data-theme', $theme.get());
+    });
+  }
 }
 

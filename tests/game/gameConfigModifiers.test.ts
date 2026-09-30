@@ -134,9 +134,9 @@ describe('Gameplay Modifiers & Continuous A/D Magnus Physics Suite', () => {
         engine.tick(new Map());
       }
 
-      // Ball curves along u_perp = (0, 1) -> vel.y develops in the positive direction
-      expect(engine.ball.vel.y).toBeGreaterThan(initialVy);
-      expect(engine.ball.pos.y).toBeGreaterThan(1.0);
+      // Ball curves along u_izq = (0, -1) in screen coordinates -> vel.y develops towards top (negative)
+      expect(engine.ball.vel.y).toBeLessThan(initialVy);
+      expect(engine.ball.pos.y).toBeLessThan(-1.0);
     });
 
     it('curves the ball laterally to the right when kicker presses Key D (curveInput = 2)', () => {
@@ -165,9 +165,9 @@ describe('Gameplay Modifiers & Continuous A/D Magnus Physics Suite', () => {
         engine.tick(new Map());
       }
 
-      // Ball curves along -u_perp = (0, -1) -> vel.y develops in the negative direction
-      expect(engine.ball.vel.y).toBeLessThan(initialVy);
-      expect(engine.ball.pos.y).toBeLessThan(-1.0);
+      // Ball curves along u_der = (0, 1) in screen coordinates -> vel.y develops towards bottom (positive)
+      expect(engine.ball.vel.y).toBeGreaterThan(initialVy);
+      expect(engine.ball.pos.y).toBeGreaterThan(1.0);
     });
 
     it('extinguishes isCurvingAllowed as soon as ball collides with another entity', () => {

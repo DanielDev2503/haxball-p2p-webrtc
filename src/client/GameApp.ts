@@ -25,6 +25,7 @@ import { GameplayModifierModal } from '../ui/components/GameplayModifierModal';
 import { KeybindModal } from '../ui/components/KeybindModal';
 import { $matchPhase, $gameConfig } from '../ui/stores/gameStore';
 import { resolveGoalAndPitchBoundaries, resolvePredictivePlayerCollision, resolvePredictiveBallCollision } from '../core/physics/Collision';
+import { StadiumRegistry } from '../core/stadiums/StadiumRegistry';
 
 export function canChangeTeam(
   senderPeerId: string,
@@ -116,6 +117,7 @@ export class GameApp {
   private btnLockTeams: HTMLButtonElement | null;
   private selectTimeLimit: HTMLSelectElement | HTMLInputElement | null;
   private selectScoreLimit: HTMLSelectElement | HTMLInputElement | null;
+  private selectStadiumSize: HTMLSelectElement | null = null;
   private contextMenu: HTMLElement | null;
   private menuPlayerName: HTMLElement | null;
   private roomNameBadge: HTMLElement | null;
@@ -178,6 +180,7 @@ export class GameApp {
     this.btnLockTeams = document.getElementById('btn-lock-teams') as HTMLButtonElement | null;
     this.selectTimeLimit = (document.getElementById('select-time-limit') || document.getElementById('time-limit')) as HTMLSelectElement | HTMLInputElement | null;
     this.selectScoreLimit = (document.getElementById('select-goal-limit') || document.getElementById('score-limit')) as HTMLSelectElement | HTMLInputElement | null;
+    this.selectStadiumSize = (document.getElementById('select-stadium-size') || document.querySelector('.select-stadium-size')) as HTMLSelectElement | null;
     this.btnOpenPhysicsModifiers = document.getElementById('btn-open-physics-modifiers') as HTMLButtonElement | null;
     if (this.btnOpenPhysicsModifiers) {
       this.btnOpenPhysicsModifiers.addEventListener('click', () => {
@@ -248,7 +251,7 @@ export class GameApp {
       this.enforceMenuState(matchState);
       this.canvasRenderer.resize();
       this.startRenderLoop();
-      this.chat.addSystemMessage('Controles: Flechas = Moverse | X = Patear | Z = Turbo | C = Dash | A/D = Efecto Izq/Der');
+      this.chat.addSystemMessage('Controles: Flechas = Moverse | X = Patear | Shift = Turbo | Space = Dash | Z/C = Efecto Izq/Der');
     } else {
       this.inputManager.setEnabled(false);
       this.physicsTicker.stop();
@@ -284,6 +287,11 @@ export class GameApp {
     // Match Iniciar / Detener unificado
     this.teamSelect.onMatchToggle = () => {
       this.handleMatchToggle();
+    };
+
+    // Cambio de tamaño de estadio (Host / Admin)
+    this.teamSelect.onMapChange = (stadiumId) => {
+      this.requestMapChange(stadiumId);
     };
 
     // Context Menu on player click for Admins
@@ -532,6 +540,15 @@ export class GameApp {
         this.updateRoomConfig({ teamsLocked: newLock });
       });
     }
+
+    // Admin Stadium Size Select
+    const selectStadiumSize = (document.getElementById('select-stadium-size') || document.querySelector('.select-stadium-size')) as HTMLSelectElement | null;
+    if (selectStadiumSize) {
+      selectStadiumSize.addEventListener('change', () => {
+        if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
+        this.requestMapChange(selectStadiumSize.value);
+      });
+    }
   }
 
   private closeContextMenu(): void {
@@ -701,6 +718,10 @@ export class GameApp {
     this.currentRoomId = 'PRACTICE';
 
     this.engine = new GameEngine({ scoreLimit: 0, timeLimitSeconds: 0 }, this.gameplayConfig);
+    if (this.roomConfig.stadiumId) {
+      this.engine.setStadium(this.roomConfig.stadiumId);
+    }
+    this.canvasRenderer.setStadium(this.engine.stadium);
     this.setupEngineCallbacks(this.engine);
     this.engine.addPlayer(this.localPlayer);
     this.engine.startMatch();
@@ -729,6 +750,10 @@ export class GameApp {
       scoreLimit: this.roomConfig.scoreLimit,
       timeLimitSeconds: this.roomConfig.timeLimit * 60
     }, this.gameplayConfig);
+    if (this.roomConfig.stadiumId) {
+      this.engine.setStadium(this.roomConfig.stadiumId);
+    }
+    this.canvasRenderer.setStadium(this.engine.stadium);
     this.setupEngineCallbacks(this.engine);
     this.engine.addPlayer(this.localPlayer);
 
@@ -1001,7 +1026,8 @@ export class GameApp {
               players,
               config: this.roomConfig,
               matchState: matchStatePayload,
-              gameplayConfig: this.gameplayConfig
+              gameplayConfig: this.gameplayConfig,
+              stadiumId: this.engine?.stadium.id || this.roomConfig.stadiumId || 'classic'
             }));
 
             // Also sync all other clients about the new player
@@ -1084,6 +1110,10 @@ export class GameApp {
             scoreLimit: goalLimit,
             teamsLocked
           });
+        } else if (msg.type === 'MAP_CHANGE_REQUEST') {
+          const requester = this.engine?.players.get(peerId);
+          if (!requester?.isAdmin && peerId !== this.currentHostId) return;
+          this.setMapStadium(msg.stadiumId, true);
         }
       } catch (e) {}
     };
@@ -1159,6 +1189,9 @@ export class GameApp {
           // Apply room config
           if (msg.config) {
             this.roomConfig = { ...this.roomConfig, ...msg.config };
+          }
+          if (msg.stadiumId || msg.config?.stadiumId) {
+            this.setMapStadium(msg.stadiumId || msg.config.stadiumId, false);
           }
 
           // Process player list
@@ -1279,6 +1312,10 @@ export class GameApp {
           }
           this.applyRoomConfigToEngine();
           this.updateAdminControlsUI();
+        } else if (msg.type === 'MAP_CHANGE_SYNC') {
+          if (msg.stadiumId) {
+            this.setMapStadium(msg.stadiumId, false);
+          }
         } else if (msg.type === 'kicked') {
           alert('Has sido expulsado de la sala.');
           this.leaveCurrentRoom();
@@ -1599,6 +1636,13 @@ export class GameApp {
       this.selectScoreLimit.value = this.roomConfig.scoreLimit.toString();
     }
 
+    if (this.selectStadiumSize) {
+      this.selectStadiumSize.disabled = !isAdmin;
+      if (this.roomConfig.stadiumId) {
+        this.selectStadiumSize.value = this.roomConfig.stadiumId;
+      }
+    }
+
     if (this.btnOpenPhysicsModifiers) {
       if (isHost) {
         this.btnOpenPhysicsModifiers.style.display = 'inline-flex';
@@ -1607,6 +1651,44 @@ export class GameApp {
         this.btnOpenPhysicsModifiers.style.display = 'none';
         this.btnOpenPhysicsModifiers.disabled = true;
       }
+    }
+  }
+
+  public requestMapChange(stadiumId: string): void {
+    const isAdmin = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost);
+    if (!isAdmin) return;
+
+    if (this.mode === 'host' || this.mode === 'practice') {
+      this.setMapStadium(stadiumId, true);
+    } else if (this.mode === 'client' && this.hostPeer) {
+      this.hostPeer.sendReliable(JSON.stringify({
+        type: 'MAP_CHANGE_REQUEST',
+        stadiumId
+      }));
+    }
+  }
+
+  public setMapStadium(stadiumId: string, broadcast: boolean = false): void {
+    if (!StadiumRegistry[stadiumId]) return;
+    this.roomConfig.stadiumId = stadiumId;
+    if (this.engine) {
+      this.engine.setStadium(stadiumId);
+    }
+    if (this.canvasRenderer && this.engine) {
+      this.canvasRenderer.setStadium(this.engine.stadium);
+    }
+    this.teamSelect.setStadium(stadiumId);
+    if (this.selectStadiumSize) {
+      this.selectStadiumSize.value = stadiumId;
+    }
+
+    if (broadcast && (this.mode === 'host' || this.mode === 'practice')) {
+      this.broadcastReliable(JSON.stringify({
+        type: 'MAP_CHANGE_SYNC',
+        stadiumId
+      }));
+      const stadiumName = StadiumRegistry[stadiumId]?.name || stadiumId;
+      this.broadcastSystemChat(`🏟 Estadio cambiado a: ${stadiumName}`);
     }
   }
 
@@ -1826,12 +1908,12 @@ export class GameApp {
       this.clientStamina = Math.max(0, this.clientStamina - 50);
       this.clientIsDashing = true;
       this.clientDashTicks = 4;
-      if (hasMoveInput) {
-        this.clientDashDir.x = uMoveX;
-        this.clientDashDir.y = uMoveY;
-      } else if (vSpeed > 0.01) {
+      if (vSpeed > 0.05) {
         this.clientDashDir.x = this.predictedVel.x / vSpeed;
         this.clientDashDir.y = this.predictedVel.y / vSpeed;
+      } else if (hasMoveInput) {
+        this.clientDashDir.x = uMoveX;
+        this.clientDashDir.y = uMoveY;
       } else {
         this.clientDashDir.x = this.localPlayer.team === 'red' ? 1 : -1;
         this.clientDashDir.y = 0;
@@ -1841,15 +1923,14 @@ export class GameApp {
 
     if (this.clientIsDashing) {
       this.clientDashTicks--;
-      const dashDist = this.gameplayConfig.dashDistance ?? 75;
-      const dashSpeed = (dashDist / 4) * 60;
+      const dashSpeed = 18.75 * 60;
       this.predictedVel.x = this.clientDashDir.x * dashSpeed;
       this.predictedVel.y = this.clientDashDir.y * dashSpeed;
       if (this.clientDashTicks <= 0) {
         this.clientIsDashing = false;
       }
     } else {
-      // Predicción de Turbo en No-Host: aceleración x1.8 y velocidad tope +75%
+      // Predicción de Turbo en No-Host: aceleración x2.5 y velocidad tope x1.85
       const wantsTurbo = Boolean(isTurbo) || ((mask & INPUT_TURBO) !== 0);
       if (wantsTurbo && hasMoveInput && this.clientStamina > 0) {
         this.clientIsTurbo = true;
@@ -1858,12 +1939,12 @@ export class GameApp {
           this.clientIsTurbo = false;
         }
 
-        const turboAccel = accel * 1.8;
+        const turboAccel = accel * 2.5;
         this.predictedVel.x += uMoveX * turboAccel;
         this.predictedVel.y += uMoveY * turboAccel;
 
         const baseSpeed = (this.gameplayConfig.playerMaxSpeed / 2.8) * 103.45;
-        const maxTurboSpeed = baseSpeed * 1.75;
+        const maxTurboSpeed = baseSpeed * 1.85;
         const curSpeed = Math.hypot(this.predictedVel.x, this.predictedVel.y);
         if (curSpeed > maxTurboSpeed) {
           this.predictedVel.x = (this.predictedVel.x / curSpeed) * maxTurboSpeed;
@@ -1906,7 +1987,8 @@ export class GameApp {
         halfWidth: stadium ? stadium.halfWidth : 600,
         halfHeight: stadium ? stadium.halfHeight : 270,
         goalHalfHeight: stadium ? stadium.goalHalfHeight : 85,
-        goalDepth: stadium ? stadium.goalDepth : 35
+        goalDepth: stadium ? stadium.goalDepth : 35,
+        runOff: stadium ? stadium.runOff : 45
       }
     );
 

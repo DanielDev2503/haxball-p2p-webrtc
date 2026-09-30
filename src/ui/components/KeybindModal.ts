@@ -10,11 +10,11 @@ export const ACTIVE_KEYBIND_ROWS: KeybindRowConfig[] = [
   { key: 'down', label: 'Abajo (Mover)' },
   { key: 'left', label: 'Izquierda (Mover)' },
   { key: 'right', label: 'Derecha (Mover)' },
-  { key: 'kick', label: 'Patear / Chutar' },
-  { key: 'turbo', label: 'Turbo / Sprint' },
-  { key: 'dash', label: 'Dash / Salto Rápido' },
-  { key: 'curveLeft', label: 'Efecto Izquierda (A)' },
-  { key: 'curveRight', label: 'Efecto Derecha (D)' }
+  { key: 'kick', label: 'Patear / Chutar (X)' },
+  { key: 'turbo', label: 'Turbo / Sprint (Shift)' },
+  { key: 'dash', label: 'Dash / Salto Rápido (Espacio)' },
+  { key: 'curveLeft', label: 'Efecto Magnus Izquierda (Z)' },
+  { key: 'curveRight', label: 'Efecto Magnus Derecha (C)' }
 ];
 
 export class KeybindModal {

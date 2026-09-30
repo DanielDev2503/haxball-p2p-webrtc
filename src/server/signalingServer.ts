@@ -8,6 +8,7 @@ export interface RoomConfig {
   timeLimit: number; // En minutos; 0 = Indefinido
   scoreLimit: number; // Goles; 0 = Indefinido
   teamsLocked: boolean;
+  stadiumId?: string | undefined;
 }
 
 export interface Room {

@@ -39,9 +39,9 @@ describe('Directed 2D Magnus Effect', () => {
     expect(engine.ball.isCurving).toBe(true);
     expect(engine.ball.curvePerp).toBeLessThan(0); // Left perpendicular normal has -ey or negative
 
-    // Run 15 physics ticks and observe lateral deviation
+    // Run 20 physics ticks and observe lateral deviation
     const initialVy = engine.ball.vel.y;
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 20; i++) {
       engine.tick(new Map());
     }
 

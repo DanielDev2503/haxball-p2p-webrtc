@@ -106,6 +106,7 @@ export function resolveDiscSegmentCollision(
   onCollision?: (e: CollisionEvent) => void
 ): boolean {
   if (disc.invMass === 0) return false;
+  if ((disc.cGroup & seg.cMask) === 0 || (seg.cGroup & disc.cMask) === 0) return false;
 
   const closest = Vec2.t0;
   closestPointOnSegment(disc.pos.x, disc.pos.y, seg.p0.x, seg.p0.y, seg.p1.x, seg.p1.y, closest);
@@ -154,11 +155,12 @@ export interface StadiumBoundariesConfig {
   halfHeight?: number;      // default 270
   goalHalfHeight?: number;  // default 85
   goalDepth?: number;       // default 35 (fondo de red X = ±635)
+  runOff?: number;          // default 45 (zona de escape para jugadores)
 }
 
 /**
  * Resuelve la delimitación analítica completa del estadio para la predicción local del cliente,
- * permitiendo la libre circulación en el interior de la portería (X in [-635, 635]).
+ * permitiendo la zona de escape exterior (run-off) y la libre circulación en el interior de la portería.
  */
 export function resolveGoalAndPitchBoundaries(
   pos: { x: number; y: number },
@@ -166,24 +168,27 @@ export function resolveGoalAndPitchBoundaries(
   radius: number = 15,
   config: StadiumBoundariesConfig = {}
 ): void {
-  const hw = config.halfWidth ?? 600;
-  const hh = config.halfHeight ?? 270;
+  const pitchHw = config.halfWidth ?? 600;
+  const pitchHh = config.halfHeight ?? 270;
+  const runOff = config.runOff ?? 0;
+  const extHw = pitchHw + runOff;
+  const extHh = pitchHh + runOff;
   const gh = config.goalHalfHeight ?? 85;
   const gd = config.goalDepth ?? 35;
-  const netX = hw + gd; // 635
+  const netX = pitchHw + gd;
 
-  // 1. Paredes perimetrales superior e inferior del campo (y = ±hh)
-  if (pos.y < -hh + radius) {
-    pos.y = -hh + radius;
+  // 1. Paredes perimetrales superior e inferior del campo exterior (y = ±extHh)
+  if (pos.y < -extHh + radius) {
+    pos.y = -extHh + radius;
     if (vel.y < 0) vel.y = 0;
-  } else if (pos.y > hh - radius) {
-    pos.y = hh - radius;
+  } else if (pos.y > extHh - radius) {
+    pos.y = extHh - radius;
     if (vel.y > 0) vel.y = 0;
   }
 
-  // 2. Paredes superior e inferior de la red de la portería (y = ±gh para |x| in [hw, netX])
+  // 2. Paredes superior e inferior de la red de la portería (y = ±gh para |x| in [pitchHw, netX])
   const absX = Math.abs(pos.x);
-  if (absX >= hw) {
+  if (absX >= pitchHw && absX <= netX + radius) {
     if (pos.y < -gh + radius) {
       pos.y = -gh + radius;
       if (vel.y < 0) vel.y = 0;
@@ -193,14 +198,14 @@ export function resolveGoalAndPitchBoundaries(
     }
   }
 
-  // 3. Paredes verticales perimetrales (X = ±hw) y fondo de red (X = ±netX)
+  // 3. Paredes verticales perimetrales (X = ±extHw) y fondo de red (X = ±netX)
   if (Math.abs(pos.y) > gh) {
-    // Fuera de la boca de la portería: límites en X = ±hw
-    if (pos.x < -hw + radius) {
-      pos.x = -hw + radius;
+    // Fuera de la boca de la portería: límites en X = ±extHw (zona de escape)
+    if (pos.x < -extHw + radius) {
+      pos.x = -extHw + radius;
       if (vel.x < 0) vel.x = 0;
-    } else if (pos.x > hw - radius) {
-      pos.x = hw - radius;
+    } else if (pos.x > extHw - radius) {
+      pos.x = extHw - radius;
       if (vel.x > 0) vel.x = 0;
     }
   } else {
@@ -214,12 +219,12 @@ export function resolveGoalAndPitchBoundaries(
     }
   }
 
-  // 4. Colisión analítica de los 4 postes en (±hw, ±gh) con radio = 8
+  // 4. Colisión analítica de los 4 postes en (±pitchHw, ±gh) con radio = 8
   const postR = 8;
   const minPostDist = radius + postR;
   const minPostDistSq = minPostDist * minPostDist;
 
-  const postsX = [-hw, -hw, hw, hw];
+  const postsX = [-pitchHw, -pitchHw, pitchHw, pitchHw];
   const postsY = [-gh, gh, -gh, gh];
 
   for (let i = 0; i < 4; i++) {

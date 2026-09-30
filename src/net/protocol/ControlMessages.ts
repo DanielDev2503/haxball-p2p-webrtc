@@ -24,7 +24,9 @@ export type ControlMessageType =
   | 'MATCH_STOPPED_EVENT'
   | 'ROOM_SETTINGS_REQUEST'
   | 'ROOM_SETTINGS_SYNC'
-  | 'GAME_CONFIG_SYNC';
+  | 'GAME_CONFIG_SYNC'
+  | 'MAP_CHANGE_REQUEST'
+  | 'MAP_CHANGE_SYNC';
 
 export interface RoomConfig {
   name: string;
@@ -168,4 +170,15 @@ export interface RoomSettingsSyncMessage {
   scoreLimit?: number;
   teamsLocked: boolean;
 }
+
+export interface MapChangeRequestMessage {
+  type: 'MAP_CHANGE_REQUEST';
+  stadiumId: string;
+}
+
+export interface MapChangeSyncMessage {
+  type: 'MAP_CHANGE_SYNC';
+  stadiumId: string;
+}
+
 

@@ -11,6 +11,7 @@ export interface SegmentOptions {
   cGroup?: number;
   cMask?: number;
   color?: string;
+  visible?: boolean;
 }
 
 export class Segment {
@@ -21,6 +22,7 @@ export class Segment {
   public cGroup: number;
   public cMask: number;
   public color: string;
+  public visible: boolean;
 
   constructor(options: SegmentOptions) {
     this.id = options.id;
@@ -30,5 +32,6 @@ export class Segment {
     this.cGroup = options.cGroup ?? COLLISION_GROUP_WALL;
     this.cMask = options.cMask ?? COLLISION_GROUP_ALL;
     this.color = options.color ?? '#64748b';
+    this.visible = options.visible ?? true;
   }
 }

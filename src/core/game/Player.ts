@@ -1,10 +1,12 @@
-export const INPUT_UP = 1 << 0;
-export const INPUT_DOWN = 1 << 1;
-export const INPUT_LEFT = 1 << 2;
-export const INPUT_RIGHT = 1 << 3;
-export const INPUT_KICK = 1 << 4;
-export const INPUT_TURBO = 1 << 5;
-export const INPUT_DASH = 1 << 6;
+export const INPUT_UP = 1 << 0;          // Bit 0: ArrowUp
+export const INPUT_DOWN = 1 << 1;        // Bit 1: ArrowDown
+export const INPUT_LEFT = 1 << 2;        // Bit 2: ArrowLeft
+export const INPUT_RIGHT = 1 << 3;       // Bit 3: ArrowRight
+export const INPUT_KICK = 1 << 4;        // Bit 4: Kick (X)
+export const INPUT_TURBO = 1 << 5;       // Bit 5: Turbo (Shift)
+export const INPUT_DASH = 1 << 6;        // Bit 6: DashTrigger (Space) — Flanco ascendente exclusivo
+export const INPUT_MAGNUS_LEFT = 1 << 7; // Bit 7: MagnusLeft (Z)
+export const INPUT_MAGNUS_RIGHT = 1 << 8;// Bit 8: MagnusRight (C)
 
 export type TeamType = 'red' | 'blue' | 'spec';
 

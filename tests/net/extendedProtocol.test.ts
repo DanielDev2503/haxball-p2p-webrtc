@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { InputPacket } from '../../src/net/protocol/InputPacket';
 import { SnapshotPacket } from '../../src/net/protocol/SnapshotPacket';
 import { GameSnapshot } from '../../src/core/game/GameState';
-import { INPUT_UP, INPUT_KICK, INPUT_TURBO, INPUT_DASH } from '../../src/core/game/Player';
+import { INPUT_UP, INPUT_KICK, INPUT_TURBO, INPUT_DASH, INPUT_MAGNUS_LEFT } from '../../src/core/game/Player';
 import { MatchPhase } from '../../src/core/game/GameFSM';
 import { OP_INPUT, OP_SNAPSHOT } from '../../src/net/protocol/BinaryProtocol';
 
@@ -13,7 +13,6 @@ describe('Extended Binary Protocol Serialization (Magnus, Stamina, Turbo, Dash)'
       inputMask: INPUT_UP | INPUT_KICK | INPUT_TURBO | INPUT_DASH,
       clientTimestamp: 60000,
       curveX: -1,
-      curveY: 1,
       isTurbo: true,
       triggerDash: true
     };
@@ -24,10 +23,10 @@ describe('Extended Binary Protocol Serialization (Magnus, Stamina, Turbo, Dash)'
     const decoded = InputPacket.decode(buffer);
     expect(decoded).not.toBeNull();
     expect(decoded!.sequence).toBe(550);
-    expect(decoded!.inputMask).toBe(INPUT_UP | INPUT_KICK | INPUT_TURBO | INPUT_DASH);
+    expect(decoded!.inputMask).toBe(INPUT_UP | INPUT_KICK | INPUT_TURBO | INPUT_DASH | INPUT_MAGNUS_LEFT);
     expect(decoded!.clientTimestamp).toBe(60000);
     expect(decoded!.curveX).toBe(-1);
-    expect(decoded!.curveY).toBe(1);
+    expect(decoded!.curveY).toBe(0);
     expect(decoded!.isTurbo).toBe(true);
     expect(decoded!.triggerDash).toBe(true);
   });

@@ -118,6 +118,13 @@
                   <option value="15">15</option>
                 </select>
               </label>
+              <label>🏟 Estadio:
+                <select id="select-stadium-size" class="form-input-inline">
+                  <option value="small">Pequeño (1v1 / 2v2)</option>
+                  <option value="classic" selected>Mediano (3v3 Clásico)</option>
+                  <option value="big">Grande (4v4)</option>
+                </select>
+              </label>
             </div>
           </div>
 
@@ -178,7 +185,7 @@
 
     <!-- Área Inferior: Chat Centrado con espacio reservado propio -->
     <footer id="chat-section" class="chat-section">
-      <div id="chat-container">
+      <div id="chat-container" class="chat-box">
         <div id="chat-messages" class="chat-messages"></div>
         <form id="chatForm" class="chat-input-form">
           <input id="chat-input" type="text" class="chat-input" placeholder="Presiona Enter para escribir..." maxlength="120" autocomplete="off" />

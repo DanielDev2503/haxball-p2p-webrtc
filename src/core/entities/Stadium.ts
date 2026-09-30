@@ -1,4 +1,11 @@
-import { Disc } from './Disc';
+import {
+  Disc,
+  COLLISION_GROUP_BALL,
+  COLLISION_GROUP_RED,
+  COLLISION_GROUP_BLUE,
+  COLLISION_GROUP_WALL,
+  COLLISION_GROUP_ALL
+} from './Disc';
 import { Segment } from './Segment';
 
 export interface GoalDefinition {
@@ -8,7 +15,18 @@ export interface GoalDefinition {
   size?: number;
 }
 
+export interface StadiumOptions {
+  id?: string;
+  name?: string;
+  width?: number;
+  height?: number;
+  goalSize?: number;
+  goalDepth?: number;
+  runOff?: number;
+}
+
 export class Stadium {
+  public id: string = 'classic';
   public name: string = 'Classic Haxball';
   public width: number = 1200;
   public height: number = 540;
@@ -17,6 +35,7 @@ export class Stadium {
   public goalHalfHeight: number = 85;
   public goalDepth: number = 35;
   public centerRadius: number = 80;
+  public runOff: number = 45; // delta = 45 px (1.5 player diameters)
 
   public get goalSize(): number {
     return this.goalHalfHeight * 2;
@@ -26,7 +45,28 @@ export class Stadium {
   public posts: Disc[] = [];
   public goals: GoalDefinition[] = [];
 
-  constructor() {
+  constructor(options?: StadiumOptions) {
+    if (options) {
+      if (options.id) this.id = options.id;
+      if (options.name) this.name = options.name;
+      if (options.width) {
+        this.width = options.width;
+        this.halfWidth = options.width / 2;
+      }
+      if (options.height) {
+        this.height = options.height;
+        this.halfHeight = options.height / 2;
+      }
+      if (options.goalSize) {
+        this.goalHalfHeight = options.goalSize / 2;
+      }
+      if (options.goalDepth) {
+        this.goalDepth = options.goalDepth;
+      }
+      if (options.runOff !== undefined) {
+        this.runOff = options.runOff;
+      }
+    }
     this.buildGeometry();
   }
 
@@ -35,45 +75,175 @@ export class Stadium {
     const hh = this.halfHeight;
     const gh = this.goalHalfHeight;
     const gd = this.goalDepth;
+    const delta = this.runOff;
 
     let segId = 1;
 
-    // Pitch perimeter walls
+    // 1. Límite Interior (Líneas de la Cancha): cMask: ['ball'], cGroup: ['pitchLine']
+    // El balón rebota estrictamente en las líneas reglamentarias (X = ±W/2, Y = ±H/2, salvo apertura de arcos)
     // Top
-    this.segments.push(new Segment({ id: segId++, x0: -hw, y0: -hh, x1: hw, y1: -hh, bounciness: 0.5 }));
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: -hw, y0: -hh, x1: hw, y1: -hh,
+      bounciness: 0.5,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_BALL,
+      color: '#64748b'
+    }));
     // Bottom
-    this.segments.push(new Segment({ id: segId++, x0: -hw, y0: hh, x1: hw, y1: hh, bounciness: 0.5 }));
-    // Left top & bottom
-    this.segments.push(new Segment({ id: segId++, x0: -hw, y0: -hh, x1: -hw, y1: -gh, bounciness: 0.5 }));
-    this.segments.push(new Segment({ id: segId++, x0: -hw, y0: gh, x1: -hw, y1: hh, bounciness: 0.5 }));
-    // Right top & bottom
-    this.segments.push(new Segment({ id: segId++, x0: hw, y0: -hh, x1: hw, y1: -gh, bounciness: 0.5 }));
-    this.segments.push(new Segment({ id: segId++, x0: hw, y0: gh, x1: hw, y1: hh, bounciness: 0.5 }));
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: -hw, y0: hh, x1: hw, y1: hh,
+      bounciness: 0.5,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_BALL,
+      color: '#64748b'
+    }));
+    // Left top & bottom (fuera de la boca del arco)
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: -hw, y0: -hh, x1: -hw, y1: -gh,
+      bounciness: 0.5,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_BALL,
+      color: '#64748b'
+    }));
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: -hw, y0: gh, x1: -hw, y1: hh,
+      bounciness: 0.5,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_BALL,
+      color: '#64748b'
+    }));
+    // Right top & bottom (fuera de la boca del arco)
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: hw, y0: -hh, x1: hw, y1: -gh,
+      bounciness: 0.5,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_BALL,
+      color: '#64748b'
+    }));
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: hw, y0: gh, x1: hw, y1: hh,
+      bounciness: 0.5,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_BALL,
+      color: '#64748b'
+    }));
 
-    // Left Goal Nets
-    this.segments.push(new Segment({ id: segId++, x0: -hw, y0: -gh, x1: -(hw + gd), y1: -gh, bounciness: 0.2, color: '#94a3b8' }));
-    this.segments.push(new Segment({ id: segId++, x0: -(hw + gd), y0: -gh, x1: -(hw + gd), y1: gh, bounciness: 0.2, color: '#94a3b8' }));
-    this.segments.push(new Segment({ id: segId++, x0: -(hw + gd), y0: gh, x1: -hw, y1: gh, bounciness: 0.2, color: '#94a3b8' }));
+    // 2. Límite Exterior Invisible (Zona de Escape del Jugador):
+    // Distancia delta = 45 px. Segmentos colocados a (X = ±(W/2 + delta), Y = ±(H/2 + delta))
+    // cMask: ['red', 'blue'] y visible: false
+    const extHw = hw + delta;
+    const extHh = hh + delta;
 
-    // Right Goal Nets
-    this.segments.push(new Segment({ id: segId++, x0: hw, y0: -gh, x1: hw + gd, y1: -gh, bounciness: 0.2, color: '#94a3b8' }));
-    this.segments.push(new Segment({ id: segId++, x0: hw + gd, y0: -gh, x1: hw + gd, y1: gh, bounciness: 0.2, color: '#94a3b8' }));
-    this.segments.push(new Segment({ id: segId++, x0: hw + gd, y0: gh, x1: hw, y1: gh, bounciness: 0.2, color: '#94a3b8' }));
+    // Top exterior
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: -extHw, y0: -extHh, x1: extHw, y1: -extHh,
+      bounciness: 0.2,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_RED | COLLISION_GROUP_BLUE,
+      visible: false
+    }));
+    // Bottom exterior
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: -extHw, y0: extHh, x1: extHw, y1: extHh,
+      bounciness: 0.2,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_RED | COLLISION_GROUP_BLUE,
+      visible: false
+    }));
+    // Left exterior
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: -extHw, y0: -extHh, x1: -extHw, y1: extHh,
+      bounciness: 0.2,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_RED | COLLISION_GROUP_BLUE,
+      visible: false
+    }));
+    // Right exterior
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: extHw, y0: -extHh, x1: extHw, y1: extHh,
+      bounciness: 0.2,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_RED | COLLISION_GROUP_BLUE,
+      visible: false
+    }));
 
-    // Goal Posts (Discs with mass = 0, invMass = 0)
+    // 3. Redes de Portería (Goal Nets)
+    // Left Goal Nets (Red Goal)
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: -hw, y0: -gh, x1: -(hw + gd), y1: -gh,
+      bounciness: 0.2,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_ALL,
+      color: '#94a3b8'
+    }));
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: -(hw + gd), y0: -gh, x1: -(hw + gd), y1: gh,
+      bounciness: 0.2,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_ALL,
+      color: '#94a3b8'
+    }));
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: -(hw + gd), y0: gh, x1: -hw, y1: gh,
+      bounciness: 0.2,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_ALL,
+      color: '#94a3b8'
+    }));
+
+    // Right Goal Nets (Blue Goal)
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: hw, y0: -gh, x1: hw + gd, y1: -gh,
+      bounciness: 0.2,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_ALL,
+      color: '#94a3b8'
+    }));
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: hw + gd, y0: -gh, x1: hw + gd, y1: gh,
+      bounciness: 0.2,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_ALL,
+      color: '#94a3b8'
+    }));
+    this.segments.push(new Segment({
+      id: segId++,
+      x0: hw + gd, y0: gh, x1: hw, y1: gh,
+      bounciness: 0.2,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: COLLISION_GROUP_ALL,
+      color: '#94a3b8'
+    }));
+
+    // 4. Postes de Portería (Goal Posts)
     let postId = 100;
     const postRadius = 8;
     const postColor = '#ffffff';
 
     // Left posts (Red goal)
-    this.posts.push(new Disc({ id: postId++, x: -hw, y: -gh, radius: postRadius, mass: 0, bounciness: 0.5, color: postColor }));
-    this.posts.push(new Disc({ id: postId++, x: -hw, y: gh, radius: postRadius, mass: 0, bounciness: 0.5, color: postColor }));
+    this.posts.push(new Disc({ id: postId++, x: -hw, y: -gh, radius: postRadius, mass: 0, bounciness: 0.5, color: postColor, cGroup: COLLISION_GROUP_WALL, cMask: COLLISION_GROUP_ALL }));
+    this.posts.push(new Disc({ id: postId++, x: -hw, y: gh, radius: postRadius, mass: 0, bounciness: 0.5, color: postColor, cGroup: COLLISION_GROUP_WALL, cMask: COLLISION_GROUP_ALL }));
 
     // Right posts (Blue goal)
-    this.posts.push(new Disc({ id: postId++, x: hw, y: -gh, radius: postRadius, mass: 0, bounciness: 0.5, color: postColor }));
-    this.posts.push(new Disc({ id: postId++, x: hw, y: gh, radius: postRadius, mass: 0, bounciness: 0.5, color: postColor }));
+    this.posts.push(new Disc({ id: postId++, x: hw, y: -gh, radius: postRadius, mass: 0, bounciness: 0.5, color: postColor, cGroup: COLLISION_GROUP_WALL, cMask: COLLISION_GROUP_ALL }));
+    this.posts.push(new Disc({ id: postId++, x: hw, y: gh, radius: postRadius, mass: 0, bounciness: 0.5, color: postColor, cGroup: COLLISION_GROUP_WALL, cMask: COLLISION_GROUP_ALL }));
 
-    // Goal definitions
+    // 5. Goal definitions
     this.goals.push({
       team: 'red',
       p0: { x: -hw, y: -gh },

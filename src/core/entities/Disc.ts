@@ -92,4 +92,33 @@ export class Disc {
     this.lastKickerDiscId = -1;
     this.kickerHeading = null;
   }
+
+  /**
+   * Aplica el Efecto Magnus en coordenadas de pantalla (+Y hacia abajo, +X hacia la derecha):
+   * u = v / ||v||
+   * u_izq = (u_y, -u_x)
+   * u_der = (-u_y, u_x)
+   * Si presiona Z (Izquierda): a_perp = u_izq * k_magnus
+   * Si presiona C (Derecha): a_perp = u_der * k_magnus
+   */
+  public applyMagnusCurve(curveLeft: boolean, curveRight: boolean, kMagnus: number = 0.35): void {
+    if (!this.isBall || !this.isCurvingAllowed) return;
+    const speed = Math.hypot(this.vel.x, this.vel.y);
+    if (speed <= 0.05) return;
+
+    const ux = this.vel.x / speed;
+    const uy = this.vel.y / speed;
+
+    if (curveLeft && !curveRight) {
+      this.vel.x += uy * kMagnus;
+      this.vel.y += -ux * kMagnus;
+      this.isCurving = true;
+      this.curvePerp = -1;
+    } else if (curveRight && !curveLeft) {
+      this.vel.x += -uy * kMagnus;
+      this.vel.y += ux * kMagnus;
+      this.isCurving = true;
+      this.curvePerp = 1;
+    }
+  }
 }

@@ -38,6 +38,17 @@ export class PhysicsWorld {
     this.segments.push(segment);
   }
 
+  public removeSegment(segment: Segment): void {
+    const idx = this.segments.indexOf(segment);
+    if (idx !== -1) {
+      this.segments.splice(idx, 1);
+    }
+  }
+
+  public clearSegments(): void {
+    this.segments = [];
+  }
+
   /**
    * Advances the simulation by fixedDt using adaptive substepping.
    * Calculates maximum displacement to guarantee no fast-moving disc

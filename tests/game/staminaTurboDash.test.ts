@@ -120,9 +120,9 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     // Stamina should drain ~40% (leaving ~60%)
     expect(playerRed.stamina).toBeCloseTo(60, 0);
     expect(playerRed.isTurbo).toBe(true);
-    // Speed clamped to turboMaxSpeed (+75% over base ~181 px/s), resulting in 181 * 0.96 = 173.8 post-damping
+    // Speed clamped to turboMaxSpeed (x1.85 over base ~103.45 px/s terminal velocity), resulting in 103.45 * 1.85 * 0.96 = 183.73 post-damping
     const speed = Math.hypot(disc.vel.x, disc.vel.y);
-    expect(speed).toBeCloseTo(181 * 0.96, 0.5);
+    expect(speed).toBeCloseTo(103.45 * 1.85 * 0.96, 0.5);
 
     // Drain remaining stamina (another 90 ticks = 1.5s, total 150 ticks = 2.5s)
     for (let i = 0; i < 90; i++) {

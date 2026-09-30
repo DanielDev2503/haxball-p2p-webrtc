@@ -2,6 +2,10 @@ import { Stadium } from '../core/entities/Stadium';
 import { $theme } from '../ui/stores/gameStore';
 
 export class PitchRenderer {
+  public draw(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
+    this.render(ctx, stadium);
+  }
+
   public render(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
     const isDark = $theme.get() === 'dark';
     const width = stadium.width ?? (stadium.halfWidth * 2);

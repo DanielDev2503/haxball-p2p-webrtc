@@ -3,6 +3,7 @@ import { GameSnapshot } from '../core/game/GameState';
 import { MatchPhase, toMatchPhase } from '../core/game/GameFSM';
 import { PitchRenderer } from './PitchRenderer';
 import { DiscRenderer } from './DiscRenderer';
+import { Camera } from './Camera';
 import { $theme } from '../ui/stores/gameStore';
 import gsap from 'gsap';
 import confetti from 'canvas-confetti';
@@ -13,6 +14,7 @@ export class CanvasRenderer {
   public stadium: Stadium;
   public pitchRenderer: PitchRenderer;
   public discRenderer: DiscRenderer;
+  public camera: Camera;
 
   public scale: number = 1;
   public offsetX: number = 0;
@@ -32,11 +34,17 @@ export class CanvasRenderer {
     this.stadium = stadium;
     this.pitchRenderer = new PitchRenderer();
     this.discRenderer = new DiscRenderer();
+    this.camera = new Camera();
 
     this.handleResize();
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', () => this.handleResize());
     }
+  }
+
+  public setStadium(stadium: Stadium): void {
+    this.stadium = stadium;
+    this.handleResize();
   }
 
   public clear(): void {
@@ -107,24 +115,43 @@ export class CanvasRenderer {
     const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
     const ctx = this.ctx;
 
+    // Seguimiento dinámico de cámara (Lerp 0.12): Sigue al jugador local, o al balón si es espectador
+    const ball = snapshot.discs?.find(d => d.team === 0);
+    const localPlayer = (localDiscId !== null && localDiscId !== undefined)
+      ? snapshot.discs?.find(d => d.id === localDiscId)
+      : null;
+    const target = localPlayer ?? ball;
+    if (target) {
+      this.camera.follow(target.x, target.y);
+    }
+
+    const vWidth = (this.canvas.width / dpr) / this.scale;
+    const vHeight = (this.canvas.height / dpr) / this.scale;
+    const wExt = this.stadium.width + (this.stadium.goalDepth + this.stadium.runOff) * 2;
+    const hExt = this.stadium.height + this.stadium.runOff * 2;
+    this.camera.clamp(wExt, hExt, vWidth, vHeight);
+
     ctx.save();
     // Fondo perimetral técnico según Tema (Modo Oscuro #050811 vs Modo Claro #E0F2FE)
     const isDark = $theme.get() === 'dark';
     ctx.fillStyle = isDark ? '#050811' : '#E0F2FE';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // Transformaciones High-DPI, Centrado y Desplazamiento de Cámara GSAP
+    // Transformaciones High-DPI y Centrado
     ctx.scale(dpr, dpr);
     ctx.translate(this.offsetX + this.cameraOffset.x, this.offsetY + this.cameraOffset.y);
     ctx.scale(this.scale, this.scale);
 
-    // 1. Render Pitch geometry & posts
-    this.pitchRenderer.render(ctx, this.stadium);
+    // 1 & 2. Render Pitch y Discos bajo traslación de Cámara Dinámica
+    ctx.save();
+    ctx.translate(-this.camera.x, -this.camera.y);
+    this.pitchRenderer.draw(ctx, this.stadium);
+    if (snapshot.discs) {
+      this.discRenderer.draw(ctx, snapshot.discs, localDiscId);
+    }
+    ctx.restore();
 
-    // 2. Render Discs (ball & players)
-    this.discRenderer.render(ctx, snapshot.discs, localDiscId);
-
-    // 3. Render Match Status Banners (función pura del snapshot)
+    // 3. Render Match Status Banners estáticos en centro de pantalla
     this.drawOverlays(ctx, snapshot);
 
     ctx.restore();
