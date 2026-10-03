@@ -19,6 +19,7 @@ export class CanvasRenderer {
   public scale: number = 1;
   public offsetX: number = 0;
   public offsetY: number = 0;
+  private safeAreaBottom: number = 160;
 
   // Transformación de cámara y sacudón elástico con GSAP
   public cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
@@ -39,6 +40,32 @@ export class CanvasRenderer {
     this.handleResize();
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', () => this.handleResize());
+    }
+  }
+
+  public setChatSafeArea(bottom: number): void {
+    if (bottom >= 0) {
+      this.safeAreaBottom = bottom;
+    }
+  }
+
+  public getChatSafeArea(): number {
+    return this.safeAreaBottom;
+  }
+
+  private refreshChatSafeArea(): void {
+    if (typeof document === 'undefined') return;
+    try {
+      const chatContainer = document.getElementById('chat-container') ||
+        (typeof document.querySelector === 'function' ? document.querySelector('.chat-box') as HTMLElement | null : null);
+      if (chatContainer && typeof chatContainer.getBoundingClientRect === 'function') {
+        const rect = chatContainer.getBoundingClientRect();
+        if (rect.height > 0) {
+          this.safeAreaBottom = rect.height + 32;
+        }
+      }
+    } catch {
+      // Ignorar en entornos sin DOM completo
     }
   }
 
@@ -65,16 +92,14 @@ export class CanvasRenderer {
     this.canvas.width = Math.round(displayWidth * dpr);
     this.canvas.height = Math.round(displayHeight * dpr);
 
-    // Compute scale to fit stadium + margin
-    const totalStadiumWidth = (this.stadium.halfWidth + this.stadium.goalDepth + 30) * 2;
-    const totalStadiumHeight = (this.stadium.halfHeight + 30) * 2;
+    // Invarianza Estricta de Escala: 1:1 estilo Haxball Clásico (el radio de jugadores y balón es constante)
+    this.scale = 1.0;
 
-    const scaleX = (this.canvas.width / dpr) / totalStadiumWidth;
-    const scaleY = (this.canvas.height / dpr) / totalStadiumHeight;
-    this.scale = Math.min(scaleX, scaleY);
+    this.refreshChatSafeArea();
 
+    const usableHeight = (this.canvas.height / dpr) - this.safeAreaBottom;
     this.offsetX = (this.canvas.width / dpr) / 2;
-    this.offsetY = (this.canvas.height / dpr) / 2;
+    this.offsetY = Math.max(usableHeight / 2, (this.canvas.height / dpr) / 4);
   }
 
   /**
@@ -125,11 +150,15 @@ export class CanvasRenderer {
       this.camera.follow(target.x, target.y);
     }
 
-    const vWidth = (this.canvas.width / dpr) / this.scale;
-    const vHeight = (this.canvas.height / dpr) / this.scale;
+    const vWidth = this.canvas.width / dpr;
+    const vHeight = this.canvas.height / dpr;
+    const usableHeight = Math.max(100, vHeight - this.safeAreaBottom);
+    this.offsetX = vWidth / 2;
+    this.offsetY = usableHeight / 2;
+
     const wExt = this.stadium.width + (this.stadium.goalDepth + this.stadium.runOff) * 2;
     const hExt = this.stadium.height + this.stadium.runOff * 2;
-    this.camera.clamp(wExt, hExt, vWidth, vHeight);
+    this.camera.clamp(wExt, hExt, vWidth, vHeight, this.safeAreaBottom);
 
     ctx.save();
     // Fondo perimetral técnico según Tema (Modo Oscuro #050811 vs Modo Claro #E0F2FE)

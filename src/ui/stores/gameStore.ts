@@ -32,7 +32,7 @@ const getSavedTheme = (): 'light' | 'dark' => {
     const saved = localStorage.getItem('haxball_theme');
     if (saved === 'dark' || saved === 'light') return saved;
   }
-  return 'light';
+  return 'dark';
 };
 
 const initialTheme = getSavedTheme();

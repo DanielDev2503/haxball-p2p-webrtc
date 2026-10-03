@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="dark" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -42,8 +42,8 @@
         <button id="theme-toggle-btn" class="icon-btn theme-toggle-btn" title="Cambiar Tema (Claro / Oscuro)"></button>
       </div>
 
-      <!-- Bottom-Left Discrete FPS & Ping Counter -->
-      <div class="hud-bottom-left" id="pingContainer">
+      <!-- Hidden compatibility anchor for legacy store hooks and tests -->
+      <div class="hud-bottom-left u-hidden" id="pingContainer" style="display: none;">
         <span id="fpsValue" class="hud-fps-text">Fps: 60</span>
         <span class="hud-dot-sep">•</span>
         <span id="pingValue" class="hud-ping-text">0ms</span>
@@ -55,6 +55,13 @@
     <!-- Área Superior: Canvas y HUD -->
     <main id="game-view" style="flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; position: relative;">
       <canvas id="gameCanvas" class="game-canvas"></canvas>
+
+      <!-- Widget de Telemetría: Ping, FPS y Sparkline en Tiempo Real (Esquina Inferior Izquierda) -->
+      <div id="statsMonitor" class="stats-monitor-widget fixed bottom-3 left-3 z-30 select-none pointer-events-none">
+        <div id="statsPingText" class="stats-line font-mono text-xs text-white">Ping: 0ms - 0ms</div>
+        <div id="statsFpsText" class="stats-line font-mono text-xs text-white">Fps: 60</div>
+        <canvas id="statsSparkline" class="stats-sparkline" width="110" height="28"></canvas>
+      </div>
 
       <!-- In-Game Collapsible Room Menu (Classic Haxball Room Window) -->
       <div id="ingame-menu" class="ingame-menu-overlay hidden">

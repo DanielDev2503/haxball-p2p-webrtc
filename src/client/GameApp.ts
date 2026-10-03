@@ -10,6 +10,7 @@ import { ChatBox } from '../ui/components/ChatBox';
 import { TeamSelectModal } from '../ui/components/TeamSelectModal';
 import { RoomLobby, LobbyRoomConfig } from '../ui/components/RoomLobby';
 import { NicknameGatekeeper } from '../ui/components/NicknameGatekeeper';
+import { StatsMonitor } from '../ui/components/StatsMonitor';
 import { SignalingClient, SignalingMessage } from '../net/signaling/SignalingClient';
 import { PeerConnection } from '../net/transport/PeerConnection';
 import { InputPacket } from '../net/protocol/InputPacket';
@@ -51,6 +52,7 @@ export class GameApp {
   public audioManager: AudioManager;
   public hud: ScoreboardHUD;
   public chat: ChatBox;
+  public statsMonitor: StatsMonitor;
   public teamSelect: TeamSelectModal;
   public lobby: RoomLobby;
   public gatekeeper: NicknameGatekeeper;
@@ -146,6 +148,7 @@ export class GameApp {
     this.audioManager = new AudioManager();
     this.hud = new ScoreboardHUD();
     this.chat = new ChatBox();
+    this.statsMonitor = new StatsMonitor();
     this.teamSelect = new TeamSelectModal();
     this.jitterBuffer = new JitterBuffer(70);
 
@@ -163,6 +166,11 @@ export class GameApp {
     }, this.gameplayConfig);
     this.setupEngineCallbacks(this.engine);
     this.canvasRenderer = new CanvasRenderer(canvas, this.engine.stadium);
+
+    // Sincronizar el área de seguridad de oclusión inferior del chat con la cámara
+    this.chat.onHeightChange = (height) => {
+      this.canvasRenderer?.setChatSafeArea(height + 32);
+    };
 
     // Bloquear clicks accidentales en el canvas cuando la ventana de menú central esté desplegada
     const blockMenuClicks = (e: MouseEvent | PointerEvent) => {
@@ -2234,6 +2242,8 @@ export class GameApp {
    */
   private startRenderLoop(): void {
     if (this.renderLoopId !== null) return;
+    let lastFrameTime = performance.now();
+    let lastPingCheck = 0;
 
     const loop = (now: number) => {
       if (!this.isRunning) {
@@ -2340,6 +2350,34 @@ export class GameApp {
           }
         }
 
+        const frameDelta = now - lastFrameTime;
+        lastFrameTime = now;
+
+        // Medición periódica de RTT / Ping vía WebRTC getStats()
+        if (now - lastPingCheck >= 1000) {
+          lastPingCheck = now;
+          if (this.mode === 'client' && this.hostPeer) {
+            this.hostPeer.measureRtt().then((rtt) => {
+              if (rtt > 0) this.currentPing = rtt;
+            }).catch(() => {});
+          } else if (this.mode === 'host' && this.peers.size > 0) {
+            let totalRtt = 0;
+            let count = 0;
+            this.peers.forEach((peer) => {
+              const rtt = peer.getRtt();
+              if (rtt > 0) {
+                totalRtt += rtt;
+                count++;
+              }
+            });
+            if (count > 0) {
+              this.currentPing = totalRtt / count;
+            }
+          } else {
+            this.currentPing = 0;
+          }
+        }
+
         // Medición de FPS
         this.frameCount++;
         if (now - this.lastFpsUpdate >= 1000) {
@@ -2348,6 +2386,9 @@ export class GameApp {
           this.lastFpsUpdate = now;
           this.hud.updateStats(this.currentPing, this.currentFps);
         }
+
+        // Actualización a 60 Hz del widget de telemetría (Zero-GC)
+        this.statsMonitor.update(this.currentPing, this.currentFps, frameDelta);
       }
 
       this.renderLoopId = requestAnimationFrame(loop);

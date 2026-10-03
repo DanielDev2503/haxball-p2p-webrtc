@@ -287,4 +287,35 @@ export class PeerConnection {
 
     this.iceCandidatesQueue.length = 0;
   }
+
+  private currentRtt: number = 0;
+
+  /**
+   * Mide el RTT / Ping actual usando la API estándar de WebRTC getStats()
+   */
+  public async measureRtt(): Promise<number> {
+    if (!this.pc || typeof this.pc.getStats !== 'function') {
+      return this.currentRtt;
+    }
+    try {
+      const stats = await this.pc.getStats();
+      for (const report of stats.values()) {
+        if (
+          report.type === 'candidate-pair' &&
+          (report.state === 'succeeded' || (report as any).nominated) &&
+          typeof (report as any).currentRoundTripTime === 'number'
+        ) {
+          this.currentRtt = Math.round((report as any).currentRoundTripTime * 1000);
+          return this.currentRtt;
+        }
+      }
+    } catch {
+      // Ignorar excepciones en entornos simulados o mocks
+    }
+    return this.currentRtt;
+  }
+
+  public getRtt(): number {
+    return this.currentRtt;
+  }
 }

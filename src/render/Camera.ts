@@ -25,13 +25,13 @@ export class Camera {
   }
 
   /**
-   * Restricción a límites de cancha (Clamping):
-   * Limita el desplazamiento para nunca mostrar espacio vacío más allá del perímetro exterior:
+   * Restricción a límites de cancha (Clamping) con soporte para área segura inferior (Chat / UI):
+   * Limita el desplazamiento para nunca mostrar espacio vacío más allá del perímetro exterior,
+   * y garantiza que el jugador y el balón permanezcan plenamente visibles por encima del área de chat.
    * cam_x = clamp(cam_x, -(W_ext - V_w)/2, (W_ext - V_w)/2)
-   * cam_y = clamp(cam_y, -(H_ext - V_h)/2, (H_ext - V_h)/2)
-   * (Si el viewport del canvas es más grande que el mapa en modo pequeño, centrar en el origen).
+   * cam_y = clamp(cam_y, -(H_ext - Usable_h)/2, (H_ext - Usable_h)/2)
    */
-  public clamp(wExt: number, hExt: number, vWidth: number, vHeight: number): void {
+  public clamp(wExt: number, hExt: number, vWidth: number, vHeight: number, safeAreaBottom: number = 0): void {
     const boundX = (wExt - vWidth) / 2;
     if (boundX <= 0) {
       this.x = 0;
@@ -39,7 +39,8 @@ export class Camera {
       this.x = clamp(this.x, -boundX, boundX);
     }
 
-    const boundY = (hExt - vHeight) / 2;
+    const usableHeight = vHeight - safeAreaBottom;
+    const boundY = (hExt - usableHeight) / 2;
     if (boundY <= 0) {
       this.y = 0;
     } else {

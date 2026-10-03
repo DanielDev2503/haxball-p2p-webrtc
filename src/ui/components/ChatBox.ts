@@ -21,6 +21,7 @@ export class ChatBox {
   private currentMenuEl: HTMLElement | null = null;
 
   public onSendMessage?: (text: string) => void;
+  public onHeightChange?: (height: number) => void;
 
   constructor() {
     this.container = document.getElementById('chat-messages') || document.getElementById('chatMessages');
@@ -189,6 +190,7 @@ export class ChatBox {
   public applyHeight(heightPx: number): void {
     if (!this.boxEl) return;
     this.boxEl.style.height = `${heightPx}px`;
+    this.onHeightChange?.(heightPx);
   }
 
   /**
@@ -210,6 +212,7 @@ export class ChatBox {
     if (viewportH < 650) {
       this.boxEl.style.height = '65px';
       this.boxEl.style.maxHeight = '65px';
+      this.onHeightChange?.(65);
       return;
     }
 
@@ -229,9 +232,11 @@ export class ChatBox {
 
       this.boxEl.style.maxHeight = `${chatMaxHeight}px`;
       this.boxEl.style.height = `${chatMaxHeight}px`;
+      this.onHeightChange?.(chatMaxHeight);
     } else {
       this.boxEl.style.maxHeight = '';
       this.boxEl.style.height = `${this.preferredHeight}px`;
+      this.onHeightChange?.(this.preferredHeight);
     }
   }
 
