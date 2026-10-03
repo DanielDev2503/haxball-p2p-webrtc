@@ -6,12 +6,12 @@
   <title>Haxball Web P2P - Custom Deterministic Physics</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Zen+Dots&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/ui/styles/haxball.css">
 </head>
 <body>
   <div id="app-root" class="game-container u-hidden" style="flex-direction: column; height: 100vh; overflow: hidden; background: #060e18;">
-    <!-- Top HUD Navigation (Futurism Aero Floating Capsule) -->
+    <!-- Top HUD Navigation (Classic Haxball Floating Pill & Utilities) -->
     <header class="hud-container">
       <div class="brand">
         <span class="brand-title">HAXBALL</span>
@@ -19,11 +19,14 @@
         <span id="roomNameBadge" class="room-badge">Lobby</span>
       </div>
 
-      <!-- Scoreboard Center Capsule -->
+      <!-- Scoreboard Center Capsule (Classic Haxball Top Pill: [Red] 0 - 0 [Blue] | 00:00) -->
       <div class="scoreboard-capsule bg-slate-900/10 border-slate-900/15 text-slate-800 backdrop-blur-md dark:bg-slate-950/70 dark:border-cyan-500/20 dark:text-slate-100 dark:shadow-[0_4px_20px_rgba(0,229,255,0.08)]">
+        <span class="hud-team-box hud-team-red">RED</span>
         <span id="redScore" class="team-score score-red">0</span>
-        <span class="score-divider">:</span>
+        <span class="score-divider">-</span>
         <span id="blueScore" class="team-score score-blue">0</span>
+        <span class="hud-team-box hud-team-blue">BLUE</span>
+        <span class="hud-pipe">|</span>
         <div class="match-clock-container">
           <span class="clock-icon" id="clockIconSlot"></span>
           <span id="matchTimer" class="match-clock">00:00</span>
@@ -31,21 +34,21 @@
         <span id="goldenGoalBadge" class="golden-goal-badge u-hidden">GOL DE ORO</span>
       </div>
 
-      <!-- Live Network Stats, Audio & Menu Toggle -->
-      <div class="hud-stats">
-        <div class="stat-item ping-stat" id="pingContainer">
-          <span class="wifi-icon" id="wifiIconSlot"></span>
-          <span class="stat-dot" id="pingDot"></span>
-          <span id="pingValue">0ms</span>
-        </div>
-        <div class="stat-item fps-stat">
-          <span id="fpsValue">60 FPS</span>
-        </div>
-        <div class="top-bar-right">
-          <button id="theme-toggle-btn" class="icon-btn theme-toggle-btn" title="Cambiar Tema (Claro / Oscuro)"></button>
-          <button id="audio-toggle-btn" class="icon-btn" title="Audio (Mute / Unmute)">🔊</button>
-          <button id="menu-toggle-btn" class="icon-btn menu-btn" title="Menú (Esc)">☰ Menú (Esc)</button>
-        </div>
+      <!-- Compact Utility Buttons in Top-Right Corner -->
+      <div class="top-bar-right">
+        <button id="audio-toggle-btn" class="icon-btn" title="Audio (Mute / Unmute)">🔊</button>
+        <button id="menu-toggle-btn" class="icon-btn menu-btn" title="Menú (Esc)">☰ Menu</button>
+        <button id="top-settings-btn" class="icon-btn" title="Opciones (Teclas)">⚙</button>
+        <button id="theme-toggle-btn" class="icon-btn theme-toggle-btn" title="Cambiar Tema (Claro / Oscuro)"></button>
+      </div>
+
+      <!-- Bottom-Left Discrete FPS & Ping Counter -->
+      <div class="hud-bottom-left" id="pingContainer">
+        <span id="fpsValue" class="hud-fps-text">Fps: 60</span>
+        <span class="hud-dot-sep">•</span>
+        <span id="pingValue" class="hud-ping-text">0ms</span>
+        <span class="stat-dot" id="pingDot"></span>
+        <span class="wifi-icon u-hidden" id="wifiIconSlot" style="display: none;"></span>
       </div>
     </header>
 
@@ -53,88 +56,33 @@
     <main id="game-view" style="flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; position: relative;">
       <canvas id="gameCanvas" class="game-canvas"></canvas>
 
-      <!-- In-Game Collapsible Overlay Menu (Toggled with Escape or Menu button) -->
+      <!-- In-Game Collapsible Room Menu (Classic Haxball Room Window) -->
       <div id="ingame-menu" class="ingame-menu-overlay hidden">
         <div class="menu-modal-card custom-scrollbar">
+          <!-- Room Window Header: [Room Name] on left, 🔗 Link & 🚪 Leave on right -->
           <div class="menu-header">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <h3>⚙️ Controles de Partido & Equipos</h3>
-              <button id="btn-settings-toggle" class="icon-btn btn-settings-btn" title="Configurar Teclado">⚙ Teclas</button>
+            <div class="room-title-area">
+              <span class="room-title-bracket">[</span>
+              <span id="roomNameHeader" class="room-title-text">Classic Match</span>
+              <span class="room-title-bracket">]</span>
             </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <button id="btn-return-game" class="btn btn-secondary btn-xs" style="display: none;">◀ Volver al juego</button>
-              <button id="btn-leave-room" class="btn btn-danger btn-xs">🚪 Salir de la sala</button>
+            <div class="menu-header-actions">
+              <button id="btn-copy-link" class="btn btn-secondary btn-xs" title="Copiar enlace de invitación">🔗 Link</button>
+              <button id="btn-leave-room" class="btn btn-danger btn-xs" title="Salir de la sala">🚪 Leave</button>
+              <button id="btn-return-game" class="btn btn-secondary btn-xs" style="display: none;">◀ Volver</button>
               <button id="menu-close-btn" class="icon-btn-close" title="Volver al juego (Esc)">✕</button>
             </div>
           </div>
 
-          <div id="match-outcome-banner" style="display: none; padding: 8px 12px; margin-bottom: 12px; text-align: center; font-weight: bold; border-radius: 6px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);"></div>
+          <div id="match-outcome-banner" style="display: none; padding: 8px 12px; margin-bottom: 10px; text-align: center; font-weight: bold; border-radius: 6px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);"></div>
 
-          <!-- Admin Controls (Rendered disabled if not admin) -->
-          <div class="admin-controls">
-            <div class="admin-controls-title">🛡 PANEL DE ADMINISTRADOR</div>
-            <div class="admin-buttons-row">
-              <button id="btn-match-toggle" class="btn btn-success btn-match-toggle">▶ Iniciar Partido</button>
-              <button id="btn-pause-resume" class="btn btn-secondary">⏸ Pausar</button>
-              <button id="btn-lock-teams" class="btn btn-secondary">🔓 Equipos Libres</button>
-              <button id="btn-open-physics-modifiers" class="btn btn-secondary btn-physics-modifiers" title="Ajustes de Físicas / Modificadores">⚡ Modificadores</button>
-            </div>
-            <div class="admin-config-row">
-              <label>⏱ Tiempo (min):
-                <select id="select-time-limit" class="form-input-inline">
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3" selected>3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
-                  <option value="10">10</option>
-                  <option value="11">11</option>
-                  <option value="12">12</option>
-                  <option value="13">13</option>
-                  <option value="14">14</option>
-                  <option value="15">15</option>
-                </select>
-              </label>
-              <label>⚽ Goles:
-                <select id="select-goal-limit" class="form-input-inline">
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3" selected>3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
-                  <option value="10">10</option>
-                  <option value="11">11</option>
-                  <option value="12">12</option>
-                  <option value="13">13</option>
-                  <option value="14">14</option>
-                  <option value="15">15</option>
-                </select>
-              </label>
-              <label>🏟 Estadio:
-                <select id="select-stadium-size" class="form-input-inline">
-                  <option value="small">Pequeño (1v1 / 2v2)</option>
-                  <option value="classic" selected>Mediano (3v3 Clásico)</option>
-                  <option value="big">Grande (4v4)</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <!-- Teams Container: 3 Columns with Drag & Drop -->
+          <!-- Teams Container: 3 Balanced Columns (Red, Spectators, Blue) -->
           <div class="teams-container">
             <!-- Red Team Column -->
             <div class="team-col" data-team="red">
               <div class="team-box-header red">
-                <span>Rojo (<span id="redCount">0</span>)</span>
-                <button id="joinRedBtn" class="btn btn-red btn-xs">Unirse</button>
+                <span>Red (<span id="redCount">0</span>)</span>
+                <button id="joinRedBtn" class="btn btn-red btn-xs">Red ▶</button>
               </div>
               <div id="redPlayersList" class="team-players-list"></div>
             </div>
@@ -142,8 +90,8 @@
             <!-- Spectators Column -->
             <div class="team-col" data-team="spectators">
               <div class="team-box-header spec">
-                <span>Espectadores (<span id="specCount">0</span>)</span>
-                <button id="joinSpecBtn" class="btn btn-secondary btn-xs">👁 Unirse</button>
+                <span>Spectators (<span id="specCount">0</span>)</span>
+                <button id="joinSpecBtn" class="btn btn-secondary btn-xs">Spectators</button>
               </div>
               <div id="specPlayersList" class="team-players-list"></div>
             </div>
@@ -151,15 +99,94 @@
             <!-- Blue Team Column -->
             <div class="team-col" data-team="blue">
               <div class="team-box-header blue">
-                <span>Azul (<span id="blueCount">0</span>)</span>
-                <button id="joinBlueBtn" class="btn btn-blue btn-xs">Unirse</button>
+                <span>Blue (<span id="blueCount">0</span>)</span>
+                <button id="joinBlueBtn" class="btn btn-blue btn-xs">◀ Blue</button>
               </div>
               <div id="bluePlayersList" class="team-players-list"></div>
             </div>
           </div>
 
-          <div class="menu-footer-hint">
-            <span>Presiona <strong>Escape</strong> para abrir o cerrar este menú en cualquier momento.</span>
+          <!-- Match Configuration (Lower Panel Rows) -->
+          <div class="admin-config-section">
+            <div class="config-row-compact">
+              <div class="config-field">
+                <span class="config-label">Time limit:</span>
+                <select id="select-time-limit" class="form-input-inline">
+                  <option value="0">None</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3" selected>3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                  <option value="7">7</option>
+                  <option value="10">10</option>
+                  <option value="15">15</option>
+                </select>
+              </div>
+              <div class="config-field">
+                <span class="config-label">Score limit:</span>
+                <select id="select-goal-limit" class="form-input-inline">
+                  <option value="0">None</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3" selected>3</option>
+                  <option value="5">5</option>
+                  <option value="7">7</option>
+                  <option value="10">10</option>
+                </select>
+              </div>
+              <div class="config-field stadium-config-field">
+                <span class="config-label">Stadium:</span>
+                <span id="currentStadiumName" class="stadium-name-text">Mediano (3v3 Clásico)</span>
+                <button id="btn-pick-stadium" class="btn btn-secondary btn-xs" type="button">Pick</button>
+                <select id="select-stadium-size" class="form-input-inline u-hidden" style="display: none;">
+                  <option value="small">Pequeño (1v1 / 2v2)</option>
+                  <option value="classic" selected>Mediano (3v3 Clásico)</option>
+                  <option value="big">Grande (4v4)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Match Control Buttons (Window Footer) -->
+          <div class="menu-modal-footer">
+            <div class="match-control-buttons">
+              <button id="btn-match-toggle" class="btn btn-success btn-match-toggle">▶ Start game</button>
+              <button id="btn-pause-resume" class="btn btn-secondary">⏸ Pause (P)</button>
+              <button id="btn-lock-teams" class="btn btn-secondary btn-xs">🔓 Lock</button>
+              <button id="btn-open-physics-modifiers" class="btn btn-secondary btn-xs" title="Modificadores de Físicas">⚡ Modifiers</button>
+              <button id="btn-settings-toggle" class="btn btn-secondary btn-xs" title="Configurar Teclado">⚙ Keys</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stadium Picker Modal (Pick button) -->
+      <div id="stadiumPickerModal" class="modal-overlay u-hidden" style="display: none; z-index: 220;">
+        <div class="modal-content custom-scrollbar" style="max-width: 440px; padding: 22px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700;">🏟 Seleccionar Estadio</h3>
+            <button id="btnCloseStadiumPicker" class="icon-btn-close">✕</button>
+          </div>
+          <div id="stadiumPresetsList" class="stadium-picker-grid" style="display: flex; flex-direction: column; gap: 8px;">
+            <button class="stadium-option-btn btn btn-secondary" data-stadium="small" style="text-align: left; justify-content: flex-start; padding: 10px 14px;">
+              <div>
+                <div style="font-weight: 700;">Pequeño (1v1 / 2v2)</div>
+                <div style="font-size: 0.75rem; opacity: 0.75;">1000x460 - Arcos 140</div>
+              </div>
+            </button>
+            <button class="stadium-option-btn btn btn-secondary active-stadium" data-stadium="classic" style="text-align: left; justify-content: flex-start; padding: 10px 14px;">
+              <div>
+                <div style="font-weight: 700;">Mediano (3v3 Clásico)</div>
+                <div style="font-size: 0.75rem; opacity: 0.75;">1200x540 - Arcos 170</div>
+              </div>
+            </button>
+            <button class="stadium-option-btn btn btn-secondary" data-stadium="big" style="text-align: left; justify-content: flex-start; padding: 10px 14px;">
+              <div>
+                <div style="font-weight: 700;">Grande (4v4 / Competitivo)</div>
+                <div style="font-size: 0.75rem; opacity: 0.75;">1600x720 - Arcos 200</div>
+              </div>
+            </button>
           </div>
         </div>
       </div>
@@ -183,9 +210,10 @@
       </div>
     </main>
 
-    <!-- Área Inferior: Chat Centrado con espacio reservado propio -->
+    <!-- Área Inferior: Chat Flotante Desacoplado Clásico con Drag Handle -->
     <footer id="chat-section" class="chat-section">
       <div id="chat-container" class="chat-box">
+        <div id="chat-resize-handle" class="chat-resize-handle" title="Arrastra para redimensionar el chat"></div>
         <div id="chat-messages" class="chat-messages"></div>
         <form id="chatForm" class="chat-input-form">
           <input id="chat-input" type="text" class="chat-input" placeholder="Presiona Enter para escribir..." maxlength="120" autocomplete="off" />

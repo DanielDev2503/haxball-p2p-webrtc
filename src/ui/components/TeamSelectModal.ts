@@ -2,6 +2,7 @@ import { Player, TeamType } from '../../core/game/Player';
 import { MatchPhase, MatchState, toMatchPhase } from '../../core/game/GameFSM';
 import { $matchPhase, $players } from '../stores/gameStore';
 import { renderIconHTML, Crown, ShieldCheck } from '../utils/icons';
+import { StadiumRegistry } from '../../core/stadiums/StadiumRegistry';
 import { animate } from 'motion';
 
 export class TeamSelectModal {
@@ -17,6 +18,8 @@ export class TeamSelectModal {
   private blueCountEl: HTMLElement | null;
   private specCountEl: HTMLElement | null;
   private selectStadiumEl: HTMLSelectElement | null = null;
+  private currentStadiumNameEl: HTMLElement | null = null;
+  private stadiumPickerModalEl: HTMLElement | null = null;
   private currentMatchState: MatchPhase = MatchPhase.STOPPED;
   private unsubs: Array<() => void> = [];
 
@@ -26,6 +29,8 @@ export class TeamSelectModal {
   public onOpenKeybinds?: () => void;
   public onMatchToggle?: () => void;
   public onMapChange?: (stadiumId: string) => void;
+  public onCopyLink?: () => void;
+  public onVisibilityChange?: (isOpen: boolean) => void;
 
   constructor() {
     this.menuEl = document.getElementById('ingame-menu');
@@ -71,12 +76,24 @@ export class TeamSelectModal {
       console.warn('[TeamSelectModal] Element "#joinSpecBtn" was not found in DOM.');
     }
 
-    // Botón de ajustes de teclado (⚙)
+    // Botón de ajustes de teclado (⚙ Keys)
     const btnSettings = document.getElementById('btn-settings-toggle') || document.getElementById('btn-settings') || document.querySelector?.('.btn-settings-btn');
     if (btnSettings) {
       btnSettings.addEventListener('click', (e) => {
         e.stopPropagation();
         this.onOpenKeybinds?.();
+      });
+    }
+
+    // Botón de copiar enlace de invitación (🔗 Link)
+    const btnCopyLink = document.getElementById('btn-copy-link');
+    if (btnCopyLink) {
+      btnCopyLink.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+          navigator.clipboard.writeText(window.location.href).catch(() => {});
+        }
+        this.onCopyLink?.();
       });
     }
 
@@ -109,10 +126,54 @@ export class TeamSelectModal {
       if (this.selectStadiumEl.dataset) this.selectStadiumEl.dataset.listenerBound = 'true';
       this.selectStadiumEl.addEventListener('change', () => {
         if (this.selectStadiumEl && this.onMapChange) {
+          this.setStadium(this.selectStadiumEl.value);
           this.onMapChange(this.selectStadiumEl.value);
         }
       });
     }
+
+    this.currentStadiumNameEl = document.getElementById('currentStadiumName');
+    this.stadiumPickerModalEl = document.getElementById('stadiumPickerModal');
+
+    // Botón de Pick para selector modal de mapa
+    const btnPickStadium = document.getElementById('btn-pick-stadium');
+    if (btnPickStadium && this.stadiumPickerModalEl) {
+      btnPickStadium.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!this.isUserAdmin) return;
+        this.stadiumPickerModalEl?.classList.remove('u-hidden');
+        if (this.stadiumPickerModalEl) this.stadiumPickerModalEl.style.display = 'flex';
+      });
+    }
+
+    const btnCloseStadiumPicker = document.getElementById('btnCloseStadiumPicker');
+    if (btnCloseStadiumPicker && this.stadiumPickerModalEl) {
+      btnCloseStadiumPicker.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.stadiumPickerModalEl?.classList.add('u-hidden');
+        if (this.stadiumPickerModalEl) this.stadiumPickerModalEl.style.display = 'none';
+      });
+    }
+
+    // Opciones del selector modal de mapa
+    const stadiumOptionBtns = document.querySelectorAll<HTMLButtonElement>('.stadium-option-btn');
+    stadiumOptionBtns.forEach((btn) => {
+      btn.addEventListener?.('click', (e) => {
+        e.stopPropagation();
+        if (!this.isUserAdmin) return;
+        const stadiumId = btn.getAttribute('data-stadium');
+        if (stadiumId) {
+          this.setStadium(stadiumId);
+          if (this.onMapChange) {
+            this.onMapChange(stadiumId);
+          }
+          if (this.stadiumPickerModalEl) {
+            this.stadiumPickerModalEl.classList.add('u-hidden');
+            this.stadiumPickerModalEl.style.display = 'none';
+          }
+        }
+      });
+    });
 
     this.setupDragAndDropColumns();
 
@@ -132,10 +193,33 @@ export class TeamSelectModal {
     );
   }
 
+  public getElement(): HTMLElement | null {
+    return this.menuEl;
+  }
+
+  public setRoomName(name: string): void {
+    const roomNameHeader = document.getElementById('roomNameHeader');
+    if (roomNameHeader) {
+      roomNameHeader.textContent = name;
+    }
+    const roomNameBadge = document.getElementById('roomNameBadge');
+    if (roomNameBadge) {
+      roomNameBadge.textContent = name;
+    }
+  }
+
   public setStadium(stadiumId: string): void {
     if (this.selectStadiumEl) {
       this.selectStadiumEl.value = stadiumId;
     }
+    const stadiumName = StadiumRegistry[stadiumId]?.name || stadiumId;
+    if (this.currentStadiumNameEl) {
+      this.currentStadiumNameEl.textContent = stadiumName;
+    }
+    const optionBtns = document.querySelectorAll<HTMLButtonElement>('.stadium-option-btn');
+    optionBtns.forEach((btn) => {
+      btn.classList.toggle('active-stadium', btn.getAttribute('data-stadium') === stadiumId);
+    });
   }
 
   public updateMatchControlButton(phase: MatchPhase, isAdmin?: boolean): void {
@@ -145,6 +229,31 @@ export class TeamSelectModal {
     if (this.selectStadiumEl) {
       this.selectStadiumEl.disabled = !this.isUserAdmin;
     }
+    const pickBtn = document.getElementById('btn-pick-stadium') as HTMLButtonElement | null;
+    if (pickBtn) {
+      pickBtn.disabled = !this.isUserAdmin;
+    }
+    const timeLimitSelect = document.getElementById('select-time-limit') as HTMLSelectElement | null;
+    if (timeLimitSelect) {
+      timeLimitSelect.disabled = !this.isUserAdmin;
+    }
+    const goalLimitSelect = document.getElementById('select-goal-limit') as HTMLSelectElement | null;
+    if (goalLimitSelect) {
+      goalLimitSelect.disabled = !this.isUserAdmin;
+    }
+    const pauseBtn = document.getElementById('btn-pause-resume') as HTMLButtonElement | null;
+    if (pauseBtn) {
+      pauseBtn.disabled = !this.isUserAdmin;
+    }
+    const lockBtn = document.getElementById('btn-lock-teams') as HTMLButtonElement | null;
+    if (lockBtn) {
+      lockBtn.disabled = !this.isUserAdmin;
+    }
+    const modBtn = document.getElementById('btn-open-physics-modifiers') as HTMLButtonElement | null;
+    if (modBtn) {
+      modBtn.disabled = !this.isUserAdmin;
+    }
+
     if (!this.matchToggleBtn) {
       this.matchToggleBtn = (document.getElementById('btn-match-toggle') || document.getElementById('btn-start-stop')) as HTMLButtonElement | null;
       if (this.matchToggleBtn && !this.matchToggleBtn.dataset?.listenerBound) {
@@ -163,10 +272,10 @@ export class TeamSelectModal {
 
     const prevClass = this.matchToggleBtn.className;
     if (isStopped) {
-      this.matchToggleBtn.textContent = '▶ Iniciar Partido';
+      this.matchToggleBtn.textContent = '▶ Start game';
       this.matchToggleBtn.className = 'btn btn-success btn-match-toggle';
     } else {
-      this.matchToggleBtn.textContent = '■ Detener Partido';
+      this.matchToggleBtn.textContent = '■ Stop game';
       this.matchToggleBtn.className = 'btn btn-danger btn-match-toggle';
     }
 
@@ -232,6 +341,7 @@ export class TeamSelectModal {
     }
     this.menuEl.style.display = 'flex';
     this.menuEl.style.pointerEvents = 'auto';
+    this.onVisibilityChange?.(true);
   }
 
   public close(force: boolean = false): void {
@@ -243,6 +353,7 @@ export class TeamSelectModal {
     this.menuEl.classList.add('hidden');
     this.menuEl.classList.remove('is-forced-open');
     this.menuEl.style.display = 'none';
+    this.onVisibilityChange?.(false);
   }
 
   public toggle(): void {
@@ -351,7 +462,7 @@ export class TeamSelectModal {
           <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600;">
             ${hostIcon}${adminIcon}${p.name}
           </span>
-          ${adminRoleText ? `<span style="font-size: 0.65rem; color: #94a3b8; font-family: var(--font-zen);">${adminRoleText}</span>` : ''}
+          ${adminRoleText ? `<span style="font-size: 0.65rem; color: #94a3b8; font-family: var(--font-sans);">${adminRoleText}</span>` : ''}
         </div>
         ${isLocalAdmin ? `<button class="btn-player-options player-menu-btn" draggable="false" title="Acciones de Jugador" style="background: transparent; border: none; color: #94a3b8; font-size: 1.1rem; cursor: pointer; padding: 0 6px; border-radius: 4px; line-height: 1;">⋮</button>` : ''}
       `;

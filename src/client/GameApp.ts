@@ -121,6 +121,7 @@ export class GameApp {
   private contextMenu: HTMLElement | null;
   private menuPlayerName: HTMLElement | null;
   private roomNameBadge: HTMLElement | null;
+  private lastAnnouncedStadiumId: string | null = null;
 
   constructor() {
     let canvas = (document.getElementById('gameCanvas') || document.getElementById('game-canvas')) as HTMLCanvasElement | null;
@@ -162,6 +163,25 @@ export class GameApp {
     }, this.gameplayConfig);
     this.setupEngineCallbacks(this.engine);
     this.canvasRenderer = new CanvasRenderer(canvas, this.engine.stadium);
+
+    // Bloquear clicks accidentales en el canvas cuando la ventana de menú central esté desplegada
+    const blockMenuClicks = (e: MouseEvent | PointerEvent) => {
+      if (this.teamSelect.isOpen()) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+    canvas.addEventListener('click', blockMenuClicks);
+    canvas.addEventListener('pointerdown', blockMenuClicks);
+    canvas.addEventListener('mousedown', blockMenuClicks);
+
+    // Botón de opciones en el HUD superior
+    const topSettingsBtn = document.getElementById('top-settings-btn');
+    if (topSettingsBtn) {
+      topSettingsBtn.addEventListener('click', () => {
+        this.keybindModal.open();
+      });
+    }
 
     // Physics Ticker desacoplado (Web Worker)
     this.physicsTicker = new PhysicsTicker();
@@ -292,6 +312,16 @@ export class GameApp {
     // Cambio de tamaño de estadio (Host / Admin)
     this.teamSelect.onMapChange = (stadiumId) => {
       this.requestMapChange(stadiumId);
+    };
+
+    // Sincronización dinámica de altura de chat para evitar solapamiento con el menú central
+    this.teamSelect.onVisibilityChange = (isOpen) => {
+      this.chat.adjustForMenu(isOpen, this.teamSelect.getElement());
+    };
+
+    // Copia rápida de enlace de sala
+    this.teamSelect.onCopyLink = () => {
+      this.chat.addSystemMessage('Enlace de la sala copiado al portapapeles.');
     };
 
     // Context Menu on player click for Admins
@@ -538,15 +568,6 @@ export class GameApp {
         if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
         const newLock = !this.roomConfig.teamsLocked;
         this.updateRoomConfig({ teamsLocked: newLock });
-      });
-    }
-
-    // Admin Stadium Size Select
-    const selectStadiumSize = (document.getElementById('select-stadium-size') || document.querySelector('.select-stadium-size')) as HTMLSelectElement | null;
-    if (selectStadiumSize) {
-      selectStadiumSize.addEventListener('change', () => {
-        if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
-        this.requestMapChange(selectStadiumSize.value);
       });
     }
   }
@@ -1687,8 +1708,12 @@ export class GameApp {
         type: 'MAP_CHANGE_SYNC',
         stadiumId
       }));
-      const stadiumName = StadiumRegistry[stadiumId]?.name || stadiumId;
-      this.broadcastSystemChat(`🏟 Estadio cambiado a: ${stadiumName}`);
+      // Deduplicación estricta: emitir el mensaje en el chat una sola vez cuando se confirma el cambio
+      if (this.lastAnnouncedStadiumId !== stadiumId) {
+        this.lastAnnouncedStadiumId = stadiumId;
+        const stadiumName = StadiumRegistry[stadiumId]?.name || stadiumId;
+        this.broadcastSystemChat(`🏟 Estadio cambiado a: ${stadiumName}`);
+      }
     }
   }
 

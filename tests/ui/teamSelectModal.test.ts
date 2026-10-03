@@ -132,27 +132,27 @@ describe('TeamSelectModal Lifecycle and Match State Synchronization', () => {
     const modal = new TeamSelectModal();
     const toggleBtn = (globalThis as any).document.getElementById('btn-match-toggle');
 
-    // In STOPPED phase and Admin: "▶ Iniciar Partido", btn-success, enabled
+    // In STOPPED phase and Admin: "▶ Start game", btn-success, enabled
     modal.updateMatchControlButton(0 as any, true); // MatchPhase.STOPPED = 0
-    expect(toggleBtn.textContent).toBe('▶ Iniciar Partido');
+    expect(toggleBtn.textContent).toBe('▶ Start game');
     expect(toggleBtn.className).toBe('btn btn-success btn-match-toggle');
     expect(toggleBtn.disabled).toBe(false);
 
     // In STOPPED phase and Non-Admin: disabled
     modal.updateMatchControlButton(0 as any, false);
-    expect(toggleBtn.textContent).toBe('▶ Iniciar Partido');
+    expect(toggleBtn.textContent).toBe('▶ Start game');
     expect(toggleBtn.className).toBe('btn btn-success btn-match-toggle');
     expect(toggleBtn.disabled).toBe(true);
 
-    // In PLAYING/PAUSED/COUNTDOWN phase and Admin: "■ Detener Partido", btn-danger, enabled
+    // In PLAYING/PAUSED/COUNTDOWN phase and Admin: "■ Stop game", btn-danger, enabled
     modal.updateMatchControlButton(2 as any, true); // MatchPhase.PLAYING = 2
-    expect(toggleBtn.textContent).toBe('■ Detener Partido');
+    expect(toggleBtn.textContent).toBe('■ Stop game');
     expect(toggleBtn.className).toBe('btn btn-danger btn-match-toggle');
     expect(toggleBtn.disabled).toBe(false);
 
     // updateMatchState should automatically refresh button
     modal.updateMatchState('STOPPED');
-    expect(toggleBtn.textContent).toBe('▶ Iniciar Partido');
+    expect(toggleBtn.textContent).toBe('▶ Start game');
     expect(toggleBtn.className).toBe('btn btn-success btn-match-toggle');
   });
 

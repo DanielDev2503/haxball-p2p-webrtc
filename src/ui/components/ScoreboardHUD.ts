@@ -192,7 +192,7 @@ export class ScoreboardHUD {
     $ping.set(pingMs);
 
     if (this.pingEl) this.pingEl.textContent = `${Math.round(pingMs)}ms`;
-    if (this.fpsEl) this.fpsEl.textContent = `${Math.round(fps)} FPS`;
+    if (this.fpsEl) this.fpsEl.textContent = `Fps: ${Math.round(fps)}`;
     this.updatePingDot(pingMs);
   }
 
