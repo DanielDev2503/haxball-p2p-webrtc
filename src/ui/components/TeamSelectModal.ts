@@ -462,9 +462,9 @@ export class TeamSelectModal {
           <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600;">
             ${hostIcon}${adminIcon}${p.name}
           </span>
-          ${adminRoleText ? `<span style="font-size: 0.65rem; color: #94a3b8; font-family: var(--font-sans);">${adminRoleText}</span>` : ''}
+          ${adminRoleText ? `<span style="font-size: 0.65rem; color: #67E8F9; font-family: var(--font-sans); font-weight: 700;">${adminRoleText}</span>` : ''}
         </div>
-        ${isLocalAdmin ? `<button class="btn-player-options player-menu-btn" draggable="false" title="Acciones de Jugador" style="background: transparent; border: none; color: #94a3b8; font-size: 1.1rem; cursor: pointer; padding: 0 6px; border-radius: 4px; line-height: 1;">⋮</button>` : ''}
+        ${isLocalAdmin ? `<button class="btn-player-options player-menu-btn" draggable="false" title="Acciones de Jugador" style="background: transparent; border: none; color: #67E8F9; font-size: 1.1rem; cursor: pointer; padding: 0 6px; border-radius: 4px; line-height: 1;">⋮</button>` : ''}
       `;
 
       // Botón de 3 puntos exclusivo para opciones de moderación

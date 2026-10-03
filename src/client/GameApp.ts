@@ -169,6 +169,7 @@ export class GameApp {
 
     // Sincronizar el área de seguridad de oclusión inferior del chat con la cámara
     this.chat.onHeightChange = (height) => {
+      this.canvasRenderer?.setChatHeight(height);
       this.canvasRenderer?.setChatSafeArea(height + 32);
     };
 

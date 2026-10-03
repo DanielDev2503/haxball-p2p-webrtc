@@ -72,23 +72,23 @@ describe('Classic UI Redesign & Stadium Deduplication', () => {
     };
 
     const chat = new ChatBox();
-    // Simulate menu bottom at 700px in an 800px viewport:
-    // available = 800 - 700 - 16 = 84px
     const mockMenuEl = {
       getBoundingClientRect: () => ({ bottom: 700 })
     } as any;
 
+    // Invarianza Dimensional Estricta del Chat Box:
+    // El chat no altera su altura al abrir menús
     chat.adjustForMenu(true, mockMenuEl);
-    expect(boxEl.style.maxHeight).toBe('84px');
-    expect(boxEl.style.height).toBe('84px');
+    expect(boxEl.style.height).toBe('130px');
+    expect(boxEl.style.maxHeight).toBe('');
 
-    // On menu close, restores configured height
+    // On menu close, mantiene su altura configurada
     chat.adjustForMenu(false);
     expect(boxEl.style.maxHeight).toBe('');
     expect(boxEl.style.height).toBe('130px');
   });
 
-  it('ChatBox collapses height when window height is less than 650px', () => {
+  it('ChatBox maintains invariant user-configured height on resize and menu toggle', () => {
     const boxEl = { style: {} as Record<string, string>, getBoundingClientRect: () => ({ height: 150 }) };
     const container = { appendChild: vi.fn() };
     const inputEl = { value: '', focus: vi.fn(), blur: vi.fn(), addEventListener: vi.fn() };
@@ -113,9 +113,10 @@ describe('Classic UI Redesign & Stadium Deduplication', () => {
     };
 
     const chat = new ChatBox();
-    chat.adjustForMenu(false);
-    expect(boxEl.style.height).toBe('65px');
-    expect(boxEl.style.maxHeight).toBe('65px');
+    chat.applyHeight(180);
+    chat.adjustForMenu(true);
+    expect(boxEl.style.height).toBe('180px');
+    expect(boxEl.style.maxHeight).toBe('');
   });
 
   it('ChatBox Escape key clears input, stops event propagation and blurs', () => {

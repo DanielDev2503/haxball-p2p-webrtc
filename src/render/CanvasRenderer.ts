@@ -4,6 +4,7 @@ import { MatchPhase, toMatchPhase } from '../core/game/GameFSM';
 import { PitchRenderer } from './PitchRenderer';
 import { DiscRenderer } from './DiscRenderer';
 import { Camera } from './Camera';
+import { OffscreenIndicatorRenderer } from './OffscreenIndicatorRenderer';
 import { $theme } from '../ui/stores/gameStore';
 import gsap from 'gsap';
 import confetti from 'canvas-confetti';
@@ -15,11 +16,13 @@ export class CanvasRenderer {
   public pitchRenderer: PitchRenderer;
   public discRenderer: DiscRenderer;
   public camera: Camera;
+  public offscreenRenderer: OffscreenIndicatorRenderer;
 
   public scale: number = 1;
   public offsetX: number = 0;
   public offsetY: number = 0;
   private safeAreaBottom: number = 160;
+  public chatHeight: number = 130;
 
   // Transformación de cámara y sacudón elástico con GSAP
   public cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
@@ -36,11 +39,22 @@ export class CanvasRenderer {
     this.pitchRenderer = new PitchRenderer();
     this.discRenderer = new DiscRenderer();
     this.camera = new Camera();
+    this.offscreenRenderer = new OffscreenIndicatorRenderer();
 
     this.handleResize();
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', () => this.handleResize());
     }
+  }
+
+  public setChatHeight(height: number): void {
+    if (height >= 0) {
+      this.chatHeight = height;
+    }
+  }
+
+  public getChatHeight(): number {
+    return this.chatHeight;
   }
 
   public setChatSafeArea(bottom: number): void {
@@ -61,6 +75,7 @@ export class CanvasRenderer {
       if (chatContainer && typeof chatContainer.getBoundingClientRect === 'function') {
         const rect = chatContainer.getBoundingClientRect();
         if (rect.height > 0) {
+          this.chatHeight = rect.height;
           this.safeAreaBottom = rect.height + 32;
         }
       }
@@ -140,14 +155,19 @@ export class CanvasRenderer {
     const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
     const ctx = this.ctx;
 
-    // Seguimiento dinámico de cámara (Lerp 0.12): Sigue al jugador local, o al balón si es espectador
+    // Seguimiento dinámico de cámara (Lerp 0.12): Seguimiento dual (jugador local prioritario + balón)
     const ball = snapshot.discs?.find(d => d.team === 0);
     const localPlayer = (localDiscId !== null && localDiscId !== undefined)
       ? snapshot.discs?.find(d => d.id === localDiscId)
       : null;
-    const target = localPlayer ?? ball;
-    if (target) {
-      this.camera.follow(target.x, target.y);
+
+    if (localPlayer && ball) {
+      this.camera.followDual(localPlayer.x, localPlayer.y, ball.x, ball.y, 0.25, 180);
+    } else {
+      const target = localPlayer ?? ball;
+      if (target) {
+        this.camera.follow(target.x, target.y);
+      }
     }
 
     const vWidth = this.canvas.width / dpr;
@@ -184,6 +204,25 @@ export class CanvasRenderer {
     this.drawOverlays(ctx, snapshot);
 
     ctx.restore();
+
+    // 4. Render Indicadores Fuera de Pantalla (Off-Screen Triangles) en Espacio de Pantalla
+    if (snapshot.discs && snapshot.discs.length > 0) {
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      this.offscreenRenderer.draw(
+        ctx,
+        snapshot.discs,
+        localDiscId,
+        this.camera.x,
+        this.camera.y,
+        this.offsetX + this.cameraOffset.x,
+        this.offsetY + this.cameraOffset.y,
+        vWidth,
+        vHeight,
+        this.chatHeight
+      );
+      ctx.restore();
+    }
   }
 
   public drawOverlays(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot): void {

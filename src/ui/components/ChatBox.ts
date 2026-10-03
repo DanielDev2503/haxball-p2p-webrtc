@@ -17,8 +17,6 @@ export class ChatBox {
   private inputEl: HTMLInputElement | null = null;
   private formEl: HTMLFormElement | null = null;
   private preferredHeight: number = DEFAULT_CHAT_HEIGHT;
-  private isMenuOpen: boolean = false;
-  private currentMenuEl: HTMLElement | null = null;
 
   public onSendMessage?: (text: string) => void;
   public onHeightChange?: (height: number) => void;
@@ -189,55 +187,25 @@ export class ChatBox {
 
   public applyHeight(heightPx: number): void {
     if (!this.boxEl) return;
+    this.boxEl.style.maxHeight = '';
     this.boxEl.style.height = `${heightPx}px`;
     this.onHeightChange?.(heightPx);
   }
 
   /**
-   * Prevención Estricta de Solapamiento con el Menú Central:
-   * chatMaxHeight = min(userPreferredHeight, viewportHeight - menuBottom - 16px)
+   * Invarianza Dimensional Estricta del Chat Box:
+   * El chat mantiene estrictamente su altura configurada por el usuario en todo momento.
+   * La apertura o cierre de menús jamás muta ni colapsa la altura del chat.
    */
-  public adjustForMenu(isOpen: boolean, menuEl?: HTMLElement | null): void {
-    this.isMenuOpen = isOpen;
-    if (menuEl) this.currentMenuEl = menuEl;
-
-    this.updateResponsiveHeight();
+  public adjustForMenu(_isOpen: boolean, _menuEl?: HTMLElement | null): void {
+    // Invariante: no se modifica la altura ni max-height al interactuar con menús
   }
 
   private updateResponsiveHeight(): void {
     if (!this.boxEl) return;
-    const viewportH = typeof window !== 'undefined' ? window.innerHeight : 800;
-
-    // Edge case: Ventana < 650px colapsa el chat a un máximo de 3 líneas (~65px)
-    if (viewportH < 650) {
-      this.boxEl.style.height = '65px';
-      this.boxEl.style.maxHeight = '65px';
-      this.onHeightChange?.(65);
-      return;
-    }
-
-    if (this.isMenuOpen) {
-      const menu = this.currentMenuEl || (typeof document !== 'undefined' && typeof document.querySelector === 'function' ? (document.querySelector('.menu-modal-card') as HTMLElement | null) : null);
-      let menuBottom = viewportH * 0.75;
-      if (menu && typeof menu.getBoundingClientRect === 'function') {
-        const rect = menu.getBoundingClientRect();
-        if (rect.bottom > 0) {
-          menuBottom = rect.bottom;
-        }
-      }
-
-      // chatMaxHeight = min(userPreferredHeight, viewportHeight - menuBottom - 16px)
-      const availableSpace = viewportH - menuBottom - 16;
-      const chatMaxHeight = Math.max(MIN_CHAT_HEIGHT, Math.min(this.preferredHeight, availableSpace));
-
-      this.boxEl.style.maxHeight = `${chatMaxHeight}px`;
-      this.boxEl.style.height = `${chatMaxHeight}px`;
-      this.onHeightChange?.(chatMaxHeight);
-    } else {
-      this.boxEl.style.maxHeight = '';
-      this.boxEl.style.height = `${this.preferredHeight}px`;
-      this.onHeightChange?.(this.preferredHeight);
-    }
+    this.boxEl.style.maxHeight = '';
+    this.boxEl.style.height = `${this.preferredHeight}px`;
+    this.onHeightChange?.(this.preferredHeight);
   }
 
   public focus(): void {

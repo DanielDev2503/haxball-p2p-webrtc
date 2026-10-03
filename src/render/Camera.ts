@@ -25,6 +25,77 @@ export class Camera {
   }
 
   /**
+   * Calcula la posición objetivo de seguimiento dual (Jugador Prioritario + Balón)
+   * respetando la ponderación w_ball (0.25) y la restricción radial máxima (Leash D_max = 180px).
+   * Devuelve siempre coordenadas numéricas finitas válidas (cero NaN).
+   */
+  public calculateDualTarget(
+    playerX: number,
+    playerY: number,
+    ballX: number,
+    ballY: number,
+    wBall: number = 0.25,
+    maxDistance: number = 180
+  ): { x: number; y: number } {
+    const dx = ballX - playerX;
+    const dy = ballY - playerY;
+    const distSq = dx * dx + dy * dy;
+
+    if (distSq <= 1e-6) {
+      return { x: playerX, y: playerY };
+    }
+
+    const dist = Math.sqrt(distSq);
+    if (!Number.isFinite(dist) || isNaN(dist)) {
+      return { x: playerX, y: playerY };
+    }
+
+    const offset = Math.min(dist * wBall, maxDistance);
+    const ratio = offset / dist;
+
+    return {
+      x: playerX + dx * ratio,
+      y: playerY + dy * ratio
+    };
+  }
+
+  /**
+   * Seguimiento cinemático dual en tiempo real con Zero-GC a 60 Hz:
+   * Calcula el vector ponderado con leash constraint y aplica lerp(0.12)
+   */
+  public followDual(
+    playerX: number,
+    playerY: number,
+    ballX: number,
+    ballY: number,
+    wBall: number = 0.25,
+    maxDistance: number = 180
+  ): void {
+    const dx = ballX - playerX;
+    const dy = ballY - playerY;
+    const distSq = dx * dx + dy * dy;
+
+    if (distSq <= 1e-6) {
+      this.targetX = playerX;
+      this.targetY = playerY;
+    } else {
+      const dist = Math.sqrt(distSq);
+      if (!Number.isFinite(dist) || isNaN(dist)) {
+        this.targetX = playerX;
+        this.targetY = playerY;
+      } else {
+        const offset = Math.min(dist * wBall, maxDistance);
+        const ratio = offset / dist;
+        this.targetX = playerX + dx * ratio;
+        this.targetY = playerY + dy * ratio;
+      }
+    }
+
+    this.x += (this.targetX - this.x) * this.lerpFactor;
+    this.y += (this.targetY - this.y) * this.lerpFactor;
+  }
+
+  /**
    * Restricción a límites de cancha (Clamping) con soporte para área segura inferior (Chat / UI):
    * Limita el desplazamiento para nunca mostrar espacio vacío más allá del perímetro exterior,
    * y garantiza que el jugador y el balón permanezcan plenamente visibles por encima del área de chat.

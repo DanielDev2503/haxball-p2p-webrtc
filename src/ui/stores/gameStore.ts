@@ -27,6 +27,36 @@ export const $roomConfig = atom<RoomConfigState>({
   stadiumId: 'classic'
 });
 
+export interface ThemeTokens {
+  bgPrimary: string;
+  bgSurface: string;
+  textPrimary: string;
+  textSecondary: string;
+  textMuted: string;
+  borderGlow: string;
+  accentCyan: string;
+}
+
+export const DARK_THEME_TOKENS: ThemeTokens = {
+  bgPrimary: '#0B111E',
+  bgSurface: '#070F1E',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#E0F2FE',
+  textMuted: '#67E8F9',
+  borderGlow: 'rgba(0, 229, 255, 0.35)',
+  accentCyan: '#00E5FF'
+};
+
+export const LIGHT_THEME_TOKENS: ThemeTokens = {
+  bgPrimary: '#FFFFFF',
+  bgSurface: '#F0F9FF',
+  textPrimary: '#0F172A',
+  textSecondary: '#0284C7',
+  textMuted: '#0EA5E9',
+  borderGlow: 'rgba(14, 165, 233, 0.3)',
+  accentCyan: '#0EA5E9'
+};
+
 const getSavedTheme = (): 'light' | 'dark' => {
   if (typeof localStorage !== 'undefined') {
     const saved = localStorage.getItem('haxball_theme');
@@ -38,9 +68,10 @@ const getSavedTheme = (): 'light' | 'dark' => {
 const initialTheme = getSavedTheme();
 
 export const $theme = atom<'light' | 'dark'>(initialTheme);
+export const $themeTokens = atom<ThemeTokens>(initialTheme === 'dark' ? DARK_THEME_TOKENS : LIGHT_THEME_TOKENS);
 
 export function applyThemeToDOM(mode: 'light' | 'dark'): void {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || !document.documentElement) return;
   
   const isDark = mode === 'dark';
   document.documentElement.setAttribute('data-theme', mode);
@@ -60,6 +91,7 @@ export function applyThemeToDOM(mode: 'light' | 'dark'): void {
 
 export function setTheme(mode: 'light' | 'dark'): void {
   $theme.set(mode);
+  $themeTokens.set(mode === 'dark' ? DARK_THEME_TOKENS : LIGHT_THEME_TOKENS);
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem('haxball_theme', mode);
   }
