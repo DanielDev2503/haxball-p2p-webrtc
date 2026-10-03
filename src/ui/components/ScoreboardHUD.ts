@@ -11,7 +11,19 @@ export class ScoreboardHUD {
   private fpsEl: HTMLElement | null = null;
   private unsubs: Array<() => void> = [];
 
+  private capsuleEl: HTMLElement | null = null;
+  private hudContainerEl: HTMLElement | null = null;
+  private matchClockContainerEl: HTMLElement | null = null;
+  private clockSlot: HTMLElement | null = null;
+  private wifiSlot: HTMLElement | null = null;
+
   constructor() {
+    this.capsuleEl = (document.querySelector('.scoreboard-capsule') || document.querySelector('.scoreboard')) as HTMLElement | null;
+    this.hudContainerEl = document.querySelector('.hud-container') as HTMLElement | null;
+    this.matchClockContainerEl = document.querySelector('.match-clock-container') as HTMLElement | null;
+    this.clockSlot = document.getElementById('clockIconSlot');
+    this.wifiSlot = document.getElementById('wifiIconSlot');
+
     this.redScoreEl = document.getElementById('redScore');
     if (!this.redScoreEl) {
       console.warn('[ScoreboardHUD] Element "#redScore" was not found in DOM.');
@@ -41,16 +53,8 @@ export class ScoreboardHUD {
       console.warn('[ScoreboardHUD] Element "#fpsValue" was not found in DOM.');
     }
 
-    // Inyectar iconos Lucide en ranuras reservadas del DOM si existen
-    const clockSlot = document.getElementById('clockIconSlot');
-    if (clockSlot && !clockSlot.innerHTML) {
-      clockSlot.innerHTML = renderIconHTML(Timer, { width: 14, height: 14, stroke: '#00C2FF' });
-    }
-
-    const wifiSlot = document.getElementById('wifiIconSlot');
-    if (wifiSlot && !wifiSlot.innerHTML) {
-      wifiSlot.innerHTML = renderIconHTML(Wifi, { width: 14, height: 14, stroke: '#00C2FF' });
-    }
+    // Inicializar tokens y estilos base de ScoreboardHUD
+    this.applyTheme($theme.get());
 
     // Botón Switch de Modo Oscuro / Claro en el HUD superior
     const themeBtn = document.getElementById('theme-toggle-btn');
@@ -68,6 +72,13 @@ export class ScoreboardHUD {
         })
       );
     }
+
+    // Suscripción atómica a $theme para sincronización total de ScoreboardHUD
+    this.unsubs.push(
+      $theme.subscribe((theme) => {
+        this.applyTheme(theme);
+      })
+    );
 
     // Suscripción atómica y granular a Nano Stores para actualizaciones quirúrgicas
     this.unsubs.push(
@@ -97,6 +108,48 @@ export class ScoreboardHUD {
         this.updatePingDot(pingMs);
       })
     );
+  }
+
+  public applyTheme(theme: 'light' | 'dark'): void {
+    const isDark = theme === 'dark';
+
+    // Inyectar iconos con el tono cromático adecuado según el modo
+    const iconStroke = isDark ? '#00E5FF' : '#0EA5E9';
+    if (this.clockSlot) {
+      this.clockSlot.innerHTML = renderIconHTML(Timer, { width: 14, height: 14, stroke: iconStroke });
+    }
+    if (this.wifiSlot) {
+      this.wifiSlot.innerHTML = renderIconHTML(Wifi, { width: 14, height: 14, stroke: iconStroke });
+    }
+
+    if (this.capsuleEl) {
+      this.capsuleEl.setAttribute('data-theme', theme);
+      this.capsuleEl.classList.toggle('dark', isDark);
+      this.capsuleEl.classList.toggle('scoreboard-dark', isDark);
+      this.capsuleEl.classList.toggle('scoreboard-light', !isDark);
+
+      // Variantes reactivas de Tailwind v4 y tokens solicitados:
+      // Modo Claro: bg-slate-900/10 border-slate-900/15 text-slate-800 backdrop-blur-md
+      // Modo Oscuro: dark:bg-slate-950/70 dark:border-cyan-500/20 dark:text-slate-100 backdrop-blur-md dark:shadow-[0_4px_20px_rgba(0,229,255,0.08)]
+      const lightTokens = ['bg-slate-900/10', 'border-slate-900/15', 'text-slate-800', 'backdrop-blur-md'];
+      const darkTokens = ['dark:bg-slate-950/70', 'dark:border-cyan-500/20', 'dark:text-slate-100', 'dark:shadow-[0_4px_20px_rgba(0,229,255,0.08)]'];
+
+      for (const t of [...lightTokens, ...darkTokens]) {
+        if (!this.capsuleEl.classList.contains(t)) {
+          this.capsuleEl.classList.add(t);
+        }
+      }
+    }
+
+    if (this.hudContainerEl) {
+      this.hudContainerEl.setAttribute('data-theme', theme);
+      this.hudContainerEl.classList.toggle('dark', isDark);
+    }
+
+    if (this.matchClockContainerEl) {
+      this.matchClockContainerEl.setAttribute('data-theme', theme);
+      this.matchClockContainerEl.classList.toggle('dark', isDark);
+    }
   }
 
   private updatePingDot(pingMs: number): void {

@@ -33,10 +33,10 @@ export class GameplayModifierModal {
     overlay.style.zIndex = '9999';
 
     const card = document.createElement('div');
-    card.className = 'menu-modal-card';
-    card.style.maxWidth = '680px';
+    card.className = 'menu-modal-card custom-scrollbar max-h-[85vh] overflow-y-auto p-6 rounded-2xl w-full max-w-lg md:max-w-2xl';
+    card.style.maxWidth = '780px';
     card.style.width = '95vw';
-    card.style.maxHeight = '88vh';
+    card.style.maxHeight = '85vh';
     card.style.overflowY = 'auto';
 
     // Header
@@ -50,12 +50,10 @@ export class GameplayModifierModal {
       <button class="icon-btn-close" id="btn-close-modifiers-modal" title="Cerrar">✕</button>
     `;
 
-    // Content: Grid de modificadores
+    // Content: Grid balanceado de dos columnas en desktop
     const content = document.createElement('div');
-    content.style.display = 'flex';
-    content.style.flexDirection = 'column';
-    content.style.gap = '14px';
-    content.style.marginTop = '8px';
+    content.className = 'modifiers-grid-container grid grid-cols-1 md:grid-cols-2 gap-4';
+    content.style.marginTop = '10px';
 
     const keys = Object.keys(GAMEPLAY_CONFIG_LIMITS) as Array<keyof GameplayConfig>;
 
@@ -65,11 +63,12 @@ export class GameplayModifierModal {
 
       const row = document.createElement('div');
       row.className = 'modifier-row';
-      row.style.borderRadius = '10px';
-      row.style.padding = '10px 14px';
+      row.style.borderRadius = '12px';
+      row.style.padding = '12px 14px';
       row.style.display = 'flex';
       row.style.flexDirection = 'column';
       row.style.gap = '6px';
+      row.style.minWidth = '0'; // Evita desbordamiento en el grid
 
       const topRow = document.createElement('div');
       topRow.style.display = 'flex';
@@ -101,8 +100,9 @@ export class GameplayModifierModal {
       valBadge.className = 'modifier-val-badge';
       valBadge.style.fontWeight = '700';
       valBadge.style.fontSize = '0.9rem';
-      valBadge.style.minWidth = '60px';
+      valBadge.style.minWidth = '65px';
       valBadge.style.textAlign = 'right';
+      valBadge.style.fontVariantNumeric = 'tabular-nums';
       valBadge.textContent = `${val}${meta.unit ? ' ' + meta.unit : ''}`;
       this.valueDisplays.set(key, valBadge);
 

@@ -20,7 +20,7 @@
       </div>
 
       <!-- Scoreboard Center Capsule -->
-      <div class="scoreboard-capsule">
+      <div class="scoreboard-capsule bg-slate-900/10 border-slate-900/15 text-slate-800 backdrop-blur-md dark:bg-slate-950/70 dark:border-cyan-500/20 dark:text-slate-100 dark:shadow-[0_4px_20px_rgba(0,229,255,0.08)]">
         <span id="redScore" class="team-score score-red">0</span>
         <span class="score-divider">:</span>
         <span id="blueScore" class="team-score score-blue">0</span>
@@ -55,7 +55,7 @@
 
       <!-- In-Game Collapsible Overlay Menu (Toggled with Escape or Menu button) -->
       <div id="ingame-menu" class="ingame-menu-overlay hidden">
-        <div class="menu-modal-card">
+        <div class="menu-modal-card custom-scrollbar">
           <div class="menu-header">
             <div style="display: flex; align-items: center; gap: 8px;">
               <h3>⚙️ Controles de Partido & Equipos</h3>
@@ -166,7 +166,7 @@
 
       <!-- Keybinds Configuration Modal -->
       <div id="settingsModal" class="modal-overlay" style="display: none; z-index: 200;">
-        <div class="modal-content" style="max-width: 480px;">
+        <div class="modal-content custom-scrollbar" style="max-width: 480px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <h2 class="modal-title" style="margin: 0; font-size: 1.25rem;">⚙️ Mapeo de Teclas</h2>
             <button id="btnCloseSettings" class="icon-btn-close">✕</button>
@@ -207,7 +207,7 @@
 
   <!-- Nickname Gatekeeper Modal (Futurism Aero Floating White Glass) -->
   <div id="nicknameGatekeeperModal" class="modal-overlay modal-nickname u-hidden" style="z-index: 300;">
-    <div class="modal-content" id="gatekeeperModalContent" style="max-width: 390px; text-align: center; position: relative;">
+    <div class="modal-content custom-scrollbar" id="gatekeeperModalContent" style="max-width: 390px; text-align: center; position: relative;">
       <button id="gatekeeperThemeToggleBtn" class="icon-btn theme-toggle-btn" style="position: absolute; top: 14px; right: 14px;" type="button" title="Alternar tema"></button>
       <div id="gatekeeperAvatar" class="avatar-holo"></div>
       <h2 class="modal-title" style="margin-top: 2px;">Bienvenido a BallHax</h2>
@@ -228,7 +228,7 @@
 
   <!-- Room Lobby Modal Overlay (Futurism Aero White Glass) -->
   <div id="lobbyModal" class="modal-overlay lobby-container u-hidden" style="z-index: 250;">
-    <div class="modal-content" style="position: relative; width: 480px;">
+    <div class="modal-content custom-scrollbar" style="position: relative; width: 480px;">
       <button id="lobbyThemeToggleBtn" class="icon-btn theme-toggle-btn" style="position: absolute; top: 14px; right: 14px;" type="button" title="Alternar tema"></button>
       <h2 class="modal-title" style="margin-bottom: 2px;">Haxball P2P Arena</h2>
 
@@ -290,7 +290,7 @@
 
   <!-- Dedicated Create Room Modal (Pop-up independiente Futurism Aero) -->
   <div id="createRoomModal" class="modal-overlay u-hidden" style="display: none; z-index: 280;">
-    <div class="create-room-card" id="createRoomCard">
+    <div class="create-room-card custom-scrollbar" id="createRoomCard">
       <div class="create-room-header">
         <div class="create-room-header-title">
           <span id="createRoomModalIconSlot" style="display: inline-flex; align-items: center;"></span>

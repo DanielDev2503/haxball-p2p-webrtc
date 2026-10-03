@@ -404,9 +404,9 @@ canvas#gameCanvas, canvas#game-canvas, canvas.game-canvas {
   border: 1px solid rgba(14, 165, 233, 0.3);
   border-radius: 20px;
   padding: 24px;
-  width: 700px;
+  width: 720px;
   max-width: 95vw;
-  max-height: 90vh;
+  max-height: 85vh;
   overflow-y: auto;
   box-shadow: inset 0 1px 2px #FFFFFF, 0 24px 60px rgba(14, 165, 233, 0.18);
   display: flex;
@@ -496,7 +496,16 @@ canvas#gameCanvas, canvas#game-canvas, canvas.game-canvas {
   grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
   min-height: 190px;
+  width: 100%;
+  overflow-x: hidden;
 }
+
+@media (max-width: 640px) {
+  .teams-container {
+    grid-template-columns: 1fr;
+  }
+}
+
 .team-col {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(16px) saturate(180%);
@@ -507,6 +516,8 @@ canvas#gameCanvas, canvas#game-canvas, canvas.game-canvas {
   display: flex;
   flex-direction: column;
   min-height: 190px;
+  min-width: 0;
+  overflow-x: hidden;
   transition: all 0.2s ease;
 }
 .team-col.drag-over {
@@ -985,9 +996,11 @@ button:disabled, input:disabled, select:disabled {
   backdrop-filter: blur(24px) saturate(190%);
   border: 1.5px solid rgba(14, 165, 233, 0.28);
   border-radius: 24px;
-  padding: 28px;
-  width: 440px;
-  max-width: 92%;
+  padding: 24px;
+  width: 480px;
+  max-width: 92vw;
+  max-height: 85vh;
+  overflow-y: auto;
   box-shadow: 0 20px 45px -10px rgba(14, 165, 233, 0.18), inset 0 1px 2px #FFFFFF;
   display: flex;
   flex-direction: column;
@@ -1150,9 +1163,11 @@ button:disabled, input:disabled, select:disabled {
   backdrop-filter: blur(28px) saturate(190%);
   border: 1.5px solid rgba(14, 165, 233, 0.3);
   border-radius: 28px;
-  padding: 28px;
+  padding: 24px;
   width: 480px;
-  max-width: 92%;
+  max-width: 92vw;
+  max-height: 85vh;
+  overflow-y: auto;
   box-shadow: 0 25px 60px -15px rgba(14, 165, 233, 0.25), inset 0 1px 2px #FFFFFF;
   display: flex;
   flex-direction: column;
@@ -1520,6 +1535,277 @@ button:disabled, input:disabled, select:disabled {
 
 [data-theme="light"] .modifier-val-badge {
   color: var(--aero-sky-600);
+}
+
+/* --- 5. SCOREBOARD HUD & TOP BAR THEME CASCADE --- */
+[data-theme="dark"] .hud-container,
+.dark .hud-container {
+  background: rgba(11, 17, 30, 0.88) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="dark"] .brand-title,
+.dark .brand-title {
+  color: #00E5FF !important;
+  text-shadow: 0 0 10px rgba(0, 229, 255, 0.4) !important;
+}
+
+[data-theme="dark"] .room-badge,
+.dark .room-badge {
+  background: rgba(30, 41, 59, 0.7) !important;
+  color: #94A3B8 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+[data-theme="dark"] .scoreboard-capsule,
+[data-theme="dark"] .scoreboard,
+.dark .scoreboard-capsule,
+.dark .scoreboard,
+.scoreboard-dark {
+  background: rgba(15, 23, 42, 0.7) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1.5px solid rgba(0, 229, 255, 0.2) !important;
+  box-shadow: 0 4px 20px rgba(0, 229, 255, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.08) !important;
+  color: #F8FAFC !important;
+}
+
+[data-theme="dark"] .score-blue,
+.dark .score-blue {
+  color: #00E5FF !important;
+  text-shadow: 0 0 14px rgba(0, 229, 255, 0.6) !important;
+}
+
+[data-theme="dark"] .score-red,
+.dark .score-red {
+  color: #FF0055 !important;
+  text-shadow: 0 0 14px rgba(255, 0, 85, 0.6) !important;
+}
+
+[data-theme="dark"] .score-divider,
+.dark .score-divider {
+  color: #64748B !important;
+}
+
+[data-theme="dark"] .match-clock-container,
+.dark .match-clock-container {
+  background: rgba(30, 41, 59, 0.75) !important;
+  border: 1px solid rgba(0, 229, 255, 0.25) !important;
+}
+
+[data-theme="dark"] .match-clock,
+.dark .match-clock {
+  color: #00E5FF !important;
+  text-shadow: 0 0 10px rgba(0, 229, 255, 0.4) !important;
+}
+
+[data-theme="dark"] .hud-stats,
+.dark .hud-stats {
+  color: #94A3B8 !important;
+}
+
+[data-theme="dark"] .icon-btn,
+.dark .icon-btn {
+  background: rgba(30, 41, 59, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #F8FAFC !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+}
+
+[data-theme="dark"] .icon-btn:hover,
+.dark .icon-btn:hover {
+  background: #1E293B !important;
+  border-color: #00E5FF !important;
+  color: #00E5FF !important;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.25) !important;
+}
+
+[data-theme="dark"] .menu-btn,
+.dark .menu-btn {
+  background: rgba(0, 229, 255, 0.1) !important;
+  border-color: rgba(0, 229, 255, 0.3) !important;
+  color: #00E5FF !important;
+}
+
+[data-theme="dark"] .menu-btn:hover,
+.dark .menu-btn:hover {
+  background: rgba(0, 229, 255, 0.2) !important;
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.35) !important;
+}
+
+/* --- 6. MODAL & CARD DARK THEME CASCADE --- */
+[data-theme="dark"] .modal-content,
+.dark .modal-content,
+[data-theme="dark"] .create-room-card,
+.dark .create-room-card {
+  background: rgba(15, 23, 42, 0.94) !important;
+  backdrop-filter: blur(28px) saturate(190%) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.6), inset 0 1px 2px rgba(255, 255, 255, 0.08) !important;
+  color: #F8FAFC !important;
+}
+
+[data-theme="dark"] .modal-title,
+.dark .modal-title,
+[data-theme="dark"] .create-room-header-title,
+.dark .create-room-header-title {
+  color: #00E5FF !important;
+}
+
+[data-theme="dark"] .create-room-header,
+.dark .create-room-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+[data-theme="dark"] .form-label,
+.dark .form-label {
+  color: #94A3B8 !important;
+}
+
+[data-theme="dark"] .form-input,
+.dark .form-input {
+  background: #0B111E !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.15) !important;
+  color: #F8FAFC !important;
+}
+
+[data-theme="dark"] .form-input:focus,
+.dark .form-input:focus {
+  border-color: #00E5FF !important;
+  box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.25) !important;
+}
+
+[data-theme="dark"] .room-list,
+.dark .room-list {
+  background: rgba(11, 17, 30, 0.7) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+[data-theme="dark"] .room-item,
+.dark .room-item {
+  background: rgba(30, 41, 59, 0.8) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #F8FAFC !important;
+}
+
+[data-theme="dark"] .room-item:hover,
+.dark .room-item:hover {
+  background: rgba(30, 41, 59, 0.98) !important;
+  border-color: #00E5FF !important;
+  box-shadow: 0 2px 10px rgba(0, 229, 255, 0.15) !important;
+}
+
+[data-theme="dark"] .lobby-user-bar,
+.dark .lobby-user-bar {
+  background: rgba(30, 41, 59, 0.75) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+[data-theme="dark"] .lobby-signaling-status,
+.dark .lobby-signaling-status {
+  background: rgba(15, 23, 42, 0.8) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #94A3B8 !important;
+}
+
+[data-theme="dark"] .avatar-holo,
+.dark .avatar-holo {
+  background: linear-gradient(135deg, #0B111E 0%, #1E293B 50%, #0284C7 100%) !important;
+  border-color: rgba(0, 229, 255, 0.4) !important;
+  box-shadow: 0 0 24px rgba(0, 229, 255, 0.3), inset 0 2px 6px rgba(255, 255, 255, 0.1) !important;
+  color: #00E5FF !important;
+}
+
+[data-theme="dark"] .lobby-loading-overlay,
+.dark .lobby-loading-overlay {
+  background: rgba(11, 17, 30, 0.94) !important;
+}
+
+[data-theme="dark"] .loading-text,
+.dark .loading-text {
+  color: #00E5FF !important;
+}
+
+[data-theme="dark"] .badge-sky,
+.dark .badge-sky {
+  background: rgba(0, 229, 255, 0.15) !important;
+  color: #00E5FF !important;
+  border-color: rgba(0, 229, 255, 0.3) !important;
+}
+
+/* --- 7. SCROLLBAR & OVERFLOW UTILITIES --- */
+.custom-scrollbar,
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 229, 255, 0.3) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar,
+.scrollbar-thin::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track,
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb,
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(0, 229, 255, 0.3);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 229, 255, 0.55);
+}
+
+.modal-content,
+.create-room-card,
+.menu-modal-card {
+  max-height: 85vh !important;
+  overflow-y: auto !important;
+}
+
+/* Modifiers responsive 2-column grid */
+.modifiers-grid-container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .modifiers-grid-container {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Interactions, smooth hover/focus and accessibility */
+.btn, .icon-btn, .menu-btn, .keybind-btn, .player-item {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.btn:hover:not(:disabled),
+.icon-btn:hover:not(:disabled),
+.keybind-btn:hover:not(:disabled) {
+  transform: scale(1.02);
+}
+
+.btn:active:not(:disabled),
+.icon-btn:active:not(:disabled),
+.keybind-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 2px #00E5FF, 0 0 12px rgba(0, 229, 255, 0.4) !important;
 }
 
 

@@ -1,6 +1,8 @@
 import { DiscSnapshot } from '../core/game/GameState';
 import { $theme } from '../ui/stores/gameStore';
 
+const TURBO_TRAIL_CAPACITY = 16;
+
 interface GhostSlot {
   x: number;
   y: number;
@@ -17,21 +19,34 @@ interface TurboParticle {
   vy: number;
   alpha: number;
   active: boolean;
+  size: number;
   color: string;
 }
 
-interface RibbonNode {
-  x: number;
-  y: number;
-  r: number;
+interface PlayerTurboBuffer {
+  posX: Float32Array;
+  posY: Float32Array;
+  radius: number;
   team: number;
+  head: number;
+  count: number;
 }
 
 export class DiscRenderer {
   private ghostMap: Map<number, GhostSlot[]> = new Map();
   private turboParticles: TurboParticle[] = [];
   private nextParticleIdx: number = 0;
-  private ribbonMap: Map<number, RibbonNode[]> = new Map();
+  private ribbonMap: Map<number, PlayerTurboBuffer> = new Map();
+
+  // Buffers prealocados de coordenadas de polígonos para CERO GC en hot loop
+  private scratchLeftX: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
+  private scratchLeftY: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
+  private scratchRightX: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
+  private scratchRightY: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
+  private scratchCoreLeftX: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
+  private scratchCoreLeftY: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
+  private scratchCoreRightX: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
+  private scratchCoreRightY: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
 
   public draw(ctx: CanvasRenderingContext2D, discs: DiscSnapshot[], localDiscId?: number | null): void {
     this.render(ctx, discs, localDiscId);
@@ -47,6 +62,7 @@ export class DiscRenderer {
         vy: 0,
         alpha: 0,
         active: false,
+        size: 3.0,
         color: 'rgba(0, 229, 255, '
       });
     }
@@ -59,7 +75,7 @@ export class DiscRenderer {
   ): void {
     ctx.save();
 
-    // 1. Procesar ráfagas de turbo para registrar o decaer ribbon trails
+    // 1. Procesar ráfagas de turbo para registrar o decaer ribbon trails circulares
     const activeTurboIds = new Set<number>();
     for (const disc of discs) {
       if (disc.team !== 0) {
@@ -74,17 +90,17 @@ export class DiscRenderer {
       }
     }
 
-    // Decaimiento natural de estelas de jugadores que ya no usan turbo
-    for (const [id, history] of this.ribbonMap.entries()) {
-      if (!activeTurboIds.has(id) && history.length > 0) {
-        history.pop();
+    // Decaimiento natural de estelas de jugadores que ya no usan turbo (Zero GC)
+    for (const [id, buf] of this.ribbonMap.entries()) {
+      if (!activeTurboIds.has(id) && buf.count > 0) {
+        buf.count--;
       }
     }
 
-    // 2. Renderizar Ribbon Trails poligonales translúcidos de Turbo
+    // 2. Renderizar Ribbon Trails poligonales continuos translúcidos de Turbo (16 muestras)
     this.renderRibbonTrails(ctx);
 
-    // 3. Renderizar partículas de turbo dinámicas con dispersión de 35°
+    // 3. Renderizar partículas de turbo dinámicas con dispersión angular de ±25°
     this.renderTurboParticles(ctx);
 
     // 4. Renderizar siluetas fantasma de dash (ghosting / after-images)
@@ -103,40 +119,56 @@ export class DiscRenderer {
   }
 
   private recordRibbonPoint(disc: DiscSnapshot): void {
-    let history = this.ribbonMap.get(disc.id);
-    if (!history) {
-      history = [];
-      this.ribbonMap.set(disc.id, history);
+    let buf = this.ribbonMap.get(disc.id);
+    if (!buf) {
+      buf = {
+        posX: new Float32Array(TURBO_TRAIL_CAPACITY),
+        posY: new Float32Array(TURBO_TRAIL_CAPACITY),
+        radius: disc.radius,
+        team: disc.team,
+        head: 0,
+        count: 0
+      };
+      this.ribbonMap.set(disc.id, buf);
     }
-    history.unshift({ x: disc.x, y: disc.y, r: disc.radius, team: disc.team });
-    if (history.length > 8) {
-      history.length = 8;
+
+    buf.head = (buf.head + 1) & (TURBO_TRAIL_CAPACITY - 1);
+    buf.posX[buf.head] = disc.x;
+    buf.posY[buf.head] = disc.y;
+    if (buf.count < TURBO_TRAIL_CAPACITY) {
+      buf.count++;
     }
+    buf.radius = disc.radius;
+    buf.team = disc.team;
   }
 
   private renderRibbonTrails(ctx: CanvasRenderingContext2D): void {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
 
-    for (const history of this.ribbonMap.values()) {
-      if (history.length < 2) continue;
+    for (const buf of this.ribbonMap.values()) {
+      const count = buf.count;
+      if (count < 2) continue;
 
-      const team = history[0].team;
-      const isRed = team === 1;
-      const neonColor = isRed ? 'rgba(255, 0, 85, ' : 'rgba(0, 229, 255, ';
+      const isRed = buf.team === 1;
+      const teamColor = isRed ? '#FF0055' : '#00E5FF';
+      const neonPrefix = isRed ? 'rgba(255, 0, 85, ' : 'rgba(0, 229, 255, ';
 
-      const leftPts: Array<{ x: number; y: number }> = [];
-      const rightPts: Array<{ x: number; y: number }> = [];
-      const coreLeftPts: Array<{ x: number; y: number }> = [];
-      const coreRightPts: Array<{ x: number; y: number }> = [];
+      // Calcular vértices del ribbon usando buffers prealocados (Zero GC)
+      for (let i = 0; i < count; i++) {
+        const curIdx = (buf.head - i + TURBO_TRAIL_CAPACITY) & (TURBO_TRAIL_CAPACITY - 1);
+        const px = buf.posX[curIdx];
+        const py = buf.posY[curIdx];
 
-      for (let i = 0; i < history.length; i++) {
-        const pt = history[i];
-        const next = i < history.length - 1 ? history[i + 1] : history[i];
-        const prev = i > 0 ? history[i - 1] : history[i];
+        const prevIdx = i > 0
+          ? ((buf.head - (i - 1) + TURBO_TRAIL_CAPACITY) & (TURBO_TRAIL_CAPACITY - 1))
+          : curIdx;
+        const nextIdx = i < count - 1
+          ? ((buf.head - (i + 1) + TURBO_TRAIL_CAPACITY) & (TURBO_TRAIL_CAPACITY - 1))
+          : curIdx;
 
-        let dx = next.x - prev.x;
-        let dy = next.y - prev.y;
+        let dx = buf.posX[prevIdx] - buf.posX[nextIdx];
+        let dy = buf.posY[prevIdx] - buf.posY[nextIdx];
         let len = Math.hypot(dx, dy);
         if (len < 0.001) {
           dx = 1;
@@ -147,50 +179,74 @@ export class DiscRenderer {
         const nx = -dy / len;
         const ny = dx / len;
 
-        // Estrechamiento cónico hacia atrás: ancho inicial 2 * r_player hasta 0 en el frame 8
-        const taper = Math.max(0, 1 - i / 8);
-        const halfWidth = pt.r * taper;
-        const coreHalfWidth = halfWidth * 0.38;
+        // Estrechamiento suave desde el radio completo del jugador (r ≈ 15px) hasta 0 en la cola
+        const taper = Math.max(0, 1 - i / count);
+        const halfWidth = buf.radius * taper;
+        const coreHalfWidth = halfWidth * 0.42;
 
-        leftPts.push({ x: pt.x + nx * halfWidth, y: pt.y + ny * halfWidth });
-        rightPts.push({ x: pt.x - nx * halfWidth, y: pt.y - ny * halfWidth });
+        this.scratchLeftX[i] = px + nx * halfWidth;
+        this.scratchLeftY[i] = py + ny * halfWidth;
+        this.scratchRightX[i] = px - nx * halfWidth;
+        this.scratchRightY[i] = py - ny * halfWidth;
 
-        coreLeftPts.push({ x: pt.x + nx * coreHalfWidth, y: pt.y + ny * coreHalfWidth });
-        coreRightPts.push({ x: pt.x - nx * coreHalfWidth, y: pt.y - ny * coreHalfWidth });
+        this.scratchCoreLeftX[i] = px + nx * coreHalfWidth;
+        this.scratchCoreLeftY[i] = py + ny * coreHalfWidth;
+        this.scratchCoreRightX[i] = px - nx * coreHalfWidth;
+        this.scratchCoreRightY[i] = py - ny * coreHalfWidth;
       }
 
-      for (let i = 0; i < history.length - 1; i++) {
-        const alpha = Math.max(0, 0.55 * (1 - i / 8));
-        const nextAlpha = Math.max(0, 0.55 * (1 - (i + 1) / 8));
+      const headIdx = buf.head;
+      const tailIdx = (buf.head - (count - 1) + TURBO_TRAIL_CAPACITY) & (TURBO_TRAIL_CAPACITY - 1);
+      const headX = buf.posX[headIdx];
+      const headY = buf.posY[headIdx];
+      const tailX = buf.posX[tailIdx];
+      const tailY = buf.posY[tailIdx];
 
-        // 1. Estela poligonal con el neón del equipo
-        ctx.beginPath();
-        ctx.moveTo(leftPts[i].x, leftPts[i].y);
-        ctx.lineTo(leftPts[i + 1].x, leftPts[i + 1].y);
-        ctx.lineTo(rightPts[i + 1].x, rightPts[i + 1].y);
-        ctx.lineTo(rightPts[i].x, rightPts[i].y);
-        ctx.closePath();
-
-        const grad = ctx.createLinearGradient(history[i].x, history[i].y, history[i + 1].x, history[i + 1].y);
-        grad.addColorStop(0, `${neonColor}${alpha})`);
-        grad.addColorStop(1, `${neonColor}${nextAlpha})`);
-        ctx.fillStyle = grad;
-        ctx.fill();
-
-        // 2. Núcleo blanco brillante
-        ctx.beginPath();
-        ctx.moveTo(coreLeftPts[i].x, coreLeftPts[i].y);
-        ctx.lineTo(coreLeftPts[i + 1].x, coreLeftPts[i + 1].y);
-        ctx.lineTo(coreRightPts[i + 1].x, coreRightPts[i + 1].y);
-        ctx.lineTo(coreRightPts[i].x, coreRightPts[i].y);
-        ctx.closePath();
-
-        const coreGrad = ctx.createLinearGradient(history[i].x, history[i].y, history[i + 1].x, history[i + 1].y);
-        coreGrad.addColorStop(0, `rgba(255, 255, 255, ${alpha * 0.95})`);
-        coreGrad.addColorStop(1, `rgba(255, 255, 255, ${nextAlpha * 0.95})`);
-        ctx.fillStyle = coreGrad;
-        ctx.fill();
+      // 1. Estela poligonal exterior continua con resplandor neón perimetral
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(this.scratchLeftX[0], this.scratchLeftY[0]);
+      for (let i = 1; i < count; i++) {
+        ctx.lineTo(this.scratchLeftX[i], this.scratchLeftY[i]);
       }
+      for (let i = count - 1; i >= 0; i--) {
+        ctx.lineTo(this.scratchRightX[i], this.scratchRightY[i]);
+      }
+      ctx.closePath();
+
+      const grad = ctx.createLinearGradient(headX, headY, tailX, tailY);
+      grad.addColorStop(0, `${neonPrefix}0.65)`);
+      grad.addColorStop(0.6, `${neonPrefix}0.25)`);
+      grad.addColorStop(1, `${neonPrefix}0)`);
+
+      ctx.fillStyle = grad;
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = teamColor;
+      ctx.fill();
+      ctx.restore();
+
+      // 2. Núcleo central blanco brillante para aspecto aero-cinético de alta energía
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(this.scratchCoreLeftX[0], this.scratchCoreLeftY[0]);
+      for (let i = 1; i < count; i++) {
+        ctx.lineTo(this.scratchCoreLeftX[i], this.scratchCoreLeftY[i]);
+      }
+      for (let i = count - 1; i >= 0; i--) {
+        ctx.lineTo(this.scratchCoreRightX[i], this.scratchCoreRightY[i]);
+      }
+      ctx.closePath();
+
+      const coreGrad = ctx.createLinearGradient(headX, headY, tailX, tailY);
+      coreGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+      coreGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)');
+      coreGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+      ctx.fillStyle = coreGrad;
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = '#FFFFFF';
+      ctx.fill();
+      ctx.restore();
     }
 
     ctx.restore();
@@ -251,20 +307,21 @@ export class DiscRenderer {
     const speed = Math.hypot(disc.vx, disc.vy);
     if (speed < 0.5) return;
 
-    // Dirección opuesta al desplazamiento (-u) con dispersión angular de 35°
+    // Dirección opuesta al desplazamiento (-v) con dispersión angular controlada de ±25°
     const baseAngle = Math.atan2(-disc.vy, -disc.vx);
-    const spreadRad = (35 * Math.PI) / 180;
-    const angle = baseAngle + (Math.random() - 0.5) * spreadRad;
-    const pSpeed = speed * (0.55 + Math.random() * 0.45) + 40;
+    const spreadRad = (25 * Math.PI) / 180;
+    const angle = baseAngle + (Math.random() - 0.5) * (2 * spreadRad);
+    const pSpeed = speed * (0.65 + Math.random() * 0.45) + 60;
 
     const p = this.turboParticles[this.nextParticleIdx];
     this.nextParticleIdx = (this.nextParticleIdx + 1) % this.turboParticles.length;
 
-    p.x = disc.x - (disc.vx / speed) * (disc.radius * 0.8) + (Math.random() - 0.5) * 6;
-    p.y = disc.y - (disc.vy / speed) * (disc.radius * 0.8) + (Math.random() - 0.5) * 6;
+    p.x = disc.x - (disc.vx / speed) * (disc.radius * 0.85) + (Math.random() - 0.5) * 8;
+    p.y = disc.y - (disc.vy / speed) * (disc.radius * 0.85) + (Math.random() - 0.5) * 8;
     p.vx = Math.cos(angle) * pSpeed;
     p.vy = Math.sin(angle) * pSpeed;
-    p.alpha = 0.85;
+    p.size = 2.5 + Math.random() * 2.0;
+    p.alpha = 0.95;
     p.active = true;
     p.color = disc.team === 1 ? 'rgba(255, 0, 85, ' : 'rgba(0, 229, 255, ';
   }
@@ -276,7 +333,7 @@ export class DiscRenderer {
 
       p.x += p.vx * (1 / 60);
       p.y += p.vy * (1 / 60);
-      p.alpha *= 0.84;
+      p.alpha *= 0.82; // Desvanecimiento alfa rápido
 
       if (p.alpha < 0.02) {
         p.active = false;
@@ -284,12 +341,23 @@ export class DiscRenderer {
       }
 
       ctx.save();
+      const teamGlow = p.color.includes('255, 0, 85') ? '#FF0055' : '#00E5FF';
       ctx.strokeStyle = `${p.color}${p.alpha})`;
-      ctx.lineWidth = 2.0;
+      ctx.fillStyle = `${p.color}${p.alpha})`;
+      ctx.lineWidth = p.size;
+      ctx.lineCap = 'round';
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = teamGlow;
+
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
       ctx.lineTo(p.x - p.vx * 0.06, p.y - p.vy * 0.06);
       ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+
       ctx.restore();
     }
   }
