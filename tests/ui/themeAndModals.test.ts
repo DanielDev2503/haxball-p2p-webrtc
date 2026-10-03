@@ -150,6 +150,16 @@ describe('Theme Synchronization & ScoreboardHUD Tokens', () => {
     expect(appEl.getAttribute('data-theme')).toBe('dark');
   });
 
+  it('directly applies theme tokens via applyThemeToDOM', () => {
+    applyThemeToDOM('dark');
+    expect(docEl.classList.contains('dark')).toBe(true);
+    expect(docEl.getAttribute('data-theme')).toBe('dark');
+
+    applyThemeToDOM('light');
+    expect(docEl.classList.contains('dark')).toBe(false);
+    expect(docEl.getAttribute('data-theme')).toBe('light');
+  });
+
   it('propagates light theme to documentElement and #app-root when toggled back', () => {
     setTheme('dark');
     expect(docEl.classList.contains('dark')).toBe(true);
