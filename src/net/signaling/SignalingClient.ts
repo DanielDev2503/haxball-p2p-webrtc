@@ -12,8 +12,8 @@ export interface SignalingMessage {
   code?: string;
   config?: any;
   password?: string;
+  reason?: string;
 }
-
 
 export class SignalingClient {
   public ws: WebSocket | null = null;
@@ -65,6 +65,13 @@ export class SignalingClient {
         this.ws.onmessage = (event) => {
           try {
             const data: SignalingMessage = JSON.parse(event.data);
+            if (data.type === 'ping') {
+              this.send({ type: 'pong' });
+              return;
+            }
+            if (data.type === 'pong') {
+              return;
+            }
             if (this.onMessage) {
               this.onMessage(data);
             }
@@ -126,7 +133,6 @@ export class SignalingClient {
         })
         .catch((err) => {
           console.warn('[SignalingClient] Reconnect failed:', err);
-          // onclose handler will schedule next attempt if under limit
         });
     }, delay);
   }
@@ -149,6 +155,14 @@ export class SignalingClient {
 
   public joinRoom(roomId: string, password?: string, nickname?: string): void {
     this.send({ type: 'join_room', roomId, password, nickname });
+  }
+
+  public sendJoinAccepted(targetId: string): void {
+    this.send({ type: 'join_accepted', targetId });
+  }
+
+  public sendJoinRejected(targetId: string, reason?: string, code?: string): void {
+    this.send({ type: 'join_rejected', targetId, reason, code });
   }
 
   public leaveRoom(roomId?: string): void {

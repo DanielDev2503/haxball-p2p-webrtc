@@ -13,7 +13,7 @@ import { NicknameGatekeeper } from '../ui/components/NicknameGatekeeper';
 import { StatsMonitor } from '../ui/components/StatsMonitor';
 import { SignalingClient, SignalingMessage } from '../net/signaling/SignalingClient';
 import { PeerConnection } from '../net/transport/PeerConnection';
-import { InputPacket } from '../net/protocol/InputPacket';
+import { InputPacket, InputData } from '../net/protocol/InputPacket';
 import { SnapshotPacket } from '../net/protocol/SnapshotPacket';
 import { SOUND_POST_HIT, SOUND_KICK } from '../net/protocol/BinaryProtocol';
 import { JitterBuffer } from '../net/transport/JitterBuffer';
@@ -125,6 +125,15 @@ export class GameApp {
   private roomNameBadge: HTMLElement | null;
   private lastAnnouncedStadiumId: string | null = null;
 
+  // Zero-GC preallocated static buffers for 60Hz replication
+  private static readonly clientInputBuf: ArrayBuffer = new ArrayBuffer(InputPacket.BYTE_LENGTH);
+  private static readonly clientInputData: InputData = {
+    sequence: 0,
+    inputMask: 0,
+    clientTimestamp: 0
+  };
+  private hostSnapshotBuffer: ArrayBuffer | null = null;
+
   constructor() {
     let canvas = (document.getElementById('gameCanvas') || document.getElementById('game-canvas')) as HTMLCanvasElement | null;
     if (!canvas) {
@@ -150,7 +159,7 @@ export class GameApp {
     this.chat = new ChatBox();
     this.statsMonitor = new StatsMonitor();
     this.teamSelect = new TeamSelectModal();
-    this.jitterBuffer = new JitterBuffer(70);
+    this.jitterBuffer = new JitterBuffer(33, 30, true);
 
     this.modifierModal = new GameplayModifierModal(
       this.gameplayConfig,
@@ -617,7 +626,8 @@ export class GameApp {
           break;
         }
 
-        case 'room_joined': {
+        case 'room_joined':
+        case 'join_accepted': {
           // Client received room_joined from signaling — but do NOT transition to game yet.
           // Wait for P2P connection + initial_state handshake from host.
           this.currentRoomId = msg.roomId || '';
@@ -629,8 +639,8 @@ export class GameApp {
             this.roomNameBadge.textContent = `${this.roomConfig.name} [${this.currentRoomId}]`;
           }
           this.updateAdminPanelVisibility();
-          // Keep the connecting indicator visible — transition happens on initial_state
-          this.lobby?.showConnecting('Estableciendo conexión P2P con el anfitrión...');
+          // Step 2: WebRTC negotiation & ICE Traversal
+          this.lobby?.setConnectingStep(2, 'Negociando enlace P2P (ICE Traversal)...');
           break;
         }
 
@@ -641,12 +651,27 @@ export class GameApp {
           break;
         }
 
+        case 'join_request': {
+          if (this.mode === 'host' && msg.peerId) {
+            if (this.bannedPeers.has(msg.peerId)) {
+              console.log(`[Host] Rechazando join_request de peer baneado: ${msg.peerId}`);
+              this.signaling.sendJoinRejected(msg.peerId, 'Has sido baneado de esta sala.', 'BANNED');
+              return;
+            }
+            this.signaling.sendJoinAccepted(msg.peerId);
+            this.handlePeerJoinedAsHost(msg.peerId, msg.nickname);
+          }
+          break;
+        }
+
         case 'peer_joined': {
           if (this.mode === 'host' && msg.peerId) {
             if (this.bannedPeers.has(msg.peerId)) {
               console.log(`[Host] Rechazando conexión de peer baneado: ${msg.peerId}`);
+              this.signaling.sendJoinRejected(msg.peerId, 'Has sido baneado de esta sala.', 'BANNED');
               return;
             }
+            this.signaling.sendJoinAccepted(msg.peerId);
             this.handlePeerJoinedAsHost(msg.peerId, msg.nickname);
           }
           break;
@@ -700,19 +725,26 @@ export class GameApp {
         }
 
         case 'error': {
+          this.clearJoinTimeout();
+          if (this.hostPeer) {
+            this.hostPeer.close();
+            this.hostPeer = null;
+          }
+          this.currentRoomId = '';
+          this.mode = 'practice';
           this.lobby?.hideConnecting();
           console.warn('[Signaling Error]', msg);
+          let errorText = msg.message || 'Ocurrió un error al unirse a la sala.';
           if (msg.code === 'INVALID_PASSWORD') {
-            alert('❌ Contraseña incorrecta para esta sala privada.');
+            errorText = 'Contraseña incorrecta para esta sala privada.';
           } else if (msg.code === 'ROOM_FULL') {
-            alert('❌ La sala ha alcanzado su límite máximo de jugadores.');
+            errorText = 'La sala ha alcanzado su límite máximo de jugadores.';
           } else if (msg.code === 'ROOM_NOT_FOUND') {
-            alert('❌ La sala no existe o el Host se ha desconectado.');
-          } else {
-            alert(`Error: ${msg.message || 'Ocurrió un error de conexión'}`);
+            errorText = 'La sala no existe o el Host se ha desconectado.';
           }
+          this.lobby?.showToast(errorText, 'error');
           this.uiStateMachine?.transitionTo('STATE_LOBBY');
-          // Leave button is inside ingame-menu, no separate cleanup needed
+          this.signaling.requestRoomList();
           break;
         }
       }
@@ -827,7 +859,7 @@ export class GameApp {
     // Leave button is inside ingame-menu only
     this.updateAdminPanelVisibility();
 
-    this.lobby.showConnecting(`Conectando a la sala ${roomId}...`);
+    this.lobby.setConnectingStep(1, 'Conectando con servidor de señalización...');
 
     if (!this.signaling.isConnected) {
       try {
@@ -836,29 +868,32 @@ export class GameApp {
       } catch (err) {
         this.lobby.hideConnecting();
         console.error('[Signaling] Failed to connect:', err);
-        alert('No se pudo conectar al servidor de señalización.');
+        this.lobby.showToast('No se pudo conectar al servidor de señalización.', 'error');
         return;
       }
     }
+
+    this.lobby.setConnectingStep(1, 'Solicitando unirse a la sala...');
 
     // Start the 10-second join timeout — if handshake doesn't complete, abort
     this.clearJoinTimeout();
     this.joinTimeoutId = setTimeout(() => {
       this.joinTimeoutId = null;
       console.warn('[Client] Join handshake timed out after 10 seconds');
-      this.lobby?.showConnecting('Tiempo de espera agotado al conectar con el anfitrión. Regresando al lobby...');
-      // Clean up partial connection state
       if (this.hostPeer) {
         this.hostPeer.close();
         this.hostPeer = null;
       }
       this.currentRoomId = '';
       this.mode = 'practice';
-      setTimeout(() => {
-        this.lobby?.hideConnecting();
-        this.uiStateMachine?.transitionTo('STATE_LOBBY');
-        this.signaling.requestRoomList();
-      }, 2000);
+      this.lobby?.hideConnecting();
+      this.uiStateMachine?.transitionTo('STATE_LOBBY');
+      this.signaling.requestRoomList();
+      this.lobby?.showToast(
+        'No se pudo establecer conexión directa con el Host. Posible restricción de red/NAT. Intenta crear una sala o unirte a otra.',
+        'error',
+        7000
+      );
     }, GameApp.JOIN_TIMEOUT_MS);
 
     this.signaling.joinRoom(roomId, password, this.localPlayer.name);
@@ -970,6 +1005,10 @@ export class GameApp {
       this.signaling.sendIceCandidate(peerId, candidate);
     };
 
+    peer.onIceRestartOffer = (offer) => {
+      this.signaling.sendOffer(peerId, offer);
+    };
+
     peer.onDataChannelOpen = () => {
       // Don't send initial_state yet — wait for peer_handshake from client
       // This ensures the client is ready to receive
@@ -1006,7 +1045,10 @@ export class GameApp {
     peer.onReliableMessage = (data: string) => {
       try {
         const msg = JSON.parse(data);
-        if (msg.type === 'chat') {
+        if (msg.type === 'client_ready' || msg.type === 'CLIENT_READY') {
+          peer.isReady = true;
+          console.log(`[Host] Peer ${peerId} está listo para simulación (CLIENT_READY recibido)`);
+        } else if (msg.type === 'chat') {
           if (msg.team === 'sys') {
             this.chat.addSystemMessage(msg.text);
           } else {
@@ -1156,6 +1198,12 @@ export class GameApp {
   }
 
   private async handleSignalOffer(senderId: string, offer: RTCSessionDescriptionInit): Promise<void> {
+    if (this.hostPeer && this.hostPeer.remotePeerId === senderId && this.hostPeer.pc.signalingState !== 'closed') {
+      const answer = await this.hostPeer.handleOffer(offer);
+      this.signaling.sendAnswer(senderId, answer);
+      return;
+    }
+
     const peer = new PeerConnection(senderId, false);
     this.hostPeer = peer;
 
@@ -1164,6 +1212,7 @@ export class GameApp {
     };
 
     peer.onDataChannelOpen = () => {
+      this.lobby?.setConnectingStep(3, 'Sincronizando estado de la sala...');
       // Send CLIENT_HELLO — the host will respond with INITIAL_STATE
       peer.sendReliable(JSON.stringify({
         type: 'CLIENT_HELLO',
@@ -1260,6 +1309,12 @@ export class GameApp {
 
           this.updateAdminControlsUI();
           this.chat.addSystemMessage(`Conectado a la sala: ${this.roomConfig.name}`);
+
+          // Notificar al host que el cliente está listo para recibir snapshots y simular
+          peer.isReady = true;
+          peer.sendReliable(JSON.stringify({
+            type: 'CLIENT_READY'
+          }));
 
           // NOW transition to in-game — we have all the data we need
           this.lobby?.hideConnecting();
@@ -1925,9 +1980,15 @@ export class GameApp {
   private broadcastSnapshot(): void {
     if (this.mode !== 'host' || !this.engine || this.peers.size === 0) return;
     const snapshot = this.engine.getSnapshot();
-    const buffer = SnapshotPacket.encode(snapshot);
+    const totalLength = SnapshotPacket.HEADER_LENGTH + snapshot.discs.length * SnapshotPacket.DISC_LENGTH;
+    if (!this.hostSnapshotBuffer || this.hostSnapshotBuffer.byteLength !== totalLength) {
+      this.hostSnapshotBuffer = new ArrayBuffer(totalLength);
+    }
+    const buffer = SnapshotPacket.encode(snapshot, this.hostSnapshotBuffer);
     for (const peer of this.peers.values()) {
-      peer.sendUnreliable(buffer);
+      if (peer.isReady) {
+        peer.sendUnreliable(buffer);
+      }
     }
   }
 
@@ -2270,17 +2331,17 @@ export class GameApp {
       const isTurbo = this.inputManager.isTurboActive();
       const triggerDash = this.inputManager.consumeDashTrigger();
 
-      if (this.hostPeer) {
-        const inputBuf = InputPacket.encode({
-          sequence: this.clientInputSequence,
-          inputMask: mask,
-          clientTimestamp: Math.round(performance.now()) & 0xffff,
-          curveInput,
-          curveX: curve.x,
-          curveY: curve.y,
-          isTurbo,
-          triggerDash
-        });
+      if (this.hostPeer && this.hostPeer.isReady) {
+        GameApp.clientInputData.sequence = this.clientInputSequence;
+        GameApp.clientInputData.inputMask = mask;
+        GameApp.clientInputData.clientTimestamp = Math.round(performance.now()) & 0xffff;
+        GameApp.clientInputData.curveInput = curveInput;
+        GameApp.clientInputData.curveX = curve.x;
+        GameApp.clientInputData.curveY = curve.y;
+        GameApp.clientInputData.isTurbo = isTurbo;
+        GameApp.clientInputData.triggerDash = triggerDash;
+
+        const inputBuf = InputPacket.encode(GameApp.clientInputData, GameApp.clientInputBuf);
         this.hostPeer.sendUnreliable(inputBuf);
       }
 

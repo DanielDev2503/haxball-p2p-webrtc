@@ -17,6 +17,15 @@ export type ControlMessageType =
   | 'kicked'
   | 'banned'
   | 'client_hello'
+  | 'CLIENT_HELLO'
+  | 'client_ready'
+  | 'CLIENT_READY'
+  | 'join_request'
+  | 'JOIN_REQUEST'
+  | 'join_accepted'
+  | 'JOIN_ACCEPTED'
+  | 'join_rejected'
+  | 'JOIN_REJECTED'
   | 'initial_state'
   | 'INITIAL_STATE'
   | 'match_control'
@@ -113,9 +122,35 @@ export interface TogglePauseMessage {
 }
 
 export interface ClientHelloMessage {
-  type: 'client_hello';
+  type: 'client_hello' | 'CLIENT_HELLO';
   nickname: string;
   avatar?: string | undefined;
+}
+
+export interface ClientReadyMessage {
+  type: 'client_ready' | 'CLIENT_READY';
+  playerId: string;
+}
+
+export interface JoinRequestMessage {
+  type: 'join_request' | 'JOIN_REQUEST';
+  peerId: string;
+  nickname?: string | undefined;
+  roomId?: string | undefined;
+}
+
+export interface JoinAcceptedMessage {
+  type: 'join_accepted' | 'JOIN_ACCEPTED';
+  roomId: string;
+  roomName?: string | undefined;
+  hostId: string;
+  config?: RoomConfig | undefined;
+}
+
+export interface JoinRejectedMessage {
+  type: 'join_rejected' | 'JOIN_REJECTED';
+  reason?: string | undefined;
+  code?: string | undefined;
 }
 
 export interface InitialStateMessage {
@@ -133,6 +168,7 @@ export interface InitialStateMessage {
   config: RoomConfig;
   gameplayConfig?: GameplayConfig;
   matchState: MatchStatePayload;
+  stadiumId?: string | undefined;
 }
 
 export interface GameConfigSyncMessage {
@@ -180,5 +216,3 @@ export interface MapChangeSyncMessage {
   type: 'MAP_CHANGE_SYNC';
   stadiumId: string;
 }
-
-

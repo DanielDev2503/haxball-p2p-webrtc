@@ -209,6 +209,25 @@ export class RoomLobby {
     }
   }
 
+  public setConnectingStep(step: 1 | 2 | 3, detail?: string): void {
+    let msg = '';
+    switch (step) {
+      case 1:
+        msg = '1/3 Conectando con servidor de señalización...';
+        break;
+      case 2:
+        msg = '2/3 Negociando enlace P2P (ICE Traversal)...';
+        break;
+      case 3:
+        msg = '3/3 Sincronizando sala...';
+        break;
+    }
+    if (detail) {
+      msg = `${msg} (${detail})`;
+    }
+    this.showConnecting(msg);
+  }
+
   public showConnecting(message: string = 'Conectando P2P...'): void {
     if (this.loadingTextEl) {
       this.loadingTextEl.textContent = message;
@@ -222,6 +241,37 @@ export class RoomLobby {
     if (this.loadingOverlayEl) {
       this.loadingOverlayEl.style.display = 'none';
     }
+  }
+
+  public showToast(message: string, type: 'info' | 'error' | 'warning' = 'info', durationMs: number = 6000): void {
+    let container = document.getElementById('haxballToastContainer');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'haxballToastContainer';
+      container.className = 'toast-container';
+      document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `haxball-toast toast-${type}`;
+    const icon = type === 'error' ? '⚠️' : (type === 'warning' ? '⚡' : 'ℹ️');
+
+    toast.innerHTML = `
+      <span class="toast-icon">${icon}</span>
+      <span class="toast-message">${message}</span>
+    `;
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.add('toast-fade-out');
+      setTimeout(() => {
+        toast.remove();
+        if (container && container.children.length === 0) {
+          container.remove();
+        }
+      }, 400);
+    }, durationMs);
   }
 
   public getNickname(): string {

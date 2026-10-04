@@ -7,10 +7,12 @@ export class SnapshotPacket {
   public static readonly HEADER_LENGTH = 17;
   public static readonly DISC_LENGTH = 20;
 
-  public static encode(snapshot: GameSnapshot): ArrayBuffer {
+  public static encode(snapshot: GameSnapshot, outBuffer?: ArrayBuffer): ArrayBuffer {
     const discCount = snapshot.discs.length;
     const totalLength = SnapshotPacket.HEADER_LENGTH + discCount * SnapshotPacket.DISC_LENGTH;
-    const buffer = new ArrayBuffer(totalLength);
+    const buffer = (outBuffer && outBuffer.byteLength === totalLength)
+      ? outBuffer
+      : (outBuffer && outBuffer.byteLength > totalLength ? outBuffer.slice(0, totalLength) : new ArrayBuffer(totalLength));
     const view = new DataView(buffer);
 
     const phase = snapshot.matchPhase !== undefined
