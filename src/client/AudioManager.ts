@@ -8,6 +8,10 @@ export class AudioManager {
   public isMuted: boolean = false;
   public volume: number = 0.5;
 
+  public setMuted(muted: boolean): void {
+    this.isMuted = muted;
+  }
+
   private initContext(): void {
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -171,13 +175,86 @@ export class AudioManager {
     osc.stop(t + duration);
   }
 
-  public play(type: 'kick' | 'bounce' | 'post' | 'goal' | 'countdown' | string, isGo?: boolean): void {
+  /**
+   * Tono suave tipo blip/burbuja para mensajes de chat.
+   * Sine wave: 800 Hz -> 1200 Hz en 0.05s, decay en 0.08s con ganancia 0.12.
+   */
+  public playChatMessageSound(): void {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx) return;
+
+    try {
+      const t = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, t);
+      osc.frequency.exponentialRampToValueAtTime(1200, t + 0.05);
+
+      const maxGain = 0.12 * (this.volume / 0.5);
+      gain.gain.setValueAtTime(maxGain, t);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(t);
+      osc.stop(t + 0.08);
+    } catch {
+      // Ignorar errores de contexto de audio en entornos de prueba o silenciados
+    }
+  }
+
+  /**
+   * Acorde ascendente sutil y agradable de bienvenida al unirse un jugador.
+   * Arpegio C5 (523.25 Hz) a E5 (659.25 Hz) con 60ms de intervalo, decaimiento en 0.15s y ganancia 0.18.
+   */
+  public playPlayerJoinedSound(): void {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx) return;
+
+    try {
+      const t = this.ctx.currentTime;
+      const notes = [523.25, 659.25];
+      const noteInterval = 0.06;
+      const noteDuration = 0.15;
+      const baseGain = 0.18 * (this.volume / 0.5);
+
+      notes.forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const noteTime = t + idx * noteInterval;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, noteTime);
+
+        gain.gain.setValueAtTime(baseGain, noteTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, noteTime + noteDuration);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(noteTime);
+        osc.stop(noteTime + noteDuration);
+      });
+    } catch {
+      // Ignorar errores de contexto de audio
+    }
+  }
+
+  public play(type: 'kick' | 'bounce' | 'post' | 'goal' | 'countdown' | 'chat' | 'player_joined' | string, isGo?: boolean): void {
     switch (type) {
       case 'kick': return this.playKick();
       case 'bounce': return this.playBounce();
       case 'post': return this.playPostHit();
       case 'goal': return this.playGoalWhistle();
       case 'countdown': return this.playCountdown(isGo);
+      case 'chat': return this.playChatMessageSound();
+      case 'player_joined': return this.playPlayerJoinedSound();
     }
   }
 }

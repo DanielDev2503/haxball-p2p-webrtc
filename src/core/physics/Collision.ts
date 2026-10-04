@@ -109,7 +109,7 @@ export function resolveDiscSegmentCollision(
   if ((disc.cGroup & seg.cMask) === 0 || (seg.cGroup & disc.cMask) === 0) return false;
 
   const closest = Vec2.t0;
-  closestPointOnSegment(disc.pos.x, disc.pos.y, seg.p0.x, seg.p0.y, seg.p1.x, seg.p1.y, closest);
+  const t = closestPointOnSegment(disc.pos.x, disc.pos.y, seg.p0.x, seg.p0.y, seg.p1.x, seg.p1.y, closest);
 
   const diff = Vec2.t1.copy(disc.pos).sub(closest);
   const distSq = diff.lenSq();
@@ -121,6 +121,8 @@ export function resolveDiscSegmentCollision(
 
   const dist = Math.sqrt(distSq);
   const normal = Vec2.t2;
+
+  const isEndpoint = (t <= 1e-6 || t >= 1 - 1e-6);
 
   if (dist > 1e-9) {
     normal.copy(diff).scale(1 / dist);
@@ -135,12 +137,20 @@ export function resolveDiscSegmentCollision(
   // Positional separation (segment has infinite mass)
   disc.pos.addScaled(normal, penetration);
 
-  // Impulse reflection along normal
+  // Impulse reflection / velocity resolution along normal
   const velAlongNormal = disc.vel.dot(normal);
   if (velAlongNormal < 0) {
-    const restitution = Math.min(disc.bounciness, seg.bounciness);
-    const impulseMag = -(1 + restitution) * velAlongNormal;
-    disc.vel.addScaled(normal, impulseMag);
+    if (isEndpoint && !disc.isBall) {
+      // Extremos de segmento como puntos estáticos con radio 0:
+      // Cancelar únicamente la componente de velocidad que apunta hacia el interior del vértice:
+      // (v . n) < 0 => v <- v - (v . n) * n
+      // permitiendo que la componente tangencial deslice suavemente fuera de la esquina.
+      disc.vel.addScaled(normal, -velAlongNormal);
+    } else {
+      const restitution = Math.min(disc.bounciness, seg.bounciness);
+      const impulseMag = -(1 + restitution) * velAlongNormal;
+      disc.vel.addScaled(normal, impulseMag);
+    }
   }
 
   if (onCollision) {

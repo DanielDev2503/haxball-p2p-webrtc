@@ -868,17 +868,32 @@ button:disabled, input:disabled, select:disabled {
 }
 
 .chat-resize-handle {
-  height: 6px;
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  height: 16px;
+  cursor: ns-resize;
+  z-index: 50;
+  touch-action: none;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-resize-handle::after {
+  content: '';
+  display: block;
+  height: 5px;
   width: 60px;
-  margin: 0 auto 4px auto;
   background: rgba(255, 255, 255, 0.35);
   border-radius: 9999px;
-  cursor: ns-resize;
-  pointer-events: auto;
   transition: background 0.15s ease, transform 0.15s ease;
 }
-.chat-resize-handle:hover,
-.chat-resize-handle.is-resizing {
+
+.chat-resize-handle:hover::after,
+.chat-resize-handle.is-resizing::after {
   background: rgba(255, 255, 255, 0.85);
   transform: scaleY(1.3);
 }

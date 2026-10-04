@@ -6,7 +6,7 @@ export class PitchRenderer {
     this.render(ctx, stadium);
   }
 
-  public render(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
+  public renderPitch(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
     const isDark = $theme.get() === 'dark';
     const width = stadium.width ?? (stadium.halfWidth * 2);
     const height = stadium.height ?? (stadium.halfHeight * 2);
@@ -164,13 +164,19 @@ export class PitchRenderer {
     ctx.stroke();
 
     ctx.restore(); // Restaura sombras y dash
+    ctx.restore(); // Restaura save principal del césped
+  }
 
-    // 5. Postes de Portería Metálicos con Halo Neón Reactivo
+  public renderPosts(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
+    if (!stadium.posts) return;
     for (const post of stadium.posts) {
       this.renderPost(ctx, post.pos.x, post.pos.y, post.radius);
     }
+  }
 
-    ctx.restore();
+  public render(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
+    this.renderPitch(ctx, stadium);
+    this.renderPosts(ctx, stadium);
   }
 
   private renderNetMesh(

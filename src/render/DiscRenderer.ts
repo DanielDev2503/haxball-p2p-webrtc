@@ -97,21 +97,29 @@ export class DiscRenderer {
       }
     }
 
-    // 2. Renderizar Ribbon Trails poligonales continuos translúcidos de Turbo (16 muestras)
+    // 3. Renderizar estelas de movimiento (Ribbon trails, partículas y siluetas fantasma)
     this.renderRibbonTrails(ctx);
-
-    // 3. Renderizar partículas de turbo dinámicas con dispersión angular de ±25°
     this.renderTurboParticles(ctx);
-
-    // 4. Renderizar siluetas fantasma de dash (ghosting / after-images)
     this.renderDashGhosts(ctx);
 
-    // 5. Renderizar discos (balón y jugadores con barra de estamina dual)
+    // 4. Aros de estamina de los jugadores (capa inferior a los discos de jugadores)
+    for (const disc of discs) {
+      if (disc.team !== 0) {
+        this.renderStaminaBar(ctx, disc);
+      }
+    }
+
+    // 5. Discos de los jugadores y sus dorsales/avatares
+    for (const disc of discs) {
+      if (disc.team !== 0) {
+        this.renderPlayer(ctx, disc, disc.id === localDiscId, false);
+      }
+    }
+
+    // 6. Balón físico, textura y su resplandor/sombra (RENDERIZADO POR ENCIMA DE LOS DISCOS Y AROS)
     for (const disc of discs) {
       if (disc.team === 0) {
         this.renderBall(ctx, disc);
-      } else {
-        this.renderPlayer(ctx, disc, disc.id === localDiscId);
       }
     }
 
@@ -409,7 +417,8 @@ export class DiscRenderer {
   private renderPlayer(
     ctx: CanvasRenderingContext2D,
     disc: DiscSnapshot,
-    isLocal: boolean
+    isLocal: boolean,
+    renderStamina: boolean = true
   ): void {
     // Jugador:
     const radius = disc.radius; // Dinámico según snapshot o config
@@ -500,8 +509,10 @@ export class DiscRenderer {
       ctx.restore();
     }
 
-    // 7. Barra Dual Perimétrica de Estamina (con alto contraste dinámico)
-    this.renderStaminaBar(ctx, disc);
+    // 7. Barra Dual Perimétrica de Estamina (si no se dibujó en la pasada previa de aros)
+    if (renderStamina) {
+      this.renderStaminaBar(ctx, disc);
+    }
 
     // 8. Indicador del Jugador Local en Verde Neovital
     if (isLocal) {
@@ -520,29 +531,28 @@ export class DiscRenderer {
   }
 
   /**
-   * Barra dual perimétrica de estamina concéntrica (R = r + 6px, lineWidth = 3.5).
-   * Alto contraste: anillo base oscuro (rgba(15, 23, 42, 0.75)) lineWidth 5.0 debajo de los arcos.
-   * Modo Claro:
-   *  - Segmento no cargado: rgba(30, 41, 59, 0.4)
-   *  - Segmento cargado (>= 50%): Azul Eléctrico #0284C7 con borde exterior blanco puro.
-   *  - Barra al 100%: Glow dinámico cian oscuro y blanco contrastado.
-   * Modo Oscuro:
-   *  - Brillo blanco glacial y Azul Neón #00E5FF.
+   * Barra dual perimétrica de estamina concéntrica (R = r + 6px, lineWidth = 2.0px).
+   * Tono satinado atenuado (rgba(0, 229, 255, 0.45) en azul y rgba(255, 0, 85, 0.45) en rojo)
+   * con resplandor difuso atenuado (shadowBlur <= 3px) para máxima nitidez visual.
    */
   private renderStaminaBar(ctx: CanvasRenderingContext2D, disc: DiscSnapshot): void {
     const isDark = $theme.get() === 'dark';
-    const { x, y, radius, stamina } = disc;
+    const { x, y, radius, stamina, team } = disc;
     const E = stamina !== undefined ? Math.max(0, Math.min(100, stamina)) : 100;
     const ringRadius = radius + 6;
-    const lineWidth = 3.5;
+    const lineWidth = 2.0;
     const gap = 0.08;
+
+    const isRed = team === 1;
+    const satinColor = isRed ? 'rgba(255, 0, 85, 0.45)' : 'rgba(0, 229, 255, 0.45)';
+    const subtleGlow = isRed ? 'rgba(255, 0, 85, 0.25)' : 'rgba(0, 229, 255, 0.25)';
 
     ctx.save();
     ctx.lineCap = 'round';
 
-    // 1. Anillo base de contraste oscuro (rgba(15, 23, 42, 0.75)) lineWidth: 5 justo debajo de los arcos
-    ctx.lineWidth = 5.0;
-    ctx.strokeStyle = isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(15, 23, 42, 0.75)';
+    // 1. Anillo base oscuro discreto (lineWidth = 3.0) debajo de los arcos
+    ctx.lineWidth = 3.0;
+    ctx.strokeStyle = isDark ? 'rgba(0, 0, 0, 0.45)' : 'rgba(15, 23, 42, 0.35)';
 
     ctx.beginPath();
     ctx.arc(x, y, ringRadius, gap, Math.PI - gap);
@@ -554,7 +564,7 @@ export class DiscRenderer {
 
     // 2. Pistas de fondo para segmentos no cargados
     ctx.lineWidth = lineWidth;
-    ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(30, 41, 59, 0.4)';
+    ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(30, 41, 59, 0.18)';
 
     // Semicírculo 1 Fondo (inferior: 0° a 180°)
     ctx.beginPath();
@@ -567,8 +577,6 @@ export class DiscRenderer {
     ctx.stroke();
 
     const isFull = E >= 99.5;
-    const now = typeof performance !== 'undefined' ? performance.now() : 0;
-    const pulse = isFull ? (0.7 + 0.3 * Math.sin(now * 0.008)) : 1.0;
 
     // 3. Segmento 1 Activo (0% - 50% de estamina)
     const ratio1 = Math.min(1, E / 50);
@@ -577,42 +585,14 @@ export class DiscRenderer {
       const startAngle1 = gap;
       const endAngle1 = gap + ratio1 * (Math.PI - 2 * gap);
 
-      if (isDark) {
-        if (E >= 50) {
-          ctx.strokeStyle = '#FFFFFF';
-          ctx.shadowColor = '#00E5FF';
-          ctx.shadowBlur = 9 * pulse;
-        } else {
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
-          ctx.shadowColor = 'rgba(0, 229, 255, 0.3)';
-          ctx.shadowBlur = 4;
-        }
-        ctx.beginPath();
-        ctx.arc(x, y, ringRadius, startAngle1, endAngle1);
-        ctx.stroke();
-      } else {
-        // Modo Claro
-        if (E >= 50) {
-          // Borde exterior blanco puro bajo el arco para contraste máximo
-          ctx.save();
-          ctx.lineWidth = lineWidth + 1.6;
-          ctx.strokeStyle = '#FFFFFF';
-          ctx.beginPath();
-          ctx.arc(x, y, ringRadius, startAngle1, endAngle1);
-          ctx.stroke();
-          ctx.restore();
+      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = satinColor;
+      ctx.shadowColor = subtleGlow;
+      ctx.shadowBlur = 2.0;
 
-          // Azul Eléctrico profundo #0284C7
-          ctx.strokeStyle = '#0284C7';
-          ctx.shadowColor = 'rgba(2, 132, 199, 0.5)';
-          ctx.shadowBlur = 4;
-        } else {
-          ctx.strokeStyle = 'rgba(2, 132, 199, 0.7)';
-        }
-        ctx.beginPath();
-        ctx.arc(x, y, ringRadius, startAngle1, endAngle1);
-        ctx.stroke();
-      }
+      ctx.beginPath();
+      ctx.arc(x, y, ringRadius, startAngle1, endAngle1);
+      ctx.stroke();
       ctx.restore();
     }
 
@@ -623,43 +603,14 @@ export class DiscRenderer {
       const startAngle2 = Math.PI + gap;
       const endAngle2 = Math.PI + gap + ratio2 * (Math.PI - 2 * gap);
 
-      if (isDark) {
-        if (isFull) {
-          ctx.strokeStyle = '#FFFFFF';
-          ctx.shadowColor = '#00E5FF';
-          ctx.shadowBlur = 12 * pulse;
-        } else {
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-          ctx.shadowColor = 'rgba(0, 229, 255, 0.4)';
-          ctx.shadowBlur = 5;
-        }
-        ctx.beginPath();
-        ctx.arc(x, y, ringRadius, startAngle2, endAngle2);
-        ctx.stroke();
-      } else {
-        // Modo Claro
-        if (isFull) {
-          ctx.save();
-          ctx.lineWidth = lineWidth + 1.6;
-          ctx.strokeStyle = '#FFFFFF';
-          ctx.beginPath();
-          ctx.arc(x, y, ringRadius, startAngle2, endAngle2);
-          ctx.stroke();
-          ctx.restore();
+      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = satinColor;
+      ctx.shadowColor = subtleGlow;
+      ctx.shadowBlur = isFull ? 3.0 : 2.0;
 
-          // Barra al 100%: Glow dinámico cian oscuro y blanco contrastado
-          ctx.strokeStyle = '#0284C7';
-          ctx.shadowColor = '#00E5FF';
-          ctx.shadowBlur = 11 * pulse;
-        } else {
-          ctx.strokeStyle = 'rgba(2, 132, 199, 0.85)';
-          ctx.shadowColor = 'rgba(2, 132, 199, 0.35)';
-          ctx.shadowBlur = 4;
-        }
-        ctx.beginPath();
-        ctx.arc(x, y, ringRadius, startAngle2, endAngle2);
-        ctx.stroke();
-      }
+      ctx.beginPath();
+      ctx.arc(x, y, ringRadius, startAngle2, endAngle2);
+      ctx.stroke();
       ctx.restore();
     }
 

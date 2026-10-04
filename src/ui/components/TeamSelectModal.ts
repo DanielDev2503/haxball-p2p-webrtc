@@ -11,6 +11,7 @@ export class TeamSelectModal {
   private returnGameBtn: HTMLElement | null;
   private matchToggleBtn: HTMLButtonElement | null = null;
   private isUserAdmin: boolean = true;
+  private isUserHost: boolean = true;
   private redListEl: HTMLElement | null;
   private blueListEl: HTMLElement | null;
   private specListEl: HTMLElement | null;
@@ -99,7 +100,7 @@ export class TeamSelectModal {
 
     // Botón de contingencia para regresar a la partida en curso
     const handleContingencyClose = () => {
-      if (this.currentMatchState === MatchPhase.PLAYING || this.currentMatchState === MatchPhase.PAUSED || this.currentMatchState === MatchPhase.COUNTDOWN) {
+      if (this.currentMatchState !== MatchPhase.STOPPED) {
         this.close();
       }
     };
@@ -225,43 +226,60 @@ export class TeamSelectModal {
     });
   }
 
-  public updateStadiumControls(phase: MatchPhase, isAdmin?: boolean): void {
+  public setHost(isHost: boolean): void {
+    this.isUserHost = isHost;
+    this.updateMatchControlButton(this.currentMatchState, this.isUserAdmin, isHost);
+  }
+
+  public updateStadiumControls(phase: MatchPhase, isAdmin?: boolean, isHost?: boolean): void {
     if (isAdmin !== undefined) {
       this.isUserAdmin = isAdmin;
     }
+    if (isHost !== undefined) {
+      this.isUserHost = isHost;
+    }
     const isStopped = phase === MatchPhase.STOPPED;
-    const canChangeStadium = this.isUserAdmin && isStopped;
+    const canChangeStadium = this.isUserHost && this.isUserAdmin && isStopped;
 
     if (this.selectStadiumEl) {
       this.selectStadiumEl.disabled = !canChangeStadium;
     }
     const pickBtn = document.getElementById('btn-pick-stadium') as HTMLButtonElement | null;
     if (pickBtn) {
-      pickBtn.disabled = !canChangeStadium;
-      if (!isStopped) {
-        pickBtn.title = 'No se puede cambiar de estadio durante el partido';
-        pickBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      if (!this.isUserHost) {
+        if (pickBtn.style) pickBtn.style.display = 'none';
+        pickBtn.disabled = true;
       } else {
-        pickBtn.title = this.isUserAdmin ? 'Seleccionar estadio' : 'Solo los administradores pueden cambiar de estadio';
-        pickBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        if (pickBtn.style) pickBtn.style.display = '';
+        pickBtn.disabled = !canChangeStadium;
+        if (!isStopped) {
+          pickBtn.title = 'No se puede cambiar de estadio durante el partido';
+          pickBtn.classList?.add?.('opacity-50', 'cursor-not-allowed');
+        } else {
+          pickBtn.title = 'Seleccionar estadio';
+          pickBtn.classList?.remove?.('opacity-50', 'cursor-not-allowed');
+        }
       }
     }
 
-    if (!isStopped && this.stadiumPickerModalEl) {
-      this.stadiumPickerModalEl.classList.add('u-hidden');
-      this.stadiumPickerModalEl.style.display = 'none';
+    if ((!isStopped || !this.isUserHost) && this.stadiumPickerModalEl) {
+      this.stadiumPickerModalEl.classList?.add?.('u-hidden');
+      if (this.stadiumPickerModalEl.style) this.stadiumPickerModalEl.style.display = 'none';
     }
   }
 
-  public updateMatchControlButton(phase: MatchPhase, isAdmin?: boolean): void {
+  public updateMatchControlButton(phase: MatchPhase, isAdmin?: boolean, isHost?: boolean): void {
     this.currentMatchState = phase;
     if (isAdmin !== undefined) {
       this.isUserAdmin = isAdmin;
     }
-    this.updateStadiumControls(phase, this.isUserAdmin);
+    if (isHost !== undefined) {
+      this.isUserHost = isHost;
+    }
+    this.updateStadiumControls(phase, this.isUserAdmin, this.isUserHost);
 
     const isStopped = phase === MatchPhase.STOPPED;
-    const canModifySettings = this.isUserAdmin && isStopped;
+    const canModifySettings = this.isUserHost && isStopped;
 
     const timeLimitSelect = document.getElementById('select-time-limit') as HTMLSelectElement | null;
     if (timeLimitSelect) {
@@ -273,21 +291,29 @@ export class TeamSelectModal {
     }
     const pauseBtn = document.getElementById('btn-pause-resume') as HTMLButtonElement | null;
     if (pauseBtn) {
-      pauseBtn.disabled = !this.isUserAdmin;
+      pauseBtn.disabled = !this.isUserHost;
+      if (pauseBtn.style) pauseBtn.style.display = this.isUserHost ? '' : 'none';
     }
     const lockBtn = document.getElementById('btn-lock-teams') as HTMLButtonElement | null;
     if (lockBtn) {
-      lockBtn.disabled = !this.isUserAdmin;
+      lockBtn.disabled = !this.isUserHost;
+      if (lockBtn.style) lockBtn.style.display = this.isUserHost ? '' : 'none';
     }
     const modBtn = document.getElementById('btn-open-physics-modifiers') as HTMLButtonElement | null;
     if (modBtn) {
-      modBtn.disabled = !canModifySettings;
-      if (!isStopped) {
-        modBtn.title = 'Los modificadores de físicas solo se pueden ajustar antes de empezar la partida';
-        modBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      if (!this.isUserHost) {
+        if (modBtn.style) modBtn.style.display = 'none';
+        modBtn.disabled = true;
       } else {
-        modBtn.title = 'Modificadores de Físicas';
-        modBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        if (modBtn.style) modBtn.style.display = '';
+        modBtn.disabled = !canModifySettings;
+        if (!isStopped) {
+          modBtn.title = 'Los modificadores de físicas solo se pueden ajustar antes de empezar la partida';
+          modBtn.classList?.add?.('opacity-50', 'cursor-not-allowed');
+        } else {
+          modBtn.title = 'Modificadores de Físicas';
+          modBtn.classList?.remove?.('opacity-50', 'cursor-not-allowed');
+        }
       }
     }
 
@@ -304,6 +330,13 @@ export class TeamSelectModal {
     }
     if (!this.matchToggleBtn) return;
 
+    if (!this.isUserHost) {
+      this.matchToggleBtn.disabled = true;
+      if (this.matchToggleBtn.style) this.matchToggleBtn.style.display = 'none';
+      return;
+    }
+
+    if (this.matchToggleBtn.style) this.matchToggleBtn.style.display = '';
     this.matchToggleBtn.disabled = !this.isUserAdmin;
 
     const prevClass = this.matchToggleBtn.className;
@@ -327,15 +360,15 @@ export class TeamSelectModal {
     }
   }
 
-  public updateMatchState(newState: MatchPhase | MatchState | string, outcomeText?: string, isAdmin?: boolean): void {
+  public updateMatchState(newState: MatchPhase | MatchState | string, outcomeText?: string, isAdmin?: boolean, isHost?: boolean): void {
     const phase = typeof newState === 'number' ? newState : toMatchPhase(newState);
     this.currentMatchState = phase;
     $matchPhase.set(phase);
-    this.updateMatchControlButton(phase, isAdmin);
+    this.updateMatchControlButton(phase, isAdmin, isHost);
 
     // Actualizar visibilidad del botón de retorno y botón de cierre ('✕')
     if (this.returnGameBtn?.style) {
-      this.returnGameBtn.style.display = (phase === MatchPhase.PLAYING || phase === MatchPhase.PAUSED || phase === MatchPhase.COUNTDOWN || phase === MatchPhase.GOAL_CELEBRATION || phase === MatchPhase.MATCH_ENDED) ? 'inline-block' : 'none';
+      this.returnGameBtn.style.display = phase !== MatchPhase.STOPPED ? 'inline-block' : 'none';
     }
     if (this.closeBtn?.style) {
       this.closeBtn.style.display = phase === MatchPhase.STOPPED ? 'none' : '';
@@ -444,9 +477,12 @@ export class TeamSelectModal {
     });
   }
 
-  public updateLists(players: Player[], isLocalAdmin: boolean = false, hostId?: string): void {
+  public updateLists(players: Player[], isLocalAdmin: boolean = false, hostId?: string, isLocalHost?: boolean): void {
     this.isUserAdmin = isLocalAdmin;
-    this.updateMatchControlButton(this.currentMatchState, isLocalAdmin);
+    if (isLocalHost !== undefined) {
+      this.isUserHost = isLocalHost;
+    }
+    this.updateMatchControlButton(this.currentMatchState, isLocalAdmin, this.isUserHost);
 
     if (this.redListEl) this.redListEl.innerHTML = '';
     if (this.blueListEl) this.blueListEl.innerHTML = '';

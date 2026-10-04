@@ -1,4 +1,5 @@
 import { animate } from 'motion';
+import type { AudioManager } from '../../client/AudioManager';
 
 export interface ChatMessage {
   author: string;
@@ -8,7 +9,7 @@ export interface ChatMessage {
 
 export const CHAT_STORAGE_KEY = 'haxball_chat_height';
 const DEFAULT_CHAT_HEIGHT = 130;
-const MIN_CHAT_HEIGHT = 45;
+const MIN_CHAT_HEIGHT = 64;
 
 export class ChatBox {
   private container: HTMLElement | null = null;
@@ -18,6 +19,7 @@ export class ChatBox {
   private formEl: HTMLFormElement | null = null;
   private preferredHeight: number = DEFAULT_CHAT_HEIGHT;
 
+  public audioManager?: AudioManager;
   public onSendMessage?: (text: string) => void;
   public onHeightChange?: (height: number) => void;
 
@@ -137,6 +139,14 @@ export class ChatBox {
       startY = e.clientY;
       startH = this.boxEl?.getBoundingClientRect().height || this.preferredHeight;
 
+      if ('pointerId' in e && this.resizeHandleEl && typeof this.resizeHandleEl.setPointerCapture === 'function') {
+        try {
+          this.resizeHandleEl.setPointerCapture(e.pointerId);
+        } catch {
+          // Ignore
+        }
+      }
+
       if (this.resizeHandleEl) {
         this.resizeHandleEl.classList.add('is-resizing');
       }
@@ -145,6 +155,7 @@ export class ChatBox {
 
       window.addEventListener('pointermove', onPointerMove);
       window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
       window.addEventListener('mousemove', onPointerMove);
       window.addEventListener('mouseup', onPointerUp);
 
@@ -162,9 +173,17 @@ export class ChatBox {
       this.boxEl.style.height = `${newHeight}px`;
     };
 
-    const onPointerUp = () => {
+    const onPointerUp = (e?: MouseEvent | PointerEvent) => {
       if (!isDragging) return;
       isDragging = false;
+
+      if (e && 'pointerId' in e && this.resizeHandleEl && typeof this.resizeHandleEl.releasePointerCapture === 'function') {
+        try {
+          this.resizeHandleEl.releasePointerCapture(e.pointerId);
+        } catch {
+          // Ignore
+        }
+      }
 
       if (this.resizeHandleEl) {
         this.resizeHandleEl.classList.remove('is-resizing');
@@ -174,6 +193,7 @@ export class ChatBox {
 
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
       window.removeEventListener('mousemove', onPointerMove);
       window.removeEventListener('mouseup', onPointerUp);
 
@@ -182,6 +202,7 @@ export class ChatBox {
     };
 
     this.resizeHandleEl.addEventListener('pointerdown', onPointerDown);
+    this.resizeHandleEl.addEventListener('pointercancel', onPointerUp);
     this.resizeHandleEl.addEventListener('mousedown', onPointerDown);
   }
 
@@ -259,6 +280,12 @@ export class ChatBox {
       return;
     }
 
+    try {
+      this.audioManager?.playChatMessageSound();
+    } catch {
+      // Ignore audio synthesis errors
+    }
+
     const row = document.createElement('div');
     row.className = `chat-msg ${msg.team ?? 'spec'}`;
 
@@ -275,5 +302,9 @@ export class ChatBox {
     this.container.scrollTop = this.container.scrollHeight;
 
     this.animateRowEntry(row);
+  }
+
+  public getHeight(): number {
+    return this.preferredHeight;
   }
 }

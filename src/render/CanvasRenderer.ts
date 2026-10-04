@@ -191,13 +191,21 @@ export class CanvasRenderer {
     ctx.translate(this.offsetX + this.cameraOffset.x, this.offsetY + this.cameraOffset.y);
     ctx.scale(this.scale, this.scale);
 
-    // 1 & 2. Render Pitch y Discos bajo traslación de Cámara Dinámica
+    // 1-7. Render estructurado por capas bajo traslación de Cámara Dinámica:
+    // 1. Césped, marcas de cal y líneas de campo (PitchRenderer)
+    // 2. Redes de portería posteriores
+    // 3. Estelas de movimiento (Ghost trail de Dash y Ribbon trail de Turbo)
+    // 4. Aros de estamina de los jugadores
+    // 5. Discos de los jugadores y sus dorsales/avatares
+    // 6. Balón físico, textura y resplandor (RENDERIZADO POR ENCIMA DE LOS DISCOS Y AROS)
+    // 7. Postes metálicos de las porterías
     ctx.save();
     ctx.translate(-this.camera.x, -this.camera.y);
-    this.pitchRenderer.draw(ctx, this.stadium);
+    this.pitchRenderer.renderPitch(ctx, this.stadium);
     if (snapshot.discs) {
       this.discRenderer.draw(ctx, snapshot.discs, localDiscId);
     }
+    this.pitchRenderer.renderPosts(ctx, this.stadium);
     ctx.restore();
 
     // 3. Render Match Status Banners estáticos en centro de pantalla

@@ -69,6 +69,16 @@ export class GameApp {
   public currentRoomId: string = '';
   public currentHostId: string | null = null;
 
+  // Replay buffer para reconciliación determinista de predicción local en No-Host
+  public clientInputBuffer: Array<{
+    tick: number;
+    mask: number;
+    curve: { x: number; y: number };
+    isTurbo: boolean;
+    triggerDash: boolean;
+  }> = [];
+  public clientTick: number = 0;
+
   // Predicción cinemática del jugador local (cero lag de controles, sin alocaciones GC en bucle caliente)
   private predictedPos: { x: number; y: number } = { x: 0, y: 0 };
   private predictedVel: { x: number; y: number } = { x: 0, y: 0 };
@@ -82,6 +92,7 @@ export class GameApp {
   private clientDashTicks: number = 0;
   private clientDashDir: { x: number; y: number } = { x: 0, y: 0 };
   private clientIsTurbo: boolean = false;
+  private lastKnownPlayerCount: number = 0;
 
   // Handshake timeout: cancel if initial_state is received within 10s
   private joinTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -157,6 +168,7 @@ export class GameApp {
     this.audioManager = new AudioManager();
     this.hud = new ScoreboardHUD();
     this.chat = new ChatBox();
+    this.chat.audioManager = this.audioManager;
     this.statsMonitor = new StatsMonitor();
     this.teamSelect = new TeamSelectModal();
     this.jitterBuffer = new JitterBuffer(33, 30, true);
@@ -463,7 +475,8 @@ export class GameApp {
     });
 
     // In-game menu overlay toggle (Button & Escape/Menu key)
-    const menuToggleBtn = document.getElementById('menu-toggle-btn');
+    const menuToggleBtn = document.getElementById('menu-toggle-btn') || document.getElementById('btn-menu');
+    const btnMenu = document.getElementById('btn-menu');
 
     const toggleMenu = () => {
       if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') return;
@@ -476,6 +489,7 @@ export class GameApp {
     };
 
     if (menuToggleBtn) menuToggleBtn.addEventListener('click', toggleMenu);
+    if (btnMenu && btnMenu !== menuToggleBtn) btnMenu.addEventListener('click', toggleMenu);
 
     window.addEventListener('keydown', (e) => {
       // Si no estamos en STATE_IN_GAME, no procesar atajos de partido
@@ -1072,6 +1086,7 @@ export class GameApp {
           if (this.engine) {
             this.engine.addPlayer(newPlayer);
             this.updateTeamLists();
+            this.audioManager.playPlayerJoinedSound();
 
             // Build and send initial_state packet
             const currentState = this.engine?.fsm.currentState ?? MatchPhase.STOPPED;
@@ -1231,6 +1246,9 @@ export class GameApp {
       try {
         const snap = SnapshotPacket.decode(data);
         if (snap) {
+          if (snap.matchPhase !== undefined) {
+            this.currentMatchState = snap.matchPhase;
+          }
           if (snap.matchPhase === MatchPhase.STOPPED) {
             this.resetClientPrediction();
           }
@@ -1289,7 +1307,8 @@ export class GameApp {
           if (remoteHostId) {
             this.currentHostId = remoteHostId;
           }
-          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin, this.currentHostId || undefined);
+          const isLocalHost = Boolean(this.mode === 'host' || this.localPlayer.isHost);
+          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin, this.currentHostId || undefined, isLocalHost);
 
           // Apply match state
           if (msg.matchState) {
@@ -1297,7 +1316,7 @@ export class GameApp {
             this.currentMatchState = ms.state;
             this.jitterBuffer.setMatchState(ms.state);
             this.hud.update(ms.redScore, ms.blueScore, ms.timeRemaining);
-            this.teamSelect.updateMatchState(ms.state);
+            this.teamSelect.updateMatchState(ms.state, undefined, this.localPlayer.isAdmin, isLocalHost);
           }
 
           if (msg.gameplayConfig) {
@@ -1309,6 +1328,7 @@ export class GameApp {
 
           this.updateAdminControlsUI();
           this.chat.addSystemMessage(`Conectado a la sala: ${this.roomConfig.name}`);
+          this.audioManager.playPlayerJoinedSound();
 
           // Notificar al host que el cliente está listo para recibir snapshots y simular
           peer.isReady = true;
@@ -1341,7 +1361,12 @@ export class GameApp {
           if (remoteHostId) {
             this.currentHostId = remoteHostId;
           }
-          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin, this.currentHostId || undefined);
+          if (msg.players && msg.players.length > this.lastKnownPlayerCount) {
+            this.audioManager.playPlayerJoinedSound();
+          }
+          this.lastKnownPlayerCount = msg.players ? msg.players.length : 0;
+          const isLocalHost = Boolean(this.mode === 'host' || this.localPlayer.isHost);
+          this.teamSelect.updateLists(msg.players, this.localPlayer.isAdmin, this.currentHostId || undefined, isLocalHost);
           this.updateAdminControlsUI();
         } else if (msg.type === 'MATCH_STOPPED_EVENT') {
           this.currentMatchState = MatchPhase.STOPPED;
@@ -1502,7 +1527,8 @@ export class GameApp {
     if (this.mode === 'host' || this.mode === 'practice') {
       if (this.engine) {
         const hostId = this.currentHostId || Array.from(this.engine.players.values()).find(p => p.isHost)?.id || this.localPlayer.id;
-        this.teamSelect.updateLists(Array.from(this.engine.players.values()), this.localPlayer.isAdmin, hostId);
+        const isLocalHost = Boolean(this.mode === 'host' || this.localPlayer.isHost);
+        this.teamSelect.updateLists(Array.from(this.engine.players.values()), this.localPlayer.isAdmin, hostId, isLocalHost);
       }
     }
   }
@@ -1697,8 +1723,9 @@ export class GameApp {
     const isMatchStopped = currentPhase === MatchPhase.STOPPED;
     const canChangeStadium = isAdmin && isMatchStopped;
 
-    this.teamSelect.updateMatchControlButton(currentPhase, isAdmin);
-    this.teamSelect.updateStadiumControls(currentPhase, isAdmin);
+    this.teamSelect.setHost(isHost);
+    this.teamSelect.updateMatchControlButton(currentPhase, isAdmin, isHost);
+    this.teamSelect.updateStadiumControls(currentPhase, isAdmin, isHost);
 
     if (this.btnPauseResume) {
       this.btnPauseResume.disabled = !isAdmin || currentPhase === MatchPhase.STOPPED;
@@ -1939,8 +1966,10 @@ export class GameApp {
       this.teamSelect.close(true);
       return;
     }
+    const isHost = this.mode === 'host' || Boolean(this.localPlayer.isHost);
+    this.teamSelect.setHost(isHost);
     const isAdmin = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost);
-    this.teamSelect.updateMatchState(phase, outcomeText, isAdmin);
+    this.teamSelect.updateMatchState(phase, outcomeText, isAdmin, isHost);
     this.updateAdminControlsUI();
   }
 
@@ -2003,6 +2032,8 @@ export class GameApp {
     this.predictedVel.y = 0;
     this.visualOffset.x = 0;
     this.visualOffset.y = 0;
+    this.clientTick = 0;
+    this.clientInputBuffer.length = 0;
   }
 
   /**
@@ -2214,9 +2245,12 @@ export class GameApp {
   }
 
   /**
-   * Reconciliación suave (soft-snap) del disco local con el snapshot autoritativo del Host.
+   * Reconciliación suave con replay buffer del disco local contra el snapshot autoritativo del Host.
    */
   private reconcileClientPrediction(snap: GameSnapshot): void {
+    if (snap.matchPhase !== undefined) {
+      this.currentMatchState = snap.matchPhase;
+    }
     if (snap.kickoffActive !== undefined) {
       this.currentKickoffActive = snap.kickoffActive;
     }
@@ -2244,17 +2278,6 @@ export class GameApp {
 
     if (!authDisc) return;
 
-    if (authDisc.stamina !== undefined) {
-      this.clientStamina = authDisc.stamina;
-      this.localPlayer.stamina = authDisc.stamina;
-    }
-    if (authDisc.isDashing !== undefined) {
-      this.localPlayer.isDashing = authDisc.isDashing;
-    }
-    if (authDisc.isTurbo !== undefined) {
-      this.localPlayer.isTurbo = authDisc.isTurbo;
-    }
-
     const isSimulationActive = snap.matchPhase === MatchPhase.PLAYING ||
                                snap.matchPhase === MatchPhase.GOAL_CELEBRATION;
 
@@ -2268,30 +2291,70 @@ export class GameApp {
       this.visualOffset.x = 0;
       this.visualOffset.y = 0;
       this.hasPredictedPos = true;
+      this.clientTick = snap.tick;
+      this.clientInputBuffer.length = 0;
+      if (authDisc.stamina !== undefined) {
+        this.clientStamina = authDisc.stamina;
+        this.localPlayer.stamina = authDisc.stamina;
+      }
+      if (authDisc.isDashing !== undefined) {
+        this.clientIsDashing = authDisc.isDashing;
+        this.localPlayer.isDashing = authDisc.isDashing;
+      }
+      if (authDisc.isTurbo !== undefined) {
+        this.clientIsTurbo = authDisc.isTurbo;
+        this.localPlayer.isTurbo = authDisc.isTurbo;
+      }
       return;
     }
 
-    // Algoritmo de Suavizado de Error de Reconciliación (Error Decay)
-    const diffX = authDisc.x - this.predictedPos.x;
-    const diffY = authDisc.y - this.predictedPos.y;
-    const distSq = diffX * diffX + diffY * diffY;
+    // 1. Descartar del búfer todos los inputs con tick <= snap.tick
+    while (this.clientInputBuffer.length > 0 && this.clientInputBuffer[0].tick <= snap.tick) {
+      this.clientInputBuffer.shift();
+    }
 
-    if (distSq > 40 * 40) {
-      // Discrepancia masiva (ej. gol, spawn, reset de partido): Hard-Snap inmediato
-      this.predictedPos.x = authDisc.x;
-      this.predictedPos.y = authDisc.y;
-      this.predictedVel.x = authDisc.vx;
-      this.predictedVel.y = authDisc.vy;
+    // Guardar posición previa para calcular la discrepancia post-replay
+    const prevPredictedX = this.predictedPos.x;
+    const prevPredictedY = this.predictedPos.y;
+
+    // 2. Asignar la posición y velocidad autoritativa del Host correspondientes al tick T_snap
+    this.predictedPos.x = authDisc.x;
+    this.predictedPos.y = authDisc.y;
+    this.predictedVel.x = authDisc.vx;
+    this.predictedVel.y = authDisc.vy;
+
+    if (authDisc.stamina !== undefined) {
+      this.clientStamina = authDisc.stamina;
+      this.localPlayer.stamina = authDisc.stamina;
+    }
+    if (authDisc.isDashing !== undefined) {
+      this.clientIsDashing = authDisc.isDashing;
+      this.localPlayer.isDashing = authDisc.isDashing;
+    }
+    if (authDisc.isTurbo !== undefined) {
+      this.clientIsTurbo = authDisc.isTurbo;
+      this.localPlayer.isTurbo = authDisc.isTurbo;
+    }
+
+    // 3. Re-simular localmente los inputs pendientes desde T_snap + 1 hasta T_current
+    for (let i = 0; i < this.clientInputBuffer.length; i++) {
+      const item = this.clientInputBuffer[i];
+      this.stepClientPrediction(item.mask, item.curve, item.isTurbo, item.triggerDash);
+    }
+
+    // 4. Calcular el error residual post-replay: Delta_error = p_simulada - p_render
+    const errX = prevPredictedX - this.predictedPos.x;
+    const errY = prevPredictedY - this.predictedPos.y;
+    const distSq = errX * errX + errY * errY;
+
+    if (distSq > 50 * 50) {
+      // Discrepancia post-replay masiva (ej. spawn, gol, reseteo): Hard-Snap inmediato
       this.visualOffset.x = 0;
       this.visualOffset.y = 0;
-    } else if (distSq > 0.5 * 0.5) {
-      // Discrepancia menor / física en juego: Absorber el error en visualOffset y sincronizar física
-      this.visualOffset.x -= diffX;
-      this.visualOffset.y -= diffY;
-      this.predictedPos.x = authDisc.x;
-      this.predictedPos.y = authDisc.y;
-      this.predictedVel.x = authDisc.vx;
-      this.predictedVel.y = authDisc.vy;
+    } else {
+      // Absorber Delta_error en visualOffset y atenuarlo suavemente en el loop de render (visualOffset *= 0.82)
+      this.visualOffset.x += errX;
+      this.visualOffset.y += errY;
     }
   }
 
@@ -2324,12 +2387,24 @@ export class GameApp {
         this.broadcastSnapshot();
       }
     } else if (this.mode === 'client') {
-      this.clientInputSequence++;
+      this.clientTick++;
+      this.clientInputSequence = this.clientTick;
       const mask = this.inputManager.getMask();
       const curve = this.inputManager.getCurveVector();
       const curveInput = this.inputManager.getCurveInput();
       const isTurbo = this.inputManager.isTurboActive();
       const triggerDash = this.inputManager.consumeDashTrigger();
+
+      this.clientInputBuffer.push({
+        tick: this.clientTick,
+        mask,
+        curve: { x: curve.x, y: curve.y },
+        isTurbo,
+        triggerDash
+      });
+      if (this.clientInputBuffer.length > 180) {
+        this.clientInputBuffer.shift();
+      }
 
       if (this.hostPeer && this.hostPeer.isReady) {
         GameApp.clientInputData.sequence = this.clientInputSequence;
