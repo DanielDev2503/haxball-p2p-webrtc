@@ -968,7 +968,7 @@ button:disabled, input:disabled, select:disabled {
   padding: 0;
 }
 .chat-input::placeholder {
-  color: #94A3B8 !important;
+  color: rgba(103, 232, 249, 0.65) !important;
 }
 
 /* CONTEXT MENU FOR PLAYER ACTIONS */
@@ -1556,6 +1556,68 @@ button:disabled, input:disabled, select:disabled {
   text-shadow: 0 0 10px rgba(0, 229, 255, 0.4) !important;
 }
 
+[data-theme="dark"] .room-title-area,
+.dark .room-title-area {
+  color: #FFFFFF !important;
+}
+
+[data-theme="dark"] .room-title-bracket,
+.dark .room-title-bracket {
+  color: #00E5FF !important;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.5) !important;
+}
+
+[data-theme="dark"] .room-title-text,
+.dark .room-title-text {
+  color: #FFFFFF !important;
+}
+
+/* Close 'X' Button in Dark Mode - Aero Cyan Glowing Button */
+[data-theme="dark"] .icon-btn-close,
+.dark .icon-btn-close {
+  background: rgba(11, 17, 30, 0.95) !important;
+  border: 1.5px solid rgba(0, 229, 255, 0.35) !important;
+  color: #67E8F9 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="dark"] .icon-btn-close:hover,
+.dark .icon-btn-close:hover {
+  background: rgba(0, 229, 255, 0.22) !important;
+  border-color: #00E5FF !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.45) !important;
+}
+
+[data-theme="dark"] .icon-btn-close:active,
+.dark .icon-btn-close:active {
+  transform: scale(0.94);
+  background: rgba(0, 229, 255, 0.35) !important;
+}
+
+/* Match Configuration Container (Time, Score Limit & Stadium) in Dark Mode */
+[data-theme="dark"] .admin-config-section,
+.dark .admin-config-section {
+  background: rgba(7, 15, 30, 0.94) !important;
+  backdrop-filter: blur(16px) saturate(180%) !important;
+  border: 1.5px solid rgba(0, 229, 255, 0.35) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(0, 229, 255, 0.12) !important;
+}
+
+[data-theme="dark"] .config-field,
+.dark .config-field,
+[data-theme="dark"] .config-label,
+.dark .config-label {
+  color: #E0F2FE !important;
+}
+
+[data-theme="dark"] .stadium-name-text,
+.dark .stadium-name-text {
+  color: #00E5FF !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.4) !important;
+}
+
 [data-theme="dark"] .admin-controls,
 .dark .admin-controls {
   background: rgba(7, 15, 30, 0.85) !important;
@@ -1577,6 +1639,60 @@ button:disabled, input:disabled, select:disabled {
   background: #0B111E !important;
   border: 1.5px solid rgba(0, 229, 255, 0.35) !important;
   color: #FFFFFF !important;
+}
+
+[data-theme="dark"] .form-input-inline:focus,
+.dark .form-input-inline:focus {
+  border-color: #00E5FF !important;
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.3) !important;
+}
+
+[data-theme="dark"] .form-input-inline option,
+.dark .form-input-inline option {
+  background: #070F1E !important;
+  color: #FFFFFF !important;
+}
+
+/* Stadium Picker Modal & Option Buttons in Dark Mode */
+[data-theme="dark"] #stadiumPickerModal .modal-content,
+.dark #stadiumPickerModal .modal-content {
+  background: rgba(11, 17, 30, 0.96) !important;
+  border: 1.5px solid rgba(0, 229, 255, 0.35) !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 229, 255, 0.2) !important;
+  color: #FFFFFF !important;
+}
+
+[data-theme="dark"] #stadiumPickerModal h3,
+.dark #stadiumPickerModal h3 {
+  color: #00E5FF !important;
+  text-shadow: 0 0 10px rgba(0, 229, 255, 0.4) !important;
+}
+
+[data-theme="dark"] .stadium-option-btn,
+.dark .stadium-option-btn {
+  background: rgba(7, 15, 30, 0.92) !important;
+  border: 1px solid rgba(0, 229, 255, 0.3) !important;
+  color: #FFFFFF !important;
+}
+
+[data-theme="dark"] .stadium-option-btn:hover,
+.dark .stadium-option-btn:hover {
+  background: rgba(0, 229, 255, 0.18) !important;
+  border-color: #00E5FF !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.3) !important;
+}
+
+[data-theme="dark"] .stadium-option-btn.active-stadium,
+.dark .stadium-option-btn.active-stadium {
+  border-color: #00E5FF !important;
+  background: rgba(0, 229, 255, 0.22) !important;
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.4) !important;
+}
+
+[data-theme="dark"] .menu-modal-footer,
+.dark .menu-modal-footer {
+  border-top: 1px solid rgba(0, 229, 255, 0.25) !important;
 }
 
 [data-theme="dark"] .team-col,
@@ -2012,16 +2128,65 @@ select:focus-visible {
   .team-players-list {
     max-height: 100px !important;
   }
-  #chat-container, .chat-box {
-    max-height: 65px !important;
-    height: 65px !important;
-  }
-  #chat-messages, .chat-messages {
-    max-height: 38px !important;
-  }
 }
 
-/* --- 8. TELEMETRY MONITOR WIDGET (PING, FPS & SPARKLINE) --- */
+/* --- 8. CONTEXT MENU & DISABLED CONTROLS DARK CASCADE --- */
+[data-theme="dark"] .context-menu,
+.dark .context-menu {
+  background: rgba(11, 17, 30, 0.96) !important;
+  border: 1.5px solid rgba(0, 229, 255, 0.35) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 14px rgba(0, 229, 255, 0.15) !important;
+}
+
+[data-theme="dark"] .context-menu-header,
+.dark .context-menu-header {
+  color: #67E8F9 !important;
+  border-bottom: 1px solid rgba(0, 229, 255, 0.25) !important;
+}
+
+[data-theme="dark"] .context-menu-item,
+.dark .context-menu-item {
+  color: #FFFFFF !important;
+}
+
+[data-theme="dark"] .context-menu-item:hover,
+.dark .context-menu-item:hover {
+  background: rgba(0, 229, 255, 0.18) !important;
+  color: #00E5FF !important;
+}
+
+[data-theme="dark"] .context-menu-item.danger,
+.dark .context-menu-item.danger {
+  color: #FF0055 !important;
+}
+
+[data-theme="dark"] .context-menu-item.danger:hover,
+.dark .context-menu-item.danger:hover {
+  background: rgba(255, 0, 85, 0.2) !important;
+  color: #FF2E63 !important;
+}
+
+[data-theme="dark"] .keybinds-instructions,
+.dark .keybinds-instructions {
+  color: #67E8F9 !important;
+}
+
+/* Disabled controls in dark mode */
+[data-theme="dark"] .btn:disabled,
+.dark .btn:disabled,
+[data-theme="dark"] button:disabled,
+.dark button:disabled,
+[data-theme="dark"] select:disabled,
+.dark select:disabled {
+  opacity: 0.4 !important;
+  border-color: rgba(0, 229, 255, 0.18) !important;
+  color: rgba(224, 242, 254, 0.45) !important;
+  background: rgba(11, 17, 30, 0.5) !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+}
+
+/* --- 9. TELEMETRY MONITOR WIDGET (PING, FPS & SPARKLINE) --- */
 .stats-monitor-widget {
   position: fixed;
   bottom: 12px;

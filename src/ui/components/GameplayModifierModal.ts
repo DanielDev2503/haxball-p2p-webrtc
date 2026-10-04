@@ -10,17 +10,20 @@ export class GameplayModifierModal {
   private currentConfig: GameplayConfig;
   private onChangeCallback: (config: GameplayConfig) => void;
   private isHostCheck: () => boolean;
+  private isMatchInProgressCheck: () => boolean;
   private valueDisplays: Map<keyof GameplayConfig, HTMLElement> = new Map();
   private sliderInputs: Map<keyof GameplayConfig, HTMLInputElement> = new Map();
 
   constructor(
     initialConfig: GameplayConfig,
     onChange: (config: GameplayConfig) => void,
-    isHost: () => boolean
+    isHost: () => boolean,
+    isMatchInProgress: () => boolean = () => false
   ) {
     this.currentConfig = { ...initialConfig };
     this.onChangeCallback = onChange;
     this.isHostCheck = isHost;
+    this.isMatchInProgressCheck = isMatchInProgress;
     this.buildDOM();
   }
 
@@ -132,6 +135,11 @@ export class GameplayModifierModal {
 
       slider.addEventListener('input', () => {
         if (!this.isHostCheck()) return;
+        if (this.isMatchInProgressCheck()) {
+          alert('Los modificadores de físicas solo se pueden ajustar antes de empezar una partida.');
+          this.updateUI();
+          return;
+        }
         const parsed = parseFloat(slider.value);
         this.currentConfig[key] = parsed;
         valBadge.textContent = `${parsed}${meta.unit ? ' ' + meta.unit : ''}`;
@@ -175,6 +183,10 @@ export class GameplayModifierModal {
     resetBtn.textContent = '↺ Restablecer Valores por Defecto';
     resetBtn.addEventListener('click', () => {
       if (!this.isHostCheck()) return;
+      if (this.isMatchInProgressCheck()) {
+        alert('Los modificadores de físicas solo se pueden ajustar antes de empezar una partida.');
+        return;
+      }
       this.resetToDefaults();
     });
 
@@ -225,14 +237,39 @@ export class GameplayModifierModal {
   }
 
   public updateUI(): void {
+    const isPlaying = this.isMatchInProgressCheck();
+    const isHost = this.isHostCheck();
+    const canEdit = isHost && !isPlaying;
+
     for (const [key, slider] of this.sliderInputs.entries()) {
       const val = this.currentConfig[key];
       slider.value = val.toString();
+      slider.disabled = !canEdit;
       const meta = GAMEPLAY_CONFIG_LIMITS[key];
       const badge = this.valueDisplays.get(key);
       if (badge) {
         badge.textContent = `${val}${meta?.unit ? ' ' + meta.unit : ''}`;
       }
+    }
+
+    const resetBtn = this.modalEl?.querySelector('#btn-reset-physics-defaults') as HTMLButtonElement | null;
+    if (resetBtn) {
+      resetBtn.disabled = !canEdit;
+    }
+  }
+
+  public updateMatchState(isMatchInProgress: boolean): void {
+    const isHost = this.isHostCheck();
+    const canEdit = isHost && !isMatchInProgress;
+    for (const slider of this.sliderInputs.values()) {
+      slider.disabled = !canEdit;
+    }
+    const resetBtn = this.modalEl?.querySelector('#btn-reset-physics-defaults') as HTMLButtonElement | null;
+    if (resetBtn) {
+      resetBtn.disabled = !canEdit;
+    }
+    if (isMatchInProgress && this.isOpen()) {
+      this.hide();
     }
   }
 
@@ -240,6 +277,10 @@ export class GameplayModifierModal {
     if (!this.modalEl) return;
     if (!this.isHostCheck()) {
       alert('Solo el anfitrión (Host) tiene permisos para modificar las variables de física del motor.');
+      return;
+    }
+    if (this.isMatchInProgressCheck()) {
+      alert('Los modificadores de físicas solo se pueden ajustar antes de empezar una partida.');
       return;
     }
     this.updateUI();

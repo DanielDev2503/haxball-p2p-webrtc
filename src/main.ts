@@ -45,7 +45,7 @@ export function renderErrorBoundary(error: unknown): void {
       <h1 style="font-size: 1.25rem; font-weight: 700; color: #ef4444; margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px;">
         ⚠️ Error Crítico de Inicialización
       </h1>
-      <p style="color: #94a3b8; font-size: 0.85rem; margin: 0 0 16px 0; line-height: 1.4;">
+      <p style="color: #67E8F9; font-size: 0.85rem; margin: 0 0 16px 0; line-height: 1.4;">
         Se ha producido una excepción no controlada durante el arranque de BallHax.
       </p>
       <pre style="background: #0d0d0d; color: #fca5a5; padding: 12px; border-radius: 6px; font-size: 0.78rem; overflow-x: auto; white-space: pre-wrap; word-break: break-word; border: 1px solid #2f2f2f; max-height: 240px; margin: 0 0 18px 0; line-height: 1.4;">${escapeHtml(stack)}</pre>

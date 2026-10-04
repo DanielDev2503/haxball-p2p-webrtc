@@ -155,7 +155,11 @@ export class GameApp {
     this.modifierModal = new GameplayModifierModal(
       this.gameplayConfig,
       (newConfig) => this.onGameplayConfigChanged(newConfig),
-      () => Boolean(this.mode === 'host' || this.localPlayer.isHost)
+      () => Boolean(this.mode === 'host' || this.localPlayer.isHost),
+      () => {
+        const phase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+        return phase !== MatchPhase.STOPPED;
+      }
     );
     this.keybindModal = new KeybindModal(this.inputManager);
 
@@ -1143,6 +1147,8 @@ export class GameApp {
         } else if (msg.type === 'MAP_CHANGE_REQUEST') {
           const requester = this.engine?.players.get(peerId);
           if (!requester?.isAdmin && peerId !== this.currentHostId) return;
+          const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+          if (currentPhase !== MatchPhase.STOPPED) return;
           this.setMapStadium(msg.stadiumId, true);
         }
       } catch (e) {}
@@ -1605,6 +1611,11 @@ export class GameApp {
   }
 
   private onGameplayConfigChanged(newConfig: GameplayConfig): void {
+    const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+    if (currentPhase !== MatchPhase.STOPPED) {
+      this.chat.addSystemMessage('⚠️ Los modificadores de física solo se pueden ajustar antes de empezar una partida.');
+      return;
+    }
     this.gameplayConfig = newConfig;
     $gameConfig.set(newConfig);
     this.canvasRenderer?.handleResize();
@@ -1636,8 +1647,11 @@ export class GameApp {
     const isAdmin = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost);
     const isHost = this.mode === 'host' || Boolean(this.localPlayer.isHost);
     const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+    const isMatchStopped = currentPhase === MatchPhase.STOPPED;
+    const canChangeStadium = isAdmin && isMatchStopped;
 
     this.teamSelect.updateMatchControlButton(currentPhase, isAdmin);
+    this.teamSelect.updateStadiumControls(currentPhase, isAdmin);
 
     if (this.btnPauseResume) {
       this.btnPauseResume.disabled = !isAdmin || currentPhase === MatchPhase.STOPPED;
@@ -1657,36 +1671,63 @@ export class GameApp {
     }
 
     if (this.selectTimeLimit) {
-      this.selectTimeLimit.disabled = !isAdmin;
+      this.selectTimeLimit.disabled = !canChangeStadium;
       this.selectTimeLimit.value = this.roomConfig.timeLimit.toString();
     }
 
     if (this.selectScoreLimit) {
-      this.selectScoreLimit.disabled = !isAdmin;
+      this.selectScoreLimit.disabled = !canChangeStadium;
       this.selectScoreLimit.value = this.roomConfig.scoreLimit.toString();
     }
 
     if (this.selectStadiumSize) {
-      this.selectStadiumSize.disabled = !isAdmin;
+      this.selectStadiumSize.disabled = !canChangeStadium;
       if (this.roomConfig.stadiumId) {
         this.selectStadiumSize.value = this.roomConfig.stadiumId;
+      }
+    }
+
+    const btnPickStadium = document.getElementById('btn-pick-stadium') as HTMLButtonElement | null;
+    if (btnPickStadium) {
+      btnPickStadium.disabled = !canChangeStadium;
+      if (!isMatchStopped) {
+        btnPickStadium.title = 'No se puede cambiar de estadio durante el partido';
+        btnPickStadium.classList.add('opacity-50', 'cursor-not-allowed');
+      } else {
+        btnPickStadium.title = isAdmin ? 'Elegir estadio' : 'Solo los administradores pueden cambiar el estadio';
+        btnPickStadium.classList.remove('opacity-50', 'cursor-not-allowed');
       }
     }
 
     if (this.btnOpenPhysicsModifiers) {
       if (isHost) {
         this.btnOpenPhysicsModifiers.style.display = 'inline-flex';
-        this.btnOpenPhysicsModifiers.disabled = false;
+        this.btnOpenPhysicsModifiers.disabled = !isMatchStopped;
+        if (!isMatchStopped) {
+          this.btnOpenPhysicsModifiers.title = 'Los modificadores de físicas solo se pueden ajustar antes de empezar la partida';
+          this.btnOpenPhysicsModifiers.classList.add('opacity-50', 'cursor-not-allowed');
+        } else {
+          this.btnOpenPhysicsModifiers.title = 'Modificadores de Físicas';
+          this.btnOpenPhysicsModifiers.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
       } else {
         this.btnOpenPhysicsModifiers.style.display = 'none';
         this.btnOpenPhysicsModifiers.disabled = true;
       }
     }
+
+    this.modifierModal.updateMatchState(!isMatchStopped);
   }
 
   public requestMapChange(stadiumId: string): void {
     const isAdmin = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost);
     if (!isAdmin) return;
+
+    const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+    if (currentPhase !== MatchPhase.STOPPED) {
+      this.chat.addSystemMessage('⚠️ El estadio solo se puede cambiar antes de empezar una partida.');
+      return;
+    }
 
     if (this.mode === 'host' || this.mode === 'practice') {
       this.setMapStadium(stadiumId, true);
@@ -1698,8 +1739,12 @@ export class GameApp {
     }
   }
 
-  public setMapStadium(stadiumId: string, broadcast: boolean = false): void {
+  public setMapStadium(stadiumId: string, broadcast: boolean = false, force: boolean = false): void {
     if (!StadiumRegistry[stadiumId]) return;
+    const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+    if (broadcast && !force && currentPhase !== MatchPhase.STOPPED) {
+      return;
+    }
     this.roomConfig.stadiumId = stadiumId;
     if (this.engine) {
       this.engine.setStadium(stadiumId);
@@ -1781,6 +1826,10 @@ export class GameApp {
     if (action === 'STOP') {
       this.requestStopMatch();
       return;
+    }
+
+    if (this.modifierModal?.isOpen()) {
+      this.modifierModal.hide();
     }
 
     if (this.mode === 'client' && this.hostPeer) {

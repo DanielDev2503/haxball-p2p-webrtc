@@ -7,6 +7,12 @@ import { Stadium } from '../../src/core/entities/Stadium';
 import { CanvasRenderer } from '../../src/render/CanvasRenderer';
 import { OffscreenIndicatorRenderer } from '../../src/render/OffscreenIndicatorRenderer';
 import { ChatBox } from '../../src/ui/components/ChatBox';
+import { TeamSelectModal } from '../../src/ui/components/TeamSelectModal';
+import { MatchPhase } from '../../src/core/game/GameFSM';
+import { GameplayModifierModal } from '../../src/ui/components/GameplayModifierModal';
+import { DEFAULT_GAMEPLAY_CONFIG } from '../../src/core/game/GameConfig';
+import * as fs from 'fs';
+import * as path from 'path';
 
 describe('Camera Framing, Safe Area, Default Dark Theme & Telemetry Sparkline', () => {
   describe('1. Camera & CanvasRenderer Scale Invariance and Safe Area Clamping', () => {
@@ -345,6 +351,229 @@ describe('Camera Framing, Safe Area, Default Dark Theme & Telemetry Sparkline', 
       chat.adjustForMenu(false);
       expect(mockChatBox.style.height).toBe('150px');
       expect(mockChatBox.style.maxHeight).toBe('');
+    });
+  });
+
+  describe('9. Pre-Match Only Restrictions: Stadium Selection Locked During Match', () => {
+    it('disables pick button and stadium select when match is in progress (PLAYING, COUNTDOWN, PAUSED)', () => {
+      const selectEl = { value: 'classic', disabled: false, dataset: {}, addEventListener: vi.fn() };
+      const pickBtn = { disabled: false, title: '', classList: { add: vi.fn(), remove: vi.fn() }, addEventListener: vi.fn() };
+      const stadiumPickerModal = { classList: { add: vi.fn(), remove: vi.fn() }, style: { display: 'none' } };
+      const ingameMenuEl = { classList: { add: vi.fn(), remove: vi.fn(), contains: vi.fn(() => true) }, style: {} };
+      const optionBtn = { getAttribute: () => 'big', classList: { toggle: vi.fn() }, addEventListener: vi.fn() };
+
+      (globalThis as any).document = {
+        getElementById: (id: string) => {
+          if (id === 'select-stadium-size') return selectEl;
+          if (id === 'btn-pick-stadium') return pickBtn;
+          if (id === 'stadiumPickerModal') return stadiumPickerModal;
+          if (id === 'ingame-menu') return ingameMenuEl;
+          return null;
+        },
+        querySelector: () => null,
+        querySelectorAll: (sel: string) => {
+          if (sel === '.stadium-option-btn') return [optionBtn];
+          return [];
+        },
+        createElement: () => ({ className: '', style: {}, addEventListener: vi.fn() })
+      };
+
+      const modal = new TeamSelectModal();
+      modal.updateMatchControlButton(MatchPhase.STOPPED, true);
+      expect(selectEl.disabled).toBe(false);
+      expect(pickBtn.disabled).toBe(false);
+
+      // Transition to PLAYING
+      modal.updateMatchState(MatchPhase.PLAYING, undefined, true);
+      expect(selectEl.disabled).toBe(true);
+      expect(pickBtn.disabled).toBe(true);
+      expect(pickBtn.title).toBe('No se puede cambiar de estadio durante el partido');
+
+      // Transition back to STOPPED
+      modal.updateMatchState(MatchPhase.STOPPED, undefined, true);
+      expect(selectEl.disabled).toBe(false);
+      expect(pickBtn.disabled).toBe(false);
+
+      modal.destroy();
+    });
+
+    it('ignores stadium change events when match is not STOPPED', () => {
+      let selectListener: any = null;
+      let pickListener: any = null;
+      let optionListener: any = null;
+
+      const selectEl = {
+        value: 'classic',
+        disabled: false,
+        dataset: {},
+        addEventListener: vi.fn((ev, cb) => { if (ev === 'change') selectListener = cb; })
+      };
+      const pickBtn = {
+        disabled: false,
+        title: '',
+        classList: { add: vi.fn(), remove: vi.fn() },
+        addEventListener: vi.fn((ev, cb) => { if (ev === 'click') pickListener = cb; })
+      };
+      const stadiumPickerModal = {
+        classList: { add: vi.fn(), remove: vi.fn() },
+        style: { display: 'none' }
+      };
+      const optionBtn = {
+        getAttribute: () => 'big',
+        classList: { toggle: vi.fn() },
+        addEventListener: vi.fn((ev, cb) => { if (ev === 'click') optionListener = cb; })
+      };
+
+      (globalThis as any).document = {
+        getElementById: (id: string) => {
+          if (id === 'select-stadium-size') return selectEl;
+          if (id === 'btn-pick-stadium') return pickBtn;
+          if (id === 'stadiumPickerModal') return stadiumPickerModal;
+          return null;
+        },
+        querySelector: () => null,
+        querySelectorAll: (sel: string) => (sel === '.stadium-option-btn' ? [optionBtn] : []),
+        createElement: () => ({ className: '', style: {}, addEventListener: vi.fn() })
+      };
+
+      const modal = new TeamSelectModal();
+      modal.updateMatchControlButton(MatchPhase.PLAYING, true);
+      const onMapChange = vi.fn();
+      modal.onMapChange = onMapChange;
+
+      // Click pick button while PLAYING
+      pickListener?.({ stopPropagation: vi.fn() });
+      expect(stadiumPickerModal.style.display).toBe('none');
+
+      // Change select while PLAYING
+      selectEl.value = 'big';
+      selectListener?.();
+      expect(onMapChange).not.toHaveBeenCalled();
+
+      // Click option button while PLAYING
+      optionListener?.({ stopPropagation: vi.fn() });
+      expect(onMapChange).not.toHaveBeenCalled();
+
+      // Transition to STOPPED
+      modal.updateMatchState(MatchPhase.STOPPED, undefined, true);
+      selectEl.value = 'small';
+      selectListener?.();
+      expect(onMapChange).toHaveBeenCalledWith('small');
+
+      modal.destroy();
+    });
+  });
+
+  describe('10. Pre-Match Only Restrictions: Gameplay Modifiers Locked During Match', () => {
+    function createMockElement(id: string = '', tag: string = 'div') {
+      const classSet = new Set<string>();
+      const children: any[] = [];
+      const listeners: Record<string, Function[]> = {};
+
+      const el = {
+        id,
+        tagName: tag.toUpperCase(),
+        get className() {
+          return Array.from(classSet).join(' ');
+        },
+        set className(val: string) {
+          classSet.clear();
+          val.split(/\s+/).filter(Boolean).forEach(c => classSet.add(c));
+        },
+        innerHTML: '',
+        textContent: '',
+        value: '0',
+        style: {} as Record<string, string>,
+        disabled: false,
+        classList: {
+          add: vi.fn((...classes: string[]) => { classes.forEach(c => classSet.add(c)); }),
+          remove: vi.fn((...classes: string[]) => { classes.forEach(c => classSet.delete(c)); }),
+          contains: vi.fn((c: string) => classSet.has(c))
+        },
+        appendChild: vi.fn((child: any) => { children.push(child); return child; }),
+        addEventListener: vi.fn((event: string, cb: Function) => {
+          if (!listeners[event]) listeners[event] = [];
+          listeners[event].push(cb);
+        }),
+        querySelector: vi.fn(() => null)
+      };
+      return el;
+    }
+
+    beforeEach(() => {
+      (globalThis as any).document = {
+        createElement: (tag: string) => createMockElement('', tag),
+        body: { appendChild: vi.fn() },
+        getElementById: () => null,
+        querySelector: () => null,
+        querySelectorAll: () => []
+      };
+    });
+
+    it('blocks opening modifier modal when match is in progress', () => {
+      let isPlaying = true;
+      const onChange = vi.fn();
+      const isHost = () => true;
+      const isMatchInProgress = () => isPlaying;
+
+      const alertMock = vi.fn();
+      (globalThis as any).alert = alertMock;
+
+      const modal = new GameplayModifierModal(DEFAULT_GAMEPLAY_CONFIG, onChange, isHost, isMatchInProgress);
+      modal.show();
+
+      expect(alertMock).toHaveBeenCalledWith('Los modificadores de físicas solo se pueden ajustar antes de empezar una partida.');
+      expect(modal.isOpen()).toBe(false);
+
+      // Match is stopped
+      isPlaying = false;
+      modal.show();
+      expect(modal.isOpen()).toBe(true);
+
+      modal.hide();
+    });
+
+    it('updateMatchState disables sliders and hides modal if open during active match', () => {
+      const onChange = vi.fn();
+      const isHost = () => true;
+      let isPlaying = false;
+      const isMatchInProgress = () => isPlaying;
+
+      const modal = new GameplayModifierModal(DEFAULT_GAMEPLAY_CONFIG, onChange, isHost, isMatchInProgress);
+      modal.show();
+      expect(modal.isOpen()).toBe(true);
+
+      // Match starts
+      isPlaying = true;
+      modal.updateMatchState(true);
+      expect(modal.isOpen()).toBe(false);
+
+      modal.hide();
+    });
+  });
+
+  describe('11. Dark Theme Audit: Match Config Container & Close Button Styles', () => {
+    it('haxball.css contains dark theme overrides for .admin-config-section and .icon-btn-close without gray tokens', () => {
+      const cssPath = path.resolve(__dirname, '../../src/ui/styles/haxball.css');
+      const cssContent = fs.readFileSync(cssPath, 'utf-8');
+
+      // Admin config section dark styling
+      expect(cssContent).toContain('[data-theme="dark"] .admin-config-section');
+      expect(cssContent).toContain('rgba(7, 15, 30');
+
+      // Close X button dark styling
+      expect(cssContent).toContain('[data-theme="dark"] .icon-btn-close');
+      expect(cssContent).toContain('#67E8F9');
+
+      // Stadium picker modal dark styling
+      expect(cssContent).toContain('[data-theme="dark"] #stadiumPickerModal');
+      expect(cssContent).toContain('[data-theme="dark"] .stadium-option-btn');
+
+      // Ensure no gray/slate class in admin-config-section or icon-btn-close dark rules
+      const forbiddenTokens = ['text-gray', 'bg-gray', 'border-gray', 'text-slate-600', 'bg-slate-800'];
+      for (const token of forbiddenTokens) {
+        expect(cssContent.includes(token)).toBe(false);
+      }
     });
   });
 });
