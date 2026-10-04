@@ -8,6 +8,11 @@ export const INPUT_DASH = 1 << 6;        // Bit 6: DashTrigger (Space) — Flanc
 export const INPUT_MAGNUS_LEFT = 1 << 7; // Bit 7: MagnusLeft (Z)
 export const INPUT_MAGNUS_RIGHT = 1 << 8;// Bit 8: MagnusRight (C)
 
+// Parámetros Cinemáticos del Dash (Zero-GC)
+export const DASH_STAMINA_COST = 50;
+export const DASH_TICKS = 4;
+export const DEFAULT_DASH_DISTANCE = 37.5; // Desplazamiento base calibrado (+100% de potencia)
+
 export type TeamType = 'red' | 'blue' | 'spec';
 
 export interface PlayerData {

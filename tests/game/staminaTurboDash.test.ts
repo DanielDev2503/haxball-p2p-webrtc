@@ -25,7 +25,7 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     expect(playerRed.isTurbo).toBe(false);
   });
 
-  it('executes Dash consuming exactly 50% stamina for calibrated 18.75 px displacement over 4 ticks (reduced to 1/4)', () => {
+  it('executes Dash consuming exactly 50% stamina for calibrated 37.5 px displacement over 4 ticks (+100% power)', () => {
     // Keep ball far away to isolate player motion
     engine.ball.pos.set(1000, 1000);
     const disc = engine.playerDiscs.get('p1')!;
@@ -48,9 +48,9 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     }
 
     expect(playerRed.isDashing).toBe(false);
-    // 4 ticks * 4.6875 px/tick = 18.75 px displacement (subject to mid-step substepping damping ~18.56 px)
-    expect(disc.pos.x).toBeGreaterThanOrEqual(18.0);
-    expect(disc.pos.x).toBeLessThanOrEqual(19.2);
+    // 4 ticks * 9.375 px/tick = 37.5 px displacement (subject to mid-step substepping damping ~37.1 px)
+    expect(disc.pos.x).toBeGreaterThanOrEqual(36.0);
+    expect(disc.pos.x).toBeLessThanOrEqual(38.4);
 
     // Attempt second dash with 50% stamina remaining
     inputs.set('p1', INPUT_RIGHT | INPUT_DASH);

@@ -118,6 +118,43 @@ describe('Mission Engineering Suite: Continuous Vector Dash, Stadiums, Camera & 
       expect(bluePlayer.dashDirX).toBe(-1);
       expect(bluePlayer.dashDirY).toBe(0);
     });
+
+    it('applies calibrated 37.5 px displacement with at least 4 substeps in PhysicsWorld during dash', () => {
+      const engine = new GameEngine();
+      engine.fsm.currentState = MatchPhase.PLAYING;
+      const player = new Player({ id: 'p1', name: 'Tester', team: 'red', isHost: true });
+      engine.addPlayer(player);
+      engine.ball.pos.set(1000, 1000);
+      const disc = engine.playerDiscs.get('p1')!;
+      disc.pos.set(0, 0);
+      disc.prevPos.set(0, 0);
+      disc.vel.set(0, 0);
+
+      let substepCallsInTick = 0;
+      engine.physicsWorld.onSubstep = () => {
+        substepCallsInTick++;
+      };
+
+      const inputs = new Map<string, number>();
+      inputs.set('p1', INPUT_DASH | INPUT_RIGHT);
+
+      // Tick 1
+      substepCallsInTick = 0;
+      engine.tick(inputs);
+      expect(substepCallsInTick).toBeGreaterThanOrEqual(4);
+
+      // Remaining 3 ticks
+      inputs.set('p1', 0);
+      for (let i = 0; i < 3; i++) {
+        substepCallsInTick = 0;
+        engine.tick(inputs);
+        expect(substepCallsInTick).toBeGreaterThanOrEqual(4);
+      }
+
+      expect(player.isDashing).toBe(false);
+      expect(disc.pos.x).toBeGreaterThanOrEqual(36.0);
+      expect(disc.pos.x).toBeLessThanOrEqual(38.4);
+    });
   });
 
   describe('3. Dynamic Camera & Smooth Tracking', () => {

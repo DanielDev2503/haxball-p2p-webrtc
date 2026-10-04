@@ -6,7 +6,7 @@ export interface GameplayConfig {
   ballRadius: number;           // min: 3.0, max: 16.0, def: 5.8 (px)
   ballRestitution: number;      // min: 0.0, max: 1.8, def: 0.5 (bCoef)
   boostMultiplier: number;      // min: 1.1, max: 4.0, def: 2.0 (Turbo Multiplier)
-  dashDistance: number;         // min: 1.8, max: 56.5, def: 18.75 (px, 0.1x - 3.0x de 18.75px)
+  dashDistance: number;         // min: 3.75, max: 112.5, def: 37.5 (px, 0.1x - 3.0x de 37.5px)
   staminaRechargeRate: number;  // min: 5.0, max: 100.0, def: 25.0 (%/s)
   magnusCurveStrength: number;  // min: 0.0, max: 5.0, def: 1.05 (0.0x - 5.0x)
   ballMass: number;             // min: 0.1, max: 10.0, def: 1.0
@@ -84,13 +84,13 @@ export const GAMEPLAY_CONFIG_LIMITS: Record<keyof GameplayConfig, ConfigLimits> 
     description: 'Factor multiplicador de velocidad y aceleración en sprint (1.1x - 4.0x).'
   },
   dashDistance: {
-    min: 1.8,
-    max: 56.5,
+    min: 3.75,
+    max: 112.5,
     step: 0.25,
-    default: 18.75,
+    default: 37.5,
     label: 'Distancia de Dash',
     unit: 'px',
-    description: 'Desplazamiento total instantáneo en ráfaga (0.1x - 3.0x de 18.75 px).'
+    description: 'Desplazamiento total instantáneo en ráfaga (0.1x - 3.0x de 37.5 px).'
   },
   staminaRechargeRate: {
     min: 5.0,
@@ -135,7 +135,7 @@ export const DEFAULT_GAMEPLAY_CONFIG: Readonly<GameplayConfig> = Object.freeze({
   ballRadius: 5.8,
   ballRestitution: 0.5,
   boostMultiplier: 2.0,
-  dashDistance: 18.75,
+  dashDistance: 37.5,
   staminaRechargeRate: 25.0,
   magnusCurveStrength: 1.05,
   ballMass: 1.0,

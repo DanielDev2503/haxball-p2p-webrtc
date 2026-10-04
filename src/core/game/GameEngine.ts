@@ -467,7 +467,7 @@ export class GameEngine {
       const wasDashing = player.isDashing;
       if (player.isDashing) {
         player.dashTicksRemaining--;
-        // v_dash = (dashDistance / 4 ticks) * 60 ticks/s (impulso de 18.75 px en 4 ticks a velocidad 281.25 px/s)
+        // v_dash = (dashDistance / 4 ticks) * 60 ticks/s (impulso de 37.5 px en 4 ticks a velocidad 562.5 px/s)
         const dashSpeed = (this.gameplayConfig.dashDistance / 4) * 60;
         disc.vel.x = player.dashDirX * dashSpeed;
         disc.vel.y = player.dashDirY * dashSpeed;

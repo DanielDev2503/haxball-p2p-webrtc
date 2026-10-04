@@ -53,8 +53,9 @@ export class PhysicsWorld {
    * Advances the simulation by fixedDt using adaptive substepping.
    * Calculates maximum displacement to guarantee no fast-moving disc
    * tunnels through another disc or segment in a single sub-step.
+   * Enforces N >= 4 kinematic substeps whenever Dash is active.
    */
-  public step(): void {
+  public step(isDashActive?: boolean): void {
     const dt = this.fixedDt;
     const discCount = this.discs.length;
     const segCount = this.segments.length;
@@ -62,10 +63,14 @@ export class PhysicsWorld {
     // 1. Calculate maximum velocity among dynamic discs to determine substepping
     let maxSpeedSq = 0;
     let minRadius = 10;
+    let hasDashingDisc = Boolean(isDashActive);
 
     for (let i = 0; i < discCount; i++) {
       const d = this.discs[i];
       if (d.invMass > 0) {
+        if (d.isDashing) {
+          hasDashingDisc = true;
+        }
         const speedSq = d.vel.lenSq();
         if (speedSq > maxSpeedSq) {
           maxSpeedSq = speedSq;
@@ -82,7 +87,9 @@ export class PhysicsWorld {
     // Critical step threshold: no movement larger than half the smallest radius
     const criticalThreshold = minRadius * 0.45;
     const neededSubsteps = Math.ceil(maxDisplacement / criticalThreshold);
-    const substeps = clamp(neededSubsteps, 1, this.maxSubsteps);
+    // Garantizar al menos N >= 4 subiteraciones en ticks con Dash activo para prevenir tunelización
+    const minSubsteps = hasDashingDisc ? 4 : 1;
+    const substeps = clamp(neededSubsteps, minSubsteps, Math.max(this.maxSubsteps, minSubsteps));
     const subDt = dt / substeps;
 
     // 2. Perform substepping simulation
