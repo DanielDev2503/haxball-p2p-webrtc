@@ -30,6 +30,8 @@ export type ControlMessageType =
   | 'INITIAL_STATE'
   | 'match_control'
   | 'MATCH_CONTROL_REQUEST'
+  | 'ADMIN_START_MATCH'
+  | 'ADMIN_STOP_MATCH'
   | 'MATCH_STOPPED_EVENT'
   | 'ROOM_SETTINGS_REQUEST'
   | 'ROOM_SETTINGS_SYNC'
@@ -216,3 +218,12 @@ export interface MapChangeSyncMessage {
   type: 'MAP_CHANGE_SYNC';
   stadiumId: string;
 }
+
+export interface AdminStartMatchMessage {
+  type: 'ADMIN_START_MATCH';
+}
+
+export interface AdminStopMatchMessage {
+  type: 'ADMIN_STOP_MATCH';
+}
+

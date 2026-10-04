@@ -144,11 +144,12 @@
               </div>
               <div class="config-field stadium-config-field">
                 <span class="config-label">Stadium:</span>
-                <span id="currentStadiumName" class="stadium-name-text">Mediano (3v3 Clásico)</span>
+                <span id="currentStadiumName" class="stadium-name-text">AF 3v3 Official by Vitão ®</span>
                 <button id="btn-pick-stadium" class="btn btn-secondary btn-xs" type="button">Pick</button>
                 <select id="select-stadium-size" class="form-input-inline u-hidden" style="display: none;">
+                  <option value="AF 3v3 Official" selected>AF 3v3 Official by Vitão ®</option>
+                  <option value="classic">Mediano (3v3 Clásico)</option>
                   <option value="small">Pequeño (1v1 / 2v2)</option>
-                  <option value="classic" selected>Mediano (3v3 Clásico)</option>
                   <option value="big">Grande (4v4)</option>
                 </select>
               </div>
@@ -176,16 +177,22 @@
             <button id="btnCloseStadiumPicker" class="icon-btn-close">✕</button>
           </div>
           <div id="stadiumPresetsList" class="stadium-picker-grid" style="display: flex; flex-direction: column; gap: 8px;">
+            <button class="stadium-option-btn btn btn-secondary active-stadium" data-stadium="AF 3v3 Official" style="text-align: left; justify-content: flex-start; padding: 10px 14px;">
+              <div>
+                <div style="font-weight: 700;">AF 3v3 Official by Vitão ®</div>
+                <div style="font-size: 0.75rem; opacity: 0.75;">1200x540 (Pitch) / 1420x600 - Arcos 170 - Física Vitão Oficial</div>
+              </div>
+            </button>
+            <button class="stadium-option-btn btn btn-secondary" data-stadium="classic" style="text-align: left; justify-content: flex-start; padding: 10px 14px;">
+              <div>
+                <div style="font-weight: 700;">Mediano (3v3 Clásico)</div>
+                <div style="font-size: 0.75rem; opacity: 0.75;">1200x540 - Arcos 170</div>
+              </div>
+            </button>
             <button class="stadium-option-btn btn btn-secondary" data-stadium="small" style="text-align: left; justify-content: flex-start; padding: 10px 14px;">
               <div>
                 <div style="font-weight: 700;">Pequeño (1v1 / 2v2)</div>
                 <div style="font-size: 0.75rem; opacity: 0.75;">1000x460 - Arcos 140</div>
-              </div>
-            </button>
-            <button class="stadium-option-btn btn btn-secondary active-stadium" data-stadium="classic" style="text-align: left; justify-content: flex-start; padding: 10px 14px;">
-              <div>
-                <div style="font-weight: 700;">Mediano (3v3 Clásico)</div>
-                <div style="font-size: 0.75rem; opacity: 0.75;">1200x540 - Arcos 170</div>
               </div>
             </button>
             <button class="stadium-option-btn btn btn-secondary" data-stadium="big" style="text-align: left; justify-content: flex-start; padding: 10px 14px;">
@@ -250,12 +257,12 @@
         Ingresa tu nombre de piloto para unirte a la arena P2P.
       </p>
       <div class="form-group" style="text-align: left; margin-top: 8px;">
-        <label class="form-label" for="gatekeeperNicknameInput">Tu Nickname (2 a 15 caracteres)</label>
+        <label class="form-label" for="gatekeeperNicknameInput">Tu Nickname (1 a 15 caracteres)</label>
         <input id="gatekeeperNicknameInput" class="form-input" type="text" placeholder="Ej. Maradona" maxlength="15" autofocus />
         <div id="gatekeeperError" style="display: none; color: #ef4444; font-size: 0.75rem; margin-top: 4px; font-weight: 600;"></div>
       </div>
-      <button id="btnSaveNickname" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 0.95rem; margin-top: 4px;">
-        Guardar y Continuar
+      <button id="btnSaveNickname" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 0.95rem; margin-top: 4px; font-weight: 700;">
+        Siguiente ▶
       </button>
     </div>
   </div>

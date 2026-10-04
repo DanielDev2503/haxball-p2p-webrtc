@@ -68,7 +68,19 @@ export function renderErrorBoundary(error: unknown): void {
 
 async function initApp(): Promise<void> {
   try {
+    let targetRoomId: string | null = null;
+    if (typeof window !== 'undefined' && window.location) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room');
+      if (roomParam) {
+        targetRoomId = roomParam.trim();
+      }
+    }
+
     const app = new GameApp();
+    if (targetRoomId) {
+      app.targetRoomId = targetRoomId;
+    }
     (window as any).__HAXBALL_APP__ = app;
   } catch (err) {
     renderErrorBoundary(err);

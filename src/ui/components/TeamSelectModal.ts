@@ -22,6 +22,7 @@ export class TeamSelectModal {
   private currentStadiumNameEl: HTMLElement | null = null;
   private stadiumPickerModalEl: HTMLElement | null = null;
   private currentMatchState: MatchPhase = MatchPhase.STOPPED;
+  private currentRoomId: string = '';
   private unsubs: Array<() => void> = [];
 
   public onSelectTeam?: (team: TeamType) => void;
@@ -91,8 +92,13 @@ export class TeamSelectModal {
     if (btnCopyLink) {
       btnCopyLink.addEventListener('click', (e) => {
         e.stopPropagation();
+        const origin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+        const pathname = typeof window !== 'undefined' && window.location ? window.location.pathname : '';
+        const roomUrl = this.currentRoomId
+          ? `${origin}${pathname}?room=${this.currentRoomId}`
+          : (typeof window !== 'undefined' ? window.location.href : '');
         if (typeof navigator !== 'undefined' && navigator.clipboard) {
-          navigator.clipboard.writeText(window.location.href).catch(() => {});
+          navigator.clipboard.writeText(roomUrl).catch(() => {});
         }
         this.onCopyLink?.();
       });
@@ -212,6 +218,10 @@ export class TeamSelectModal {
     }
   }
 
+  public setRoomId(roomId: string): void {
+    this.currentRoomId = roomId;
+  }
+
   public setStadium(stadiumId: string): void {
     if (this.selectStadiumEl) {
       this.selectStadiumEl.value = stadiumId;
@@ -289,10 +299,11 @@ export class TeamSelectModal {
     if (goalLimitSelect) {
       goalLimitSelect.disabled = !canModifySettings;
     }
+    const canControlMatch = Boolean(this.isUserHost || this.isUserAdmin);
     const pauseBtn = document.getElementById('btn-pause-resume') as HTMLButtonElement | null;
     if (pauseBtn) {
-      pauseBtn.disabled = !this.isUserHost;
-      if (pauseBtn.style) pauseBtn.style.display = this.isUserHost ? '' : 'none';
+      pauseBtn.disabled = !canControlMatch;
+      if (pauseBtn.style) pauseBtn.style.display = canControlMatch ? '' : 'none';
     }
     const lockBtn = document.getElementById('btn-lock-teams') as HTMLButtonElement | null;
     if (lockBtn) {
@@ -330,7 +341,7 @@ export class TeamSelectModal {
     }
     if (!this.matchToggleBtn) return;
 
-    if (!this.isUserHost) {
+    if (!canControlMatch) {
       this.matchToggleBtn.disabled = true;
       if (this.matchToggleBtn.style) this.matchToggleBtn.style.display = 'none';
       return;

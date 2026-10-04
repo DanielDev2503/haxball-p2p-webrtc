@@ -6,15 +6,15 @@ export interface KeybindRowConfig {
 }
 
 export const ACTIVE_KEYBIND_ROWS: KeybindRowConfig[] = [
-  { key: 'up', label: 'Arriba (Mover)' },
-  { key: 'down', label: 'Abajo (Mover)' },
-  { key: 'left', label: 'Izquierda (Mover)' },
-  { key: 'right', label: 'Derecha (Mover)' },
-  { key: 'kick', label: 'Patear / Chutar (X)' },
-  { key: 'turbo', label: 'Turbo / Sprint (Shift)' },
-  { key: 'dash', label: 'Dash / Salto Rápido (Espacio)' },
-  { key: 'curveLeft', label: 'Efecto Magnus Izquierda (Z)' },
-  { key: 'curveRight', label: 'Efecto Magnus Derecha (C)' }
+  { key: 'up', label: 'Arriba / Adelante (W)' },
+  { key: 'down', label: 'Abajo / Atrás (S)' },
+  { key: 'left', label: 'Izquierda (A)' },
+  { key: 'right', label: 'Derecha (D)' },
+  { key: 'kick', label: 'Patear / Chutar (Espacio)' },
+  { key: 'turbo', label: 'Turbo / Sprint (Shift Izq)' },
+  { key: 'dash', label: 'Dash / Impulso Rápido (Flecha Arriba)' },
+  { key: 'curveLeft', label: 'Comba / Curva Izquierda (Flecha Izq)' },
+  { key: 'curveRight', label: 'Comba / Curva Derecha (Flecha Der)' }
 ];
 
 export class KeybindModal {

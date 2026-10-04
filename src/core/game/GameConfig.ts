@@ -1,3 +1,5 @@
+export const defaultStadium = 'AF 3v3 Official';
+
 export interface GameplayConfig {
   playerMaxSpeed: number;       // min: 0.7, max: 11.2, def: 2.8 (px/tick, 0.25x - 4.0x)
   playerAcceleration: number;   // min: 0.03, max: 0.55, def: 0.11 (0.25x - 5.0x)
@@ -11,6 +13,10 @@ export interface GameplayConfig {
   magnusCurveStrength: number;  // min: 0.0, max: 5.0, def: 1.05 (0.0x - 5.0x)
   ballMass: number;             // min: 0.1, max: 10.0, def: 1.0
   playerMass: number;           // min: 0.1, max: 10.0, def: 2.0
+  turboEnabled: boolean;        // default: true
+  dashEnabled: boolean;         // default: true
+  magnusEnabled: boolean;       // default: true
+  dashesPerFullBar: number;     // min: 1, max: 6, def: 4 (dashes con 100% de estamina)
 }
 
 export interface ConfigLimits {
@@ -23,7 +29,10 @@ export interface ConfigLimits {
   description: string;
 }
 
-export const GAMEPLAY_CONFIG_LIMITS: Record<keyof GameplayConfig, ConfigLimits> = {
+export const GAMEPLAY_CONFIG_LIMITS: Record<
+  keyof Omit<GameplayConfig, 'turboEnabled' | 'dashEnabled' | 'magnusEnabled'>,
+  ConfigLimits
+> = {
   playerMaxSpeed: {
     min: 0.7,
     max: 11.2,
@@ -124,6 +133,15 @@ export const GAMEPLAY_CONFIG_LIMITS: Record<keyof GameplayConfig, ConfigLimits> 
     default: 2.0,
     label: 'Masa del Jugador',
     description: 'Masa inercial del jugador para colisiones de cuerpo y tackle.'
+  },
+  dashesPerFullBar: {
+    min: 1,
+    max: 6,
+    step: 1,
+    default: 4,
+    label: 'Dashes por Barra Llena',
+    unit: 'dashes',
+    description: 'Cantidad de impulsos con el 100% de estamina (coste = 100 / N%).'
   }
 };
 
@@ -139,7 +157,11 @@ export const DEFAULT_GAMEPLAY_CONFIG: Readonly<GameplayConfig> = Object.freeze({
   staminaRechargeRate: 25.0,
   magnusCurveStrength: 1.05,
   ballMass: 1.0,
-  playerMass: 2.0
+  playerMass: 2.0,
+  turboEnabled: true,
+  dashEnabled: true,
+  magnusEnabled: true,
+  dashesPerFullBar: 4
 });
 
 /**
@@ -152,10 +174,14 @@ export function sanitizeGameplayConfig(partial?: Partial<GameplayConfig> | null)
 
   for (const key of Object.keys(DEFAULT_GAMEPLAY_CONFIG) as Array<keyof GameplayConfig>) {
     const val = partial[key];
-    if (typeof val === 'number' && Number.isFinite(val)) {
-      const limits = GAMEPLAY_CONFIG_LIMITS[key];
+    if (key === 'turboEnabled' || key === 'dashEnabled' || key === 'magnusEnabled') {
+      if (typeof val === 'boolean') {
+        result[key] = val;
+      }
+    } else if (typeof val === 'number' && Number.isFinite(val)) {
+      const limits = (GAMEPLAY_CONFIG_LIMITS as any)[key];
       if (limits) {
-        result[key] = Math.max(limits.min, Math.min(limits.max, val));
+        (result as any)[key] = Math.max(limits.min, Math.min(limits.max, val));
       }
     }
   }

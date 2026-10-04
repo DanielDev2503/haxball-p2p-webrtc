@@ -1,5 +1,6 @@
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Stadium } from '../entities/Stadium';
+import { GoalNet } from '../entities/GoalNet';
 import { createStadium } from '../stadiums/StadiumRegistry';
 import { Disc, COLLISION_GROUP_BALL, COLLISION_GROUP_RED, COLLISION_GROUP_BLUE } from '../entities/Disc';
 import {
@@ -17,13 +18,16 @@ import {
 import { GameFSM, MatchPhase } from './GameFSM';
 import { GameSnapshot, DiscSnapshot, MatchConfig, KickoffState } from './GameState';
 import { SOUND_KICK, SOUND_POST_HIT, SOUND_GOAL } from '../../net/protocol/BinaryProtocol';
-import { GameplayConfig, sanitizeGameplayConfig } from './GameConfig';
+import { GameplayConfig, sanitizeGameplayConfig, defaultStadium } from './GameConfig';
 import { Vec2 } from '../math/Vec2';
 
 export class GameEngine {
   public physicsWorld: PhysicsWorld;
+  public get world(): PhysicsWorld { return this.physicsWorld; }
   public stadium: Stadium;
   public ball: Disc;
+  public leftGoalNet?: GoalNet;
+  public rightGoalNet?: GoalNet;
   public players: Map<string, Player> = new Map();
   public playerDiscs: Map<string, Disc> = new Map();
   public fsm: GameFSM;
@@ -52,7 +56,11 @@ export class GameEngine {
 
   private nextDiscId: number = 1000;
 
-  constructor(config: Partial<MatchConfig> = {}, gameplayConfig: Partial<GameplayConfig> = {}) {
+  constructor(
+    config: Partial<MatchConfig> = {},
+    gameplayConfig: Partial<GameplayConfig> = {},
+    stadiumOrId: Stadium | string = defaultStadium
+  ) {
     this.config = {
       scoreLimit: config.scoreLimit ?? 3,
       timeLimitSeconds: config.timeLimitSeconds ?? 180
@@ -61,7 +69,7 @@ export class GameEngine {
     this.gameplayConfig = sanitizeGameplayConfig(gameplayConfig);
 
     this.physicsWorld = new PhysicsWorld({ fixedDt: 1 / 60, maxSubsteps: 8 });
-    this.stadium = new Stadium();
+    this.stadium = typeof stadiumOrId === 'string' ? createStadium(stadiumOrId) : stadiumOrId;
     this.fsm = new GameFSM();
     this.fsm.onStateChange = (state) => {
       this.onStateChange?.(state);
@@ -75,18 +83,25 @@ export class GameEngine {
       this.physicsWorld.addDisc(post);
     }
 
-    // Create Ball
+    this.setupGoalNets();
+
+    // Create Ball using stadium.ballPhysics if defined, or gameplayConfig
+    const ballRadius = this.stadium.ballPhysics?.radius ?? this.gameplayConfig.ballRadius;
+    const ballMass = this.stadium.ballPhysics?.invMass ? (1 / this.stadium.ballPhysics.invMass) : (this.gameplayConfig.ballMass ?? 1);
+    const ballRestitution = this.stadium.ballPhysics?.bCoef ?? this.gameplayConfig.ballRestitution;
+    const ballColor = this.stadium.ballPhysics?.color ?? '#FFA500';
+
     this.ball = new Disc({
       id: 0,
       x: 0,
       y: 0,
-      radius: this.gameplayConfig.ballRadius,
-      mass: this.gameplayConfig.ballMass ?? 1,
+      radius: ballRadius,
+      mass: ballMass,
       damping: 0.99,
-      bounciness: this.gameplayConfig.ballRestitution,
+      bounciness: ballRestitution,
       cGroup: COLLISION_GROUP_BALL,
       isBall: true,
-      color: '#ffffff'
+      color: ballColor
     });
     this.physicsWorld.addDisc(this.ball);
 
@@ -167,6 +182,34 @@ export class GameEngine {
     }
   }
 
+  public setupGoalNets(): void {
+    const hw = this.stadium.halfWidth;
+    const gh = this.stadium.goalHalfHeight;
+    const gd = this.stadium.goalDepth;
+
+    this.leftGoalNet = new GoalNet({
+      side: 'left',
+      mouthX: -hw,
+      backX: -(hw + gd),
+      topY: -gh,
+      bottomY: gh,
+      cols: 6,
+      rows: 5
+    });
+
+    this.rightGoalNet = new GoalNet({
+      side: 'right',
+      mouthX: hw,
+      backX: hw + gd,
+      topY: -gh,
+      bottomY: gh,
+      cols: 6,
+      rows: 5
+    });
+
+    this.physicsWorld.goalNets = [this.leftGoalNet, this.rightGoalNet];
+  }
+
   public setStadium(stadiumOrId: Stadium | string): void {
     // Limpiar segmentos y postes antiguos del physicsWorld
     this.physicsWorld.clearSegments();
@@ -187,6 +230,8 @@ export class GameEngine {
     for (const post of this.stadium.posts) {
       this.physicsWorld.addDisc(post);
     }
+
+    this.setupGoalNets();
   }
 
   public setPlayerTeam(playerId: string, team: 'red' | 'blue' | 'spec'): void {
@@ -333,14 +378,15 @@ export class GameEngine {
       disc.isDashing = false;
       disc.isTurbo = false;
 
+      const spawnDist = this.stadium.spawnDistance ?? 180;
       if (player.team === 'red') {
         const offset = redIndex * 40 - 20 * redIndex;
-        disc.pos.set(-180, offset);
+        disc.pos.set(-spawnDist, offset);
         disc.prevPos.copy(disc.pos);
         redIndex++;
       } else if (player.team === 'blue') {
         const offset = blueIndex * 40 - 20 * blueIndex;
-        disc.pos.set(180, offset);
+        disc.pos.set(spawnDist, offset);
         disc.prevPos.copy(disc.pos);
         blueIndex++;
       }
@@ -440,12 +486,14 @@ export class GameEngine {
 
       const vSpeed = Math.hypot(disc.vel.x, disc.vel.y);
 
-      // Dash Mechanic (salto rápido por flanco ascendente, consume 50% exacto de estamina)
+      // Dash Mechanic (salto rápido por flanco ascendente, consume coste calibrado de estamina)
       const isDashKeyDown = (mask & INPUT_DASH) !== 0;
       const wantsDash = player.triggerDash || (isDashKeyDown && !player.prevDashState);
+      const dashCost = 100 / (this.gameplayConfig.dashesPerFullBar || 4);
+      const canDash = this.gameplayConfig.dashEnabled !== false;
 
-      if (wantsDash && !player.prevDashState && player.stamina >= 50 && !player.isDashing) {
-        player.stamina = Math.max(0, player.stamina - 50);
+      if (canDash && wantsDash && !player.prevDashState && player.stamina >= dashCost && !player.isDashing) {
+        player.stamina = Math.max(0, player.stamina - dashCost);
         player.isDashing = true;
         player.dashTicksRemaining = 4; // K = 4 ticks (66.6 ms)
 
@@ -483,7 +531,8 @@ export class GameEngine {
         const kAccelTurbo = Math.max(2.8, kSpeedTurbo * 1.5);
         const turboAccel = accel * kAccelTurbo;
 
-        const wantsTurbo = ((mask & INPUT_TURBO) !== 0) || player.isTurbo;
+        const canTurbo = this.gameplayConfig.turboEnabled !== false;
+        const wantsTurbo = canTurbo && (((mask & INPUT_TURBO) !== 0) || player.isTurbo);
         if (wantsTurbo && hasMoveInput && player.stamina > 0) {
           player.isTurbo = true;
           player.stamina = Math.max(0, player.stamina - 40 * dt);
@@ -601,9 +650,10 @@ export class GameEngine {
       }
     }
 
-    // Integración continua del Efecto Magnus Dirigido (Z / C post-disparo)
-    // Regla estricta: se aplica única y exclusivamente con tecla presionada activa
-    if (this.ball.isCurvingAllowed && this.ball.lastKickerId) {
+    // Integración continua del Efecto Magnus Dirigido (Z / C / Flechas post-disparo)
+    // Regla estricta: se aplica única y exclusivamente con magnusEnabled activo y tecla presionada activa
+    const canMagnus = this.gameplayConfig.magnusEnabled !== false;
+    if (canMagnus && this.ball.isCurvingAllowed && this.ball.lastKickerId) {
       const kicker = this.players.get(this.ball.lastKickerId);
       const bSpeed = Math.hypot(this.ball.vel.x, this.ball.vel.y);
       if (bSpeed > 0.05 && kicker) {

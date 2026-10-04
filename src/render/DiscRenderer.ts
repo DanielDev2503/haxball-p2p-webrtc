@@ -48,6 +48,46 @@ export class DiscRenderer {
   private scratchCoreRightX: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
   private scratchCoreRightY: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
 
+  public extrapolationMs: number = 0;
+
+  private scratchDisc: DiscSnapshot = {
+    id: 0,
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    radius: 15,
+    team: 0,
+    avatar: '',
+    kicking: false,
+    stamina: 100,
+    isDashing: false,
+    isTurbo: false
+  };
+
+  public setExtrapolation(ms: number): void {
+    this.extrapolationMs = Math.max(0, Math.min(150, ms));
+  }
+
+  private getRenderDisc(disc: DiscSnapshot, isRemote: boolean): DiscSnapshot {
+    if (!isRemote || this.extrapolationMs <= 0) return disc;
+    const dt = this.extrapolationMs / 1000;
+    const s = this.scratchDisc;
+    s.id = disc.id;
+    s.x = disc.x + (disc.vx || 0) * dt;
+    s.y = disc.y + (disc.vy || 0) * dt;
+    s.vx = disc.vx;
+    s.vy = disc.vy;
+    s.radius = disc.radius;
+    s.team = disc.team;
+    s.avatar = disc.avatar;
+    s.kicking = disc.kicking;
+    s.stamina = disc.stamina;
+    s.isDashing = disc.isDashing;
+    s.isTurbo = disc.isTurbo;
+    return s;
+  }
+
   public draw(ctx: CanvasRenderingContext2D, discs: DiscSnapshot[], localDiscId?: number | null): void {
     this.render(ctx, discs, localDiscId);
   }
@@ -105,21 +145,26 @@ export class DiscRenderer {
     // 4. Aros de estamina de los jugadores (capa inferior a los discos de jugadores)
     for (const disc of discs) {
       if (disc.team !== 0) {
-        this.renderStaminaBar(ctx, disc);
+        const isRemote = disc.id !== localDiscId;
+        const renderD = this.getRenderDisc(disc, isRemote);
+        this.renderStaminaBar(ctx, renderD);
       }
     }
 
     // 5. Discos de los jugadores y sus dorsales/avatares
     for (const disc of discs) {
       if (disc.team !== 0) {
-        this.renderPlayer(ctx, disc, disc.id === localDiscId, false);
+        const isRemote = disc.id !== localDiscId;
+        const renderD = this.getRenderDisc(disc, isRemote);
+        this.renderPlayer(ctx, renderD, disc.id === localDiscId, false);
       }
     }
 
     // 6. Balón físico, textura y su resplandor/sombra (RENDERIZADO POR ENCIMA DE LOS DISCOS Y AROS)
     for (const disc of discs) {
       if (disc.team === 0) {
-        this.renderBall(ctx, disc);
+        const renderD = this.getRenderDisc(disc, true);
+        this.renderBall(ctx, renderD);
       }
     }
 

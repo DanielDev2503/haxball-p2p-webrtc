@@ -204,7 +204,7 @@ describe('Match Conclusion Flow and Menu Synchronization', () => {
       expect(d1.vel.x).toBe(0);
       expect(d1.vel.y).toBe(0);
       expect(d1.kicking).toBe(false);
-      expect(d1.pos.x).toBe(-180); // Red kickoff spawn line
+      expect(d1.pos.x).toBe(-engine.stadium.spawnDistance); // Red kickoff spawn line (-366.5 for AF 3v3)
     });
   });
 

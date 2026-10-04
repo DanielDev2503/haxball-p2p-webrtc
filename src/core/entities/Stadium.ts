@@ -15,14 +15,37 @@ export interface GoalDefinition {
   size?: number;
 }
 
+export interface StadiumBallPhysics {
+  radius: number;
+  bCoef: number;
+  invMass: number;
+  color: string;
+}
+
+export interface StadiumPlayerPhysics {
+  acceleration: number;
+  kickingAcceleration: number;
+  kickStrength: number;
+  bCoef: number;
+}
+
 export interface StadiumOptions {
-  id?: string;
-  name?: string;
-  width?: number;
-  height?: number;
-  goalSize?: number;
-  goalDepth?: number;
-  runOff?: number;
+  id?: string | undefined;
+  name?: string | undefined;
+  width?: number | undefined;
+  height?: number | undefined;
+  goalSize?: number | undefined;
+  goalDepth?: number | undefined;
+  runOff?: number | undefined;
+  spawnDistance?: number | undefined;
+  kickOffRadius?: number | undefined;
+  bgColor?: string | undefined;
+  postRadius?: number | undefined;
+  postColor?: string | undefined;
+  ballPhysics?: StadiumBallPhysics | undefined;
+  playerPhysics?: StadiumPlayerPhysics | undefined;
+  leftGoalPos?: { p0: { x: number; y: number }; p1: { x: number; y: number } } | undefined;
+  rightGoalPos?: { p0: { x: number; y: number }; p1: { x: number; y: number } } | undefined;
 }
 
 export class Stadium {
@@ -36,6 +59,14 @@ export class Stadium {
   public goalDepth: number = 35;
   public centerRadius: number = 80;
   public runOff: number = 45; // delta = 45 px (1.5 player diameters)
+  public spawnDistance: number = 180;
+  public bgColor: string = '#1D2431';
+  public postRadius: number = 8;
+  public postColor: string = '#ffffff';
+  public ballPhysics?: StadiumBallPhysics;
+  public playerPhysics?: StadiumPlayerPhysics;
+  public leftGoalPos?: { p0: { x: number; y: number }; p1: { x: number; y: number } };
+  public rightGoalPos?: { p0: { x: number; y: number }; p1: { x: number; y: number } };
 
   public get goalSize(): number {
     return this.goalHalfHeight * 2;
@@ -65,6 +96,33 @@ export class Stadium {
       }
       if (options.runOff !== undefined) {
         this.runOff = options.runOff;
+      }
+      if (options.spawnDistance !== undefined) {
+        this.spawnDistance = options.spawnDistance;
+      }
+      if (options.kickOffRadius !== undefined) {
+        this.centerRadius = options.kickOffRadius;
+      }
+      if (options.bgColor) {
+        this.bgColor = options.bgColor;
+      }
+      if (options.postRadius !== undefined) {
+        this.postRadius = options.postRadius;
+      }
+      if (options.postColor) {
+        this.postColor = options.postColor;
+      }
+      if (options.ballPhysics) {
+        this.ballPhysics = options.ballPhysics;
+      }
+      if (options.playerPhysics) {
+        this.playerPhysics = options.playerPhysics;
+      }
+      if (options.leftGoalPos) {
+        this.leftGoalPos = options.leftGoalPos;
+      }
+      if (options.rightGoalPos) {
+        this.rightGoalPos = options.rightGoalPos;
       }
     }
     this.buildGeometry();
@@ -178,13 +236,14 @@ export class Stadium {
     }));
 
     // 3. Redes de Portería (Goal Nets)
+    // Permeabilidad para jugadores: cMask asignado estrictamente a COLLISION_GROUP_BALL
     // Left Goal Nets (Red Goal)
     this.segments.push(new Segment({
       id: segId++,
       x0: -hw, y0: -gh, x1: -(hw + gd), y1: -gh,
       bounciness: 0.2,
       cGroup: COLLISION_GROUP_WALL,
-      cMask: COLLISION_GROUP_ALL,
+      cMask: COLLISION_GROUP_BALL,
       color: '#94a3b8'
     }));
     this.segments.push(new Segment({
@@ -192,7 +251,7 @@ export class Stadium {
       x0: -(hw + gd), y0: -gh, x1: -(hw + gd), y1: gh,
       bounciness: 0.2,
       cGroup: COLLISION_GROUP_WALL,
-      cMask: COLLISION_GROUP_ALL,
+      cMask: COLLISION_GROUP_BALL,
       color: '#94a3b8'
     }));
     this.segments.push(new Segment({
@@ -200,7 +259,7 @@ export class Stadium {
       x0: -(hw + gd), y0: gh, x1: -hw, y1: gh,
       bounciness: 0.2,
       cGroup: COLLISION_GROUP_WALL,
-      cMask: COLLISION_GROUP_ALL,
+      cMask: COLLISION_GROUP_BALL,
       color: '#94a3b8'
     }));
 
@@ -210,7 +269,7 @@ export class Stadium {
       x0: hw, y0: -gh, x1: hw + gd, y1: -gh,
       bounciness: 0.2,
       cGroup: COLLISION_GROUP_WALL,
-      cMask: COLLISION_GROUP_ALL,
+      cMask: COLLISION_GROUP_BALL,
       color: '#94a3b8'
     }));
     this.segments.push(new Segment({
@@ -218,7 +277,7 @@ export class Stadium {
       x0: hw + gd, y0: -gh, x1: hw + gd, y1: gh,
       bounciness: 0.2,
       cGroup: COLLISION_GROUP_WALL,
-      cMask: COLLISION_GROUP_ALL,
+      cMask: COLLISION_GROUP_BALL,
       color: '#94a3b8'
     }));
     this.segments.push(new Segment({
@@ -226,14 +285,14 @@ export class Stadium {
       x0: hw + gd, y0: gh, x1: hw, y1: gh,
       bounciness: 0.2,
       cGroup: COLLISION_GROUP_WALL,
-      cMask: COLLISION_GROUP_ALL,
+      cMask: COLLISION_GROUP_BALL,
       color: '#94a3b8'
     }));
 
     // 4. Postes de Portería (Goal Posts)
     let postId = 100;
-    const postRadius = 8;
-    const postColor = '#ffffff';
+    const postRadius = this.postRadius;
+    const postColor = this.postColor;
 
     // Left posts (Red goal)
     this.posts.push(new Disc({ id: postId++, x: -hw, y: -gh, radius: postRadius, mass: 0, bounciness: 0.5, color: postColor, cGroup: COLLISION_GROUP_WALL, cMask: COLLISION_GROUP_ALL }));
@@ -244,18 +303,37 @@ export class Stadium {
     this.posts.push(new Disc({ id: postId++, x: hw, y: gh, radius: postRadius, mass: 0, bounciness: 0.5, color: postColor, cGroup: COLLISION_GROUP_WALL, cMask: COLLISION_GROUP_ALL }));
 
     // 5. Goal definitions
-    this.goals.push({
-      team: 'red',
-      p0: { x: -hw, y: -gh },
-      p1: { x: -hw, y: gh },
-      size: gh * 2
-    });
-    this.goals.push({
-      team: 'blue',
-      p0: { x: hw, y: -gh },
-      p1: { x: hw, y: gh },
-      size: gh * 2
-    });
+    if (this.leftGoalPos) {
+      this.goals.push({
+        team: 'red',
+        p0: { ...this.leftGoalPos.p0 },
+        p1: { ...this.leftGoalPos.p1 },
+        size: Math.abs(this.leftGoalPos.p1.y - this.leftGoalPos.p0.y)
+      });
+    } else {
+      this.goals.push({
+        team: 'red',
+        p0: { x: -hw, y: -gh },
+        p1: { x: -hw, y: gh },
+        size: gh * 2
+      });
+    }
+
+    if (this.rightGoalPos) {
+      this.goals.push({
+        team: 'blue',
+        p0: { ...this.rightGoalPos.p0 },
+        p1: { ...this.rightGoalPos.p1 },
+        size: Math.abs(this.rightGoalPos.p1.y - this.rightGoalPos.p0.y)
+      });
+    } else {
+      this.goals.push({
+        team: 'blue',
+        p0: { x: hw, y: -gh },
+        p1: { x: hw, y: gh },
+        size: gh * 2
+      });
+    }
   }
 
   /**

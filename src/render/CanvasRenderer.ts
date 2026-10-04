@@ -5,6 +5,7 @@ import { PitchRenderer } from './PitchRenderer';
 import { DiscRenderer } from './DiscRenderer';
 import { Camera } from './Camera';
 import { OffscreenIndicatorRenderer } from './OffscreenIndicatorRenderer';
+import { GoalNet } from '../core/entities/GoalNet';
 import { $theme } from '../ui/stores/gameStore';
 import gsap from 'gsap';
 import confetti from 'canvas-confetti';
@@ -17,6 +18,10 @@ export class CanvasRenderer {
   public discRenderer: DiscRenderer;
   public camera: Camera;
   public offscreenRenderer: OffscreenIndicatorRenderer;
+
+  public goalNets?: GoalNet[] | null = null;
+  private localGoalNets: GoalNet[] = [];
+  public extrapolationMs: number = 0;
 
   public scale: number = 1;
   public offsetX: number = 0;
@@ -41,10 +46,50 @@ export class CanvasRenderer {
     this.camera = new Camera();
     this.offscreenRenderer = new OffscreenIndicatorRenderer();
 
+    this.initLocalGoalNets();
     this.handleResize();
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', () => this.handleResize());
     }
+  }
+
+  public setGoalNets(nets: GoalNet[] | null): void {
+    this.goalNets = nets;
+  }
+
+  public setExtrapolation(ms: number): void {
+    this.extrapolationMs = Math.max(0, Math.min(150, ms));
+    this.discRenderer.setExtrapolation(this.extrapolationMs);
+  }
+
+  private scratchBall = {
+    pos: { x: 0, y: 0 },
+    vel: { x: 0, y: 0 },
+    radius: 5.8
+  };
+
+  private initLocalGoalNets(): void {
+    const mouthX = this.stadium.width;
+    const depth = this.stadium.goalDepth || 35;
+    const topY = -this.stadium.goalSize / 2;
+    const bottomY = this.stadium.goalSize / 2;
+
+    this.localGoalNets = [
+      new GoalNet({
+        side: 'left',
+        mouthX: -mouthX,
+        backX: -mouthX - depth,
+        topY,
+        bottomY
+      }),
+      new GoalNet({
+        side: 'right',
+        mouthX: mouthX,
+        backX: mouthX + depth,
+        topY,
+        bottomY
+      })
+    ];
   }
 
   public setChatHeight(height: number): void {
@@ -86,6 +131,7 @@ export class CanvasRenderer {
 
   public setStadium(stadium: Stadium): void {
     this.stadium = stadium;
+    this.initLocalGoalNets();
     this.handleResize();
   }
 
@@ -202,6 +248,23 @@ export class CanvasRenderer {
     ctx.save();
     ctx.translate(-this.camera.x, -this.camera.y);
     this.pitchRenderer.renderPitch(ctx, this.stadium);
+
+    // Redes de portería deformables (Cloth / Mass-Spring)
+    const activeNets = this.goalNets ?? this.localGoalNets;
+    if (!this.goalNets && ball) {
+      this.scratchBall.pos.x = ball.x;
+      this.scratchBall.pos.y = ball.y;
+      this.scratchBall.vel.x = ball.vx || 0;
+      this.scratchBall.vel.y = ball.vy || 0;
+      this.scratchBall.radius = ball.radius || 5.8;
+      for (let i = 0; i < this.localGoalNets.length; i++) {
+        this.localGoalNets[i].step(this.scratchBall);
+      }
+    }
+    for (let i = 0; i < activeNets.length; i++) {
+      activeNets[i].render(ctx);
+    }
+
     if (snapshot.discs) {
       this.discRenderer.draw(ctx, snapshot.discs, localDiscId);
     }

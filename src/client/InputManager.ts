@@ -26,15 +26,15 @@ export interface KeyBinds {
 }
 
 export const DEFAULT_KEYBINDS: KeyBinds = {
-  up: ['ArrowUp'],
-  down: ['ArrowDown'],
-  left: ['ArrowLeft'],
-  right: ['ArrowRight'],
-  kick: ['KeyX'],
-  turbo: ['ShiftLeft', 'ShiftRight'],
-  dash: ['Space'],
-  curveLeft: ['KeyZ'],
-  curveRight: ['KeyC'],
+  up: ['KeyW'],
+  down: ['KeyS'],
+  left: ['KeyA'],
+  right: ['KeyD'],
+  kick: ['Space'],
+  turbo: ['ShiftLeft'],
+  dash: ['ArrowUp'],
+  curveLeft: ['ArrowLeft'],
+  curveRight: ['ArrowRight'],
   menu: ['Escape'],
   pause: ['KeyP'],
   chat: ['Enter']

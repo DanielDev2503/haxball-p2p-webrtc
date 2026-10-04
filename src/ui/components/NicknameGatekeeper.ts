@@ -41,6 +41,9 @@ export class NicknameGatekeeper {
 
     this.renderAvatar();
     this.setupThemeToggle();
+    if (this.saveBtn) {
+      this.saveBtn.textContent = 'Siguiente ▶';
+    }
     this.setupListeners();
   }
 
@@ -68,9 +71,8 @@ export class NicknameGatekeeper {
 
   public checkOrPrompt(): string | null {
     const saved = NicknameGatekeeper.getSavedNickname();
-    if (saved && saved.length >= 2 && saved.length <= 15) {
-      this.hide();
-      return saved;
+    if (saved) {
+      this.setInputValue(saved);
     }
     this.show();
     return null;
@@ -79,9 +81,9 @@ export class NicknameGatekeeper {
   private setupListeners(): void {
     const handleSubmit = () => {
       const val = this.inputEl?.value.trim() || '';
-      if (val.length < 2 || val.length > 15) {
+      if (val.length < 1 || val.length > 15) {
         if (this.errorEl) {
-          this.errorEl.textContent = 'El nickname debe tener entre 2 y 15 caracteres válidos.';
+          this.errorEl.textContent = 'El nickname debe tener entre 1 y 15 caracteres válidos.';
           this.errorEl.style.display = 'block';
         }
         this.inputEl?.focus();
@@ -155,7 +157,7 @@ export class NicknameGatekeeper {
     if (typeof localStorage === 'undefined') return '';
     const saved = localStorage.getItem(STORAGE_KEY_NICKNAME)?.trim() ||
                   localStorage.getItem(LEGACY_STORAGE_KEY_NICKNAME)?.trim();
-    if (saved && saved.length >= 2 && saved.length <= 15) {
+    if (saved && saved.length >= 1 && saved.length <= 15) {
       return saved;
     }
     return '';

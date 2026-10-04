@@ -9,7 +9,12 @@ export const INPUT_MAGNUS_LEFT = 1 << 7; // Bit 7: MagnusLeft (Z)
 export const INPUT_MAGNUS_RIGHT = 1 << 8;// Bit 8: MagnusRight (C)
 
 // Parámetros Cinemáticos del Dash (Zero-GC)
-export const DASH_STAMINA_COST = 50;
+export function getDashStaminaCost(dashesPerFullBar: number = 4): number {
+  const dashes = Math.max(1, Math.min(6, dashesPerFullBar));
+  return 100 / dashes;
+}
+
+export const DASH_STAMINA_COST = 25; // 100 / 4 dashes default
 export const DASH_TICKS = 4;
 export const DEFAULT_DASH_DISTANCE = 37.5; // Desplazamiento base calibrado (+100% de potencia)
 
@@ -26,6 +31,7 @@ export interface PlayerData {
 }
 
 export class Player {
+  public static getDashStaminaCost = getDashStaminaCost;
   public id: string;
   public name: string;
   public team: TeamType;

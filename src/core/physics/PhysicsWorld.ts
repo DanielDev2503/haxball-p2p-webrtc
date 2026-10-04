@@ -1,5 +1,6 @@
 import { Disc } from '../entities/Disc';
 import { Segment } from '../entities/Segment';
+import { GoalNet } from '../entities/GoalNet';
 import { resolveDiscDiscCollision, resolveDiscSegmentCollision, CollisionEvent } from './Collision';
 import { clamp } from '../math/MathUtils';
 
@@ -13,6 +14,7 @@ export interface PhysicsWorldConfig {
 export class PhysicsWorld {
   public discs: Disc[] = [];
   public segments: Segment[] = [];
+  public goalNets: GoalNet[] = [];
   public fixedDt: number;
   public maxSubsteps: number;
   public onCollision?: (event: CollisionEvent) => void;
@@ -133,6 +135,20 @@ export class PhysicsWorld {
           d.vel.x *= subDamping;
           d.vel.y *= subDamping;
         }
+      }
+    }
+
+    // Step cloth mass-spring simulation on goal nets
+    if (this.goalNets.length > 0) {
+      let ball: Disc | undefined;
+      for (let i = 0; i < discCount; i++) {
+        if (this.discs[i].isBall) {
+          ball = this.discs[i];
+          break;
+        }
+      }
+      for (let i = 0; i < this.goalNets.length; i++) {
+        this.goalNets[i].step(ball, dt);
       }
     }
   }

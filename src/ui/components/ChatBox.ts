@@ -22,6 +22,9 @@ export class ChatBox {
   public audioManager?: AudioManager;
   public onSendMessage?: (text: string) => void;
   public onHeightChange?: (height: number) => void;
+  public onExtrapolationChange?: (ms: number) => void;
+  public onExtrapolationChanged?: (ms: number) => void;
+  public getExtrapolationMs?: () => number;
 
   constructor() {
     this.container = document.getElementById('chat-messages') || document.getElementById('chatMessages');
@@ -59,8 +62,12 @@ export class ChatBox {
     const submitMessage = () => {
       if (!this.inputEl) return;
       const text = this.inputEl.value.trim();
-      if (text && this.onSendMessage) {
-        this.onSendMessage(text);
+      if (text) {
+        if (this.handleLocalCommand(text)) {
+          // Comando resuelto localmente
+        } else if (this.onSendMessage) {
+          this.onSendMessage(text);
+        }
       }
       this.inputEl.value = '';
       this.inputEl.blur(); // Desenfocar inmediatamente para devolver control de juego
@@ -306,5 +313,68 @@ export class ChatBox {
 
   public getHeight(): number {
     return this.preferredHeight;
+  }
+
+  public handleLocalCommand(text: string): boolean {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith('/')) return false;
+
+    const parts = trimmed.split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+
+    if (cmd === '/extrapolation') {
+      if (parts.length > 1) {
+        const val = parseFloat(parts[1]);
+        if (!isNaN(val) && val >= 0 && val <= 150) {
+          const rounded = Math.round(val);
+          if (typeof localStorage !== 'undefined') {
+            try {
+              localStorage.setItem('haxball_extrapolation', String(rounded));
+            } catch {}
+          }
+          this.onExtrapolationChange?.(rounded);
+          this.onExtrapolationChanged?.(rounded);
+          this.addSystemMessage(`Extrapolation set to ${rounded} msec`);
+        } else {
+          this.addSystemMessage('Invalid extrapolation value. Use 0 - 150 msec.');
+        }
+      } else {
+        const current = this.getCurrentExtrapolation();
+        this.addSystemMessage(`Current extrapolation is ${current} msec`);
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  public getCurrentExtrapolation(): number {
+    if (this.getExtrapolationMs) {
+      return this.getExtrapolationMs();
+    }
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const val = localStorage.getItem('haxball_extrapolation');
+        if (val !== null) {
+          const num = parseInt(val, 10);
+          if (!isNaN(num)) return Math.max(0, Math.min(150, num));
+        }
+      } catch {}
+    }
+    return 0;
+  }
+
+  public printControlsGuide(): void {
+    if (!this.container) return;
+    const row = document.createElement('div');
+    row.className = 'chat-msg chat-msg--system chat-msg--guide';
+    if (row.style) {
+      row.style.color = '#00E5FF';
+      row.style.fontWeight = '600';
+    }
+    row.textContent = 'Controles: WASD (Moverse) | Espacio (Patear) | Shift Izq (Turbo) | Flecha Arriba (Dash) | Flechas Izq/Der (Comba)';
+    this.container.appendChild(row);
+    this.container.scrollTop = this.container.scrollHeight;
+    this.animateRowEntry(row);
   }
 }

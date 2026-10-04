@@ -56,6 +56,10 @@ export class GameFSM {
     this.winningTeam = null;
   }
 
+  public startCountdown(): void {
+    this.startMatch();
+  }
+
   public stopMatch(): void {
     this.currentState = MatchPhase.STOPPED;
     this.stateTicksRemaining = 0;

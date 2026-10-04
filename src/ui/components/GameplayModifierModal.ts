@@ -5,14 +5,17 @@ import {
   sanitizeGameplayConfig
 } from '../../core/game/GameConfig';
 
+type NumericConfigKey = keyof typeof GAMEPLAY_CONFIG_LIMITS;
+
 export class GameplayModifierModal {
   private modalEl: HTMLElement | null = null;
   private currentConfig: GameplayConfig;
   private onChangeCallback: (config: GameplayConfig) => void;
   private isHostCheck: () => boolean;
   private isMatchInProgressCheck: () => boolean;
-  private valueDisplays: Map<keyof GameplayConfig, HTMLElement> = new Map();
-  private sliderInputs: Map<keyof GameplayConfig, HTMLInputElement> = new Map();
+  private valueDisplays: Map<NumericConfigKey, HTMLElement> = new Map();
+  private sliderInputs: Map<NumericConfigKey, HTMLInputElement> = new Map();
+  private toggleInputs: Map<'turboEnabled' | 'dashEnabled' | 'magnusEnabled', HTMLInputElement> = new Map();
 
   constructor(
     initialConfig: GameplayConfig,
@@ -36,11 +39,12 @@ export class GameplayModifierModal {
     overlay.style.zIndex = '9999';
 
     const card = document.createElement('div');
-    card.className = 'menu-modal-card custom-scrollbar max-h-[85vh] overflow-y-auto p-6 rounded-2xl w-full max-w-lg md:max-w-2xl';
+    card.className = 'menu-modal-card custom-scrollbar max-h-[65vh] overflow-y-auto p-4 md:p-5 rounded-2xl w-full max-w-lg md:max-w-2xl';
     card.style.maxWidth = '780px';
     card.style.width = '95vw';
-    card.style.maxHeight = '85vh';
+    card.style.maxHeight = '65vh';
     card.style.overflowY = 'auto';
+    card.style.marginBottom = '80px'; // Previene colisión vertical con el chat inferior
 
     // Header
     const header = document.createElement('div');
@@ -58,7 +62,59 @@ export class GameplayModifierModal {
     content.className = 'modifiers-grid-container grid grid-cols-1 md:grid-cols-2 gap-4';
     content.style.marginTop = '10px';
 
-    const keys = Object.keys(GAMEPLAY_CONFIG_LIMITS) as Array<keyof GameplayConfig>;
+    // Sección de Toggles para Mecánicas Avanzadas (Turbo, Dash, Magnus)
+    const togglesRow = document.createElement('div');
+    togglesRow.className = 'col-span-1 md:col-span-2 p-3 rounded-xl flex flex-wrap gap-4 items-center justify-around';
+    togglesRow.style.background = 'rgba(255, 255, 255, 0.04)';
+    togglesRow.style.border = '1px solid var(--aero-border, rgba(255, 255, 255, 0.1))';
+
+    const toggleDefs: Array<{ key: 'turboEnabled' | 'dashEnabled' | 'magnusEnabled'; label: string; icon: string }> = [
+      { key: 'turboEnabled', label: 'Habilitar Turbo', icon: '⚡' },
+      { key: 'dashEnabled', label: 'Habilitar Dash', icon: '💨' },
+      { key: 'magnusEnabled', label: 'Habilitar Magnus', icon: '🌀' }
+    ];
+
+    for (const tDef of toggleDefs) {
+      const toggleWrap = document.createElement('label');
+      toggleWrap.style.display = 'inline-flex';
+      toggleWrap.style.alignItems = 'center';
+      toggleWrap.style.gap = '8px';
+      toggleWrap.style.cursor = 'pointer';
+      toggleWrap.style.userSelect = 'none';
+
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.checked = this.currentConfig[tDef.key] !== false;
+      chk.style.accentColor = 'var(--aero-sky-500, #38bdf8)';
+      chk.style.width = '16px';
+      chk.style.height = '16px';
+      chk.style.cursor = 'pointer';
+
+      chk.addEventListener('change', () => {
+        if (!this.isHostCheck()) return;
+        if (this.isMatchInProgressCheck()) {
+          alert('Los modificadores de físicas solo se pueden ajustar antes de empezar una partida.');
+          this.updateUI();
+          return;
+        }
+        this.currentConfig[tDef.key] = chk.checked;
+        this.notifyChange();
+      });
+
+      this.toggleInputs.set(tDef.key, chk);
+
+      const span = document.createElement('span');
+      span.style.fontSize = '0.88rem';
+      span.style.fontWeight = '600';
+      span.textContent = `${tDef.icon} ${tDef.label}`;
+
+      toggleWrap.appendChild(chk);
+      toggleWrap.appendChild(span);
+      togglesRow.appendChild(toggleWrap);
+    }
+    content.appendChild(togglesRow);
+
+    const keys = Object.keys(GAMEPLAY_CONFIG_LIMITS) as NumericConfigKey[];
 
     for (const key of keys) {
       const meta = GAMEPLAY_CONFIG_LIMITS[key];
@@ -99,6 +155,13 @@ export class GameplayModifierModal {
       labelWrap.appendChild(labelText);
       labelWrap.appendChild(codeBadge);
 
+      const formatVal = (k: keyof GameplayConfig, v: any) => {
+        if (k === 'dashesPerFullBar') {
+          return `${v} (${(100 / (Number(v) || 4)).toFixed(0)}% coste)`;
+        }
+        return `${v}${meta.unit ? ' ' + meta.unit : ''}`;
+      };
+
       const valBadge = document.createElement('span');
       valBadge.className = 'modifier-val-badge';
       valBadge.style.fontWeight = '700';
@@ -106,7 +169,7 @@ export class GameplayModifierModal {
       valBadge.style.minWidth = '65px';
       valBadge.style.textAlign = 'right';
       valBadge.style.fontVariantNumeric = 'tabular-nums';
-      valBadge.textContent = `${val}${meta.unit ? ' ' + meta.unit : ''}`;
+      valBadge.textContent = formatVal(key, val);
       this.valueDisplays.set(key, valBadge);
 
       topRow.appendChild(labelWrap);
@@ -142,7 +205,11 @@ export class GameplayModifierModal {
         }
         const parsed = parseFloat(slider.value);
         this.currentConfig[key] = parsed;
-        valBadge.textContent = `${parsed}${meta.unit ? ' ' + meta.unit : ''}`;
+        if (key === 'dashesPerFullBar') {
+          valBadge.textContent = `${parsed} (${(100 / (parsed || 4)).toFixed(0)}% coste)`;
+        } else {
+          valBadge.textContent = `${parsed}${meta.unit ? ' ' + meta.unit : ''}`;
+        }
         this.notifyChange();
       });
 
@@ -248,8 +315,17 @@ export class GameplayModifierModal {
       const meta = GAMEPLAY_CONFIG_LIMITS[key];
       const badge = this.valueDisplays.get(key);
       if (badge) {
-        badge.textContent = `${val}${meta?.unit ? ' ' + meta.unit : ''}`;
+        if (key === 'dashesPerFullBar') {
+          badge.textContent = `${val} (${(100 / (Number(val) || 4)).toFixed(0)}% coste)`;
+        } else {
+          badge.textContent = `${val}${meta?.unit ? ' ' + meta.unit : ''}`;
+        }
       }
+    }
+
+    for (const [key, toggle] of this.toggleInputs.entries()) {
+      toggle.checked = Boolean(this.currentConfig[key]);
+      toggle.disabled = !canEdit;
     }
 
     const resetBtn = this.modalEl?.querySelector('#btn-reset-physics-defaults') as HTMLButtonElement | null;
@@ -263,6 +339,9 @@ export class GameplayModifierModal {
     const canEdit = isHost && !isMatchInProgress;
     for (const slider of this.sliderInputs.values()) {
       slider.disabled = !canEdit;
+    }
+    for (const toggle of this.toggleInputs.values()) {
+      toggle.disabled = !canEdit;
     }
     const resetBtn = this.modalEl?.querySelector('#btn-reset-physics-defaults') as HTMLButtonElement | null;
     if (resetBtn) {

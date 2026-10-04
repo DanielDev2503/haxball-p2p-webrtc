@@ -25,7 +25,7 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     expect(playerRed.isTurbo).toBe(false);
   });
 
-  it('executes Dash consuming exactly 50% stamina for calibrated 37.5 px displacement over 4 ticks (+100% power)', () => {
+  it('executes Dash consuming calibrated 25% stamina (4 dashes per bar) for calibrated 37.5 px displacement over 4 ticks (+100% power)', () => {
     // Keep ball far away to isolate player motion
     engine.ball.pos.set(1000, 1000);
     const disc = engine.playerDiscs.get('p1')!;
@@ -38,7 +38,7 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
 
     // Tick 1: trigger dash
     engine.tick(inputs);
-    expect(playerRed.stamina).toBe(50);
+    expect(playerRed.stamina).toBe(75);
     expect(playerRed.isDashing).toBe(true);
 
     // Release dash input and complete the 4-tick burst
@@ -52,10 +52,10 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     expect(disc.pos.x).toBeGreaterThanOrEqual(36.0);
     expect(disc.pos.x).toBeLessThanOrEqual(38.4);
 
-    // Attempt second dash with 50% stamina remaining
+    // Attempt second dash with 75% stamina remaining
     inputs.set('p1', INPUT_RIGHT | INPUT_DASH);
     engine.tick(inputs);
-    expect(playerRed.stamina).toBe(0);
+    expect(playerRed.stamina).toBe(50);
     expect(playerRed.isDashing).toBe(true);
 
     // Complete second dash (3 ticks)
@@ -65,7 +65,21 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     }
     expect(playerRed.isDashing).toBe(false);
 
-    // Third dash should fail due to 0% stamina
+    // Third dash (50% -> 25%)
+    inputs.set('p1', INPUT_RIGHT | INPUT_DASH);
+    engine.tick(inputs);
+    expect(playerRed.stamina).toBe(25);
+
+    // Fourth dash (25% -> 0%)
+    inputs.set('p1', 0);
+    for (let i = 0; i < 3; i++) engine.tick(inputs);
+    inputs.set('p1', INPUT_RIGHT | INPUT_DASH);
+    engine.tick(inputs);
+    expect(playerRed.stamina).toBe(0);
+
+    // Fifth dash should fail due to 0% stamina
+    inputs.set('p1', 0);
+    for (let i = 0; i < 3; i++) engine.tick(inputs);
     inputs.set('p1', INPUT_RIGHT | INPUT_DASH);
     engine.tick(inputs);
     expect(playerRed.stamina).toBe(0);
@@ -80,7 +94,7 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     // Hold Dash key continuously
     inputs.set('p1', INPUT_RIGHT | INPUT_DASH);
     engine.tick(inputs);
-    expect(playerRed.stamina).toBe(50);
+    expect(playerRed.stamina).toBe(75);
     expect(playerRed.isDashing).toBe(true);
 
     // Keep holding Dash key for 10 ticks: dash completes (4 ticks total) and does NOT auto-fire second dash
@@ -88,17 +102,17 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
       engine.tick(inputs);
     }
     expect(playerRed.isDashing).toBe(false);
-    expect(playerRed.stamina).toBe(50); // Still 50, second dash was NOT consumed while held!
+    expect(playerRed.stamina).toBe(75); // Still 75, second dash was NOT consumed while held!
 
     // Release dash key
     inputs.set('p1', INPUT_RIGHT);
     engine.tick(inputs);
-    expect(playerRed.stamina).toBe(50);
+    expect(playerRed.stamina).toBe(75);
 
     // Press dash key again (rising edge)
     inputs.set('p1', INPUT_RIGHT | INPUT_DASH);
     engine.tick(inputs);
-    expect(playerRed.stamina).toBe(0); // Second dash successfully fired on new rising edge
+    expect(playerRed.stamina).toBe(50); // Second dash successfully fired on new rising edge
     expect(playerRed.isDashing).toBe(true);
   });
 

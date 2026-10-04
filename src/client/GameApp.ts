@@ -68,6 +68,8 @@ export class GameApp {
   public kickedPeers: Set<string> = new Set();
   public currentRoomId: string = '';
   public currentHostId: string | null = null;
+  public targetRoomId: string | null = null;
+  public extrapolationMs: number = 0;
 
   // Replay buffer para reconciliación determinista de predicción local en No-Host
   public clientInputBuffer: Array<{
@@ -187,7 +189,24 @@ export class GameApp {
       timeLimitSeconds: this.roomConfig.timeLimit * 60
     }, this.gameplayConfig);
     this.setupEngineCallbacks(this.engine);
+
+    const savedExtrap = typeof localStorage !== 'undefined' ? localStorage.getItem('haxball_extrapolation') : null;
+    if (savedExtrap !== null) {
+      const parsedExtrap = parseInt(savedExtrap, 10);
+      if (!isNaN(parsedExtrap)) {
+        this.extrapolationMs = Math.max(0, Math.min(150, parsedExtrap));
+      }
+    }
+
     this.canvasRenderer = new CanvasRenderer(canvas, this.engine.stadium);
+    this.canvasRenderer.setExtrapolation(this.extrapolationMs);
+    this.canvasRenderer.setGoalNets(this.engine.world.goalNets);
+
+    this.chat.onExtrapolationChange = (ms) => {
+      this.extrapolationMs = ms;
+      this.canvasRenderer?.setExtrapolation(ms);
+    };
+    this.chat.getExtrapolationMs = () => this.extrapolationMs;
 
     // Sincronizar el área de seguridad de oclusión inferior del chat con la cámara
     this.chat.onHeightChange = (height) => {
@@ -259,6 +278,19 @@ export class GameApp {
       this.lobby.setNickname(savedNick);
     }
 
+    // Deep linking (?room=...)
+    if (typeof window !== 'undefined' && window.location) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room');
+      if (roomParam) {
+        this.targetRoomId = roomParam.trim();
+      }
+    }
+
+    if (savedNick) {
+      this.gatekeeper.setInputValue(savedNick);
+    }
+
     this.gatekeeper.onNicknameConfirmed = (nick: string) => {
       this.localPlayer.name = nick;
       this.localPlayer.avatar = nick.substring(0, 2).toUpperCase();
@@ -272,11 +304,22 @@ export class GameApp {
         this.updateTeamLists();
         this.syncPlayersWithClients();
       }
-      this.uiStateMachine.transitionTo('STATE_LOBBY');
+
+      if (this.targetRoomId) {
+        const target = this.targetRoomId;
+        this.targetRoomId = null;
+        this.joinRoom(target).catch((err) => {
+          console.error('[DeepLink] Failed to auto-join room:', err);
+          this.lobby.showToast('No se pudo conectar a la sala indicada por el enlace.', 'error');
+          this.uiStateMachine.transitionTo('STATE_LOBBY');
+        });
+      } else {
+        this.uiStateMachine.transitionTo('STATE_LOBBY');
+      }
     };
 
-    // UI State Machine
-    const initialUIState: UIState = savedNick ? 'STATE_LOBBY' : 'STATE_NICKNAME';
+    // UI State Machine: Paso 1 obligatorio exclusivo Nickname
+    const initialUIState: UIState = 'STATE_NICKNAME';
     this.uiStateMachine = new UIStateMachine(initialUIState, {
       onStateChange: (newState, prevState) => this.handleUIStateChange(newState, prevState)
     });
@@ -302,7 +345,7 @@ export class GameApp {
       this.enforceMenuState(matchState);
       this.canvasRenderer.resize();
       this.startRenderLoop();
-      this.chat.addSystemMessage('Controles: Flechas = Moverse | X = Patear | Shift = Turbo | Space = Dash | Z/C = Efecto Izq/Der');
+      this.chat.printControlsGuide();
     } else {
       this.inputManager.setEnabled(false);
       this.physicsTicker.stop();
@@ -625,6 +668,7 @@ export class GameApp {
       switch (msg.type) {
         case 'room_created': {
           this.currentRoomId = msg.roomId || '';
+          this.teamSelect.setRoomId(this.currentRoomId);
           if (msg.config) {
             this.roomConfig = { ...this.roomConfig, ...msg.config };
           }
@@ -645,6 +689,7 @@ export class GameApp {
           // Client received room_joined from signaling — but do NOT transition to game yet.
           // Wait for P2P connection + initial_state handshake from host.
           this.currentRoomId = msg.roomId || '';
+          this.teamSelect.setRoomId(this.currentRoomId);
           this.localPlayer.id = this.signaling.peerId;
           if (msg.config) {
             this.roomConfig = { ...this.roomConfig, ...msg.config };
@@ -1166,21 +1211,26 @@ export class GameApp {
             this.updateAdminControlsUI();
             this.broadcastMatchStateSync();
           }
-        } else if (msg.type === 'match_control' || msg.type === 'MATCH_CONTROL_REQUEST') {
+        } else if (msg.type === 'ADMIN_START_MATCH' || (msg.type === 'MATCH_CONTROL_REQUEST' && msg.action === 'START') || (msg.type === 'match_control' && msg.action === 'START')) {
           const requester = this.engine?.players.get(peerId);
           const isAuthorized = Boolean(requester?.isAdmin || requester?.isHost || peerId === this.currentHostId);
           if (isAuthorized && this.engine) {
-            if (msg.action === 'START') {
-              this.engine.startMatch();
-            } else if (msg.action === 'STOP') {
-              this.engine.stopMatch();
-              this.jitterBuffer.clear();
-              this.resetClientPrediction();
-              this.hud.update(0, 0, 0);
-              this.enforceMenuState(MatchPhase.STOPPED);
-              this.teamSelect.open(true);
-              this.broadcastMatchStoppedEvent();
-            }
+            this.engine.startMatch();
+            this.updateAdminControlsUI();
+            this.broadcastMatchStateSync();
+            this.broadcastSnapshot();
+          }
+        } else if (msg.type === 'ADMIN_STOP_MATCH' || (msg.type === 'MATCH_CONTROL_REQUEST' && msg.action === 'STOP') || (msg.type === 'match_control' && msg.action === 'STOP')) {
+          const requester = this.engine?.players.get(peerId);
+          const isAuthorized = Boolean(requester?.isAdmin || requester?.isHost || peerId === this.currentHostId);
+          if (isAuthorized && this.engine) {
+            this.engine.stopMatch();
+            this.jitterBuffer.clear();
+            this.resetClientPrediction();
+            this.hud.update(0, 0, 0);
+            this.enforceMenuState(MatchPhase.STOPPED);
+            this.teamSelect.open(true);
+            this.broadcastMatchStoppedEvent();
             this.updateAdminControlsUI();
             this.broadcastMatchStateSync();
             this.broadcastSnapshot();
@@ -1825,6 +1875,7 @@ export class GameApp {
     }
     if (this.canvasRenderer && this.engine) {
       this.canvasRenderer.setStadium(this.engine.stadium);
+      this.canvasRenderer.setGoalNets(this.engine.world.goalNets);
     }
     this.teamSelect.setStadium(stadiumId);
     if (this.selectStadiumSize) {
@@ -1908,8 +1959,7 @@ export class GameApp {
 
     if (this.mode === 'client' && this.hostPeer) {
       this.hostPeer.sendReliable(JSON.stringify({
-        type: 'MATCH_CONTROL_REQUEST',
-        action: 'START'
+        type: 'ADMIN_START_MATCH'
       }));
     } else if (this.engine) {
       this.engine.startMatch();
@@ -1925,8 +1975,7 @@ export class GameApp {
 
     if (this.mode === 'client' && this.hostPeer) {
       this.hostPeer.sendReliable(JSON.stringify({
-        type: 'MATCH_CONTROL_REQUEST',
-        action: 'STOP'
+        type: 'ADMIN_STOP_MATCH'
       }));
     } else if (this.mode === 'host' || this.mode === 'practice') {
       if (this.engine) {
@@ -1942,6 +1991,11 @@ export class GameApp {
         this.updateAdminControlsUI();
       }
     }
+  }
+
+  public async joinRoom(roomId: string, password?: string): Promise<void> {
+    const nick = this.localPlayer.name || NicknameGatekeeper.getSavedNickname() || 'Player';
+    return this.startAsClient(nick, roomId, password);
   }
 
   public broadcastMatchStoppedEvent(): void {
