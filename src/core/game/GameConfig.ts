@@ -1,14 +1,16 @@
 export interface GameplayConfig {
-  playerMaxSpeed: number;       // min: 1.5, max: 5.5, def: 2.8 (px/tick)
-  playerAcceleration: number;   // min: 0.04, max: 0.28, def: 0.11
-  kickStrength: number;         // min: 2.0, max: 9.0, def: 4.545
-  playerRadius: number;         // min: 10.0, max: 26.0, def: 15.0 (px)
-  ballRadius: number;           // min: 3.8, max: 12.0, def: 5.8 (px)
-  ballRestitution: number;      // min: 0.15, max: 0.92, def: 0.412 (bCoef)
-  boostMultiplier: number;      // min: 1.2, max: 3.0, def: 1.75
-  dashDistance: number;         // min: 40.0, max: 140.0, def: 75.0 (px)
-  staminaRechargeRate: number;  // min: 10.0, max: 70.0, def: 25.0 (%/s)
-  magnusCurveStrength: number;  // min: 0.08, max: 0.70, def: 0.32
+  playerMaxSpeed: number;       // min: 0.7, max: 11.2, def: 2.8 (px/tick, 0.25x - 4.0x)
+  playerAcceleration: number;   // min: 0.03, max: 0.55, def: 0.11 (0.25x - 5.0x)
+  kickStrength: number;         // min: 0.9, max: 18.2, def: 4.545 (0.2x - 4.0x)
+  playerRadius: number;         // min: 8.0, max: 30.0, def: 15.0 (px)
+  ballRadius: number;           // min: 3.0, max: 16.0, def: 5.8 (px)
+  ballRestitution: number;      // min: 0.0, max: 1.8, def: 0.5 (bCoef)
+  boostMultiplier: number;      // min: 1.1, max: 4.0, def: 2.0 (Turbo Multiplier)
+  dashDistance: number;         // min: 1.8, max: 56.5, def: 18.75 (px, 0.1x - 3.0x de 18.75px)
+  staminaRechargeRate: number;  // min: 5.0, max: 100.0, def: 25.0 (%/s)
+  magnusCurveStrength: number;  // min: 0.0, max: 5.0, def: 1.05 (0.0x - 5.0x)
+  ballMass: number;             // min: 0.1, max: 10.0, def: 1.0
+  playerMass: number;           // min: 0.1, max: 10.0, def: 2.0
 }
 
 export interface ConfigLimits {
@@ -23,89 +25,105 @@ export interface ConfigLimits {
 
 export const GAMEPLAY_CONFIG_LIMITS: Record<keyof GameplayConfig, ConfigLimits> = {
   playerMaxSpeed: {
-    min: 1.5,
-    max: 5.5,
+    min: 0.7,
+    max: 11.2,
     step: 0.1,
     default: 2.8,
     label: 'Velocidad Jugador',
     unit: 'px/tick',
-    description: '>5.5 causa jitter severo en paredes de esquinas.'
+    description: 'Escala 0.25x - 4.0x sobre velocidad base del jugador.'
   },
   playerAcceleration: {
-    min: 0.04,
-    max: 0.28,
+    min: 0.03,
+    max: 0.55,
     step: 0.01,
     default: 0.11,
     label: 'Aceleración Jugador',
-    description: '<0.04 genera respuesta lenta; >0.28 salto abrupto.'
+    description: 'Escala 0.25x - 5.0x sobre aceleración motriz base.'
   },
   kickStrength: {
-    min: 2.0,
-    max: 9.0,
+    min: 0.9,
+    max: 18.2,
     step: 0.05,
     default: 4.545,
     label: 'Fuerza de Patada',
-    description: '>9.0 exige substepping >= 12 para no atravesar la red.'
+    description: 'Escala 0.2x - 4.0x sobre el impulso cinemático de tiro.'
   },
   playerRadius: {
-    min: 10.0,
-    max: 26.0,
+    min: 8.0,
+    max: 30.0,
     step: 0.5,
     default: 15.0,
     label: 'Radio del Jugador',
     unit: 'px',
-    description: '>26 bloquea la portería; <10 salta postes.'
+    description: 'Radio físico de colisión y renderizado del disco jugador.'
   },
   ballRadius: {
-    min: 3.8,
-    max: 12.0,
+    min: 3.0,
+    max: 16.0,
     step: 0.2,
     default: 5.8,
     label: 'Radio del Balón',
     unit: 'px',
-    description: '<3.8 genera tunelización en postes (r=5.4).'
+    description: 'Radio geométrico del balón en colisiones con postes y jugadores.'
   },
   ballRestitution: {
-    min: 0.15,
-    max: 0.92,
+    min: 0.0,
+    max: 1.8,
     step: 0.01,
-    default: 0.412,
+    default: 0.5,
     label: 'Rebote Balón (bCoef)',
-    description: '>0.92 crea oscilaciones perpetuas en rebotes dobles.'
+    description: 'Coeficiente de restitución elástica (0.0 sin rebote, >1.0 superelástico).'
   },
   boostMultiplier: {
-    min: 1.2,
-    max: 3.0,
+    min: 1.1,
+    max: 4.0,
     step: 0.05,
-    default: 1.75,
-    label: 'Potencia del Boost',
-    description: 'Factor multiplicador sobre velocidad y aceleración.'
+    default: 2.0,
+    label: 'Multiplicador de Turbo',
+    description: 'Factor multiplicador de velocidad y aceleración en sprint (1.1x - 4.0x).'
   },
   dashDistance: {
-    min: 40.0,
-    max: 140.0,
-    step: 1.0,
-    default: 75.0,
+    min: 1.8,
+    max: 56.5,
+    step: 0.25,
+    default: 18.75,
     label: 'Distancia de Dash',
     unit: 'px',
-    description: '>140 requiere substepping extremo en el jugador.'
+    description: 'Desplazamiento total instantáneo en ráfaga (0.1x - 3.0x de 18.75 px).'
   },
   staminaRechargeRate: {
-    min: 10.0,
-    max: 70.0,
+    min: 5.0,
+    max: 100.0,
     step: 1.0,
     default: 25.0,
     label: 'Tasa Recarga Estamina',
     unit: '%/s',
-    description: 'Velocidad de recuperación en reposo de teclas.'
+    description: 'Tasa de recuperación pasiva en reposo de teclas.'
   },
   magnusCurveStrength: {
-    min: 0.08,
-    max: 0.70,
-    step: 0.01,
-    default: 0.35,
+    min: 0.0,
+    max: 5.0,
+    step: 0.05,
+    default: 1.05,
     label: 'Fuerza de Curva Magnus',
-    description: 'Curvatura de comba con teclas A / D.'
+    description: 'Intensidad de curvatura lateral durante la pulsación activa de Z / C.'
+  },
+  ballMass: {
+    min: 0.1,
+    max: 10.0,
+    step: 0.1,
+    default: 1.0,
+    label: 'Masa del Balón',
+    description: 'Masa inercial del balón en transferencias de momento y choques.'
+  },
+  playerMass: {
+    min: 0.1,
+    max: 10.0,
+    step: 0.1,
+    default: 2.0,
+    label: 'Masa del Jugador',
+    description: 'Masa inercial del jugador para colisiones de cuerpo y tackle.'
   }
 };
 
@@ -115,11 +133,13 @@ export const DEFAULT_GAMEPLAY_CONFIG: Readonly<GameplayConfig> = Object.freeze({
   kickStrength: 4.545,
   playerRadius: 15.0,
   ballRadius: 5.8,
-  ballRestitution: 0.412,
-  boostMultiplier: 1.75,
-  dashDistance: 75.0,
+  ballRestitution: 0.5,
+  boostMultiplier: 2.0,
+  dashDistance: 18.75,
   staminaRechargeRate: 25.0,
-  magnusCurveStrength: 0.35
+  magnusCurveStrength: 1.05,
+  ballMass: 1.0,
+  playerMass: 2.0
 });
 
 /**
@@ -134,7 +154,9 @@ export function sanitizeGameplayConfig(partial?: Partial<GameplayConfig> | null)
     const val = partial[key];
     if (typeof val === 'number' && Number.isFinite(val)) {
       const limits = GAMEPLAY_CONFIG_LIMITS[key];
-      result[key] = Math.max(limits.min, Math.min(limits.max, val));
+      if (limits) {
+        result[key] = Math.max(limits.min, Math.min(limits.max, val));
+      }
     }
   }
 

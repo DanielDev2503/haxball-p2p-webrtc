@@ -17,7 +17,7 @@ describe('Directed 2D Magnus Effect', () => {
     engine.fsm.currentState = MatchPhase.PLAYING;
   });
 
-  it('initiates curve and deviates ball laterally on kick with perpendicular curve input', () => {
+  it('applies aggressive lateral curvature while curve key is actively held, and extinguishes immediately when released', () => {
     const disc = engine.playerDiscs.get('p1')!;
     // Place player right behind the ball at (-25, 0) kicking forward (+X)
     disc.pos.set(-25, 0);
@@ -28,26 +28,40 @@ describe('Directed 2D Magnus Effect', () => {
     engine.ball.prevPos.set(0, 0);
     engine.ball.vel.set(0, 0);
 
-    // Apply left curve (ey = -1, perpendicular to motion along +X)
-    player.curveX = 0;
-    player.curveY = -1;
-
+    // Initial kick
     const inputs = new Map<string, number>();
     inputs.set('p1', INPUT_KICK);
     engine.tick(inputs);
 
-    expect(engine.ball.isCurving).toBe(true);
-    expect(engine.ball.curvePerp).toBeLessThan(0); // Left perpendicular normal has -ey or negative
+    expect(engine.ball.isCurvingAllowed).toBe(true);
 
-    // Run 20 physics ticks and observe lateral deviation
-    const initialVy = engine.ball.vel.y;
-    for (let i = 0; i < 20; i++) {
-      engine.tick(new Map());
+    // Apply active left curve key (INPUT_MAGNUS_LEFT / curveInput = 1) for 10 ticks
+    player.curveInput = 1;
+    for (let i = 0; i < 10; i++) {
+      engine.tick(inputs);
     }
 
-    // Ball should have developed lateral velocity and displacement
-    expect(engine.ball.vel.y).not.toBe(initialVy);
-    expect(Math.abs(engine.ball.pos.y)).toBeGreaterThan(1.0);
+    expect(engine.ball.isCurving).toBe(true);
+    expect(engine.ball.curvePerp).toBe(-1);
+    // Ball should have developed significant lateral velocity towards negative Y
+    expect(engine.ball.vel.y).toBeLessThan(-5.0);
+
+    // Release curve key: curveLeft = false, curveRight = false
+    player.curveInput = 0;
+    engine.tick(new Map());
+
+    expect(engine.ball.isCurving).toBe(false);
+    expect(engine.ball.curvePerp).toBe(0);
+
+    // Record lateral velocity and verify zero centripetal acceleration in subsequent ticks
+    // vel.y must only experience standard damping (0.99), with no lateral deviation or steering
+    const vyAfterRelease = engine.ball.vel.y;
+    engine.tick(new Map());
+
+    // In Euler physics: vy_next = vy * damping (0.99)
+    expect(engine.ball.vel.y).toBeCloseTo(vyAfterRelease * 0.99, 4);
+    expect(engine.ball.isCurving).toBe(false);
+    expect(engine.ball.curvePerp).toBe(0);
   });
 
   it('applies braking when curve input opposes velocity direction (c_parallel < 0)', () => {
@@ -66,7 +80,6 @@ describe('Directed 2D Magnus Effect', () => {
     inputs.set('p1', INPUT_KICK);
     engine.tick(inputs);
 
-    expect(engine.ball.isCurving).toBe(true);
     expect(engine.ball.curveBrake).toBeGreaterThan(0);
 
     // Record speed after kick

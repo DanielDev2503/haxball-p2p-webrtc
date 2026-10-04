@@ -101,24 +101,29 @@ export class Disc {
    * Si presiona Z (Izquierda): a_perp = u_izq * k_magnus
    * Si presiona C (Derecha): a_perp = u_der * k_magnus
    */
-  public applyMagnusCurve(curveLeft: boolean, curveRight: boolean, kMagnus: number = 0.35): void {
+  public applyMagnusCurve(curveLeft: boolean, curveRight: boolean, kMagnus: number = 1.05): void {
     if (!this.isBall || !this.isCurvingAllowed) return;
     const speed = Math.hypot(this.vel.x, this.vel.y);
     if (speed <= 0.05) return;
 
-    const ux = this.vel.x / speed;
-    const uy = this.vel.y / speed;
-
     if (curveLeft && !curveRight) {
+      const ux = this.vel.x / speed;
+      const uy = this.vel.y / speed;
       this.vel.x += uy * kMagnus;
       this.vel.y += -ux * kMagnus;
       this.isCurving = true;
       this.curvePerp = -1;
     } else if (curveRight && !curveLeft) {
+      const ux = this.vel.x / speed;
+      const uy = this.vel.y / speed;
       this.vel.x += -uy * kMagnus;
       this.vel.y += ux * kMagnus;
       this.isCurving = true;
       this.curvePerp = 1;
+    } else {
+      // Regla estricta: aceleración lateral nula inmediatamente al no presionar Z/C
+      this.isCurving = false;
+      this.curvePerp = 0;
     }
   }
 }

@@ -25,7 +25,7 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     expect(playerRed.isTurbo).toBe(false);
   });
 
-  it('executes Dash consuming exactly 50% stamina for 75 px displacement over 4 ticks', () => {
+  it('executes Dash consuming exactly 50% stamina for calibrated 18.75 px displacement over 4 ticks (reduced to 1/4)', () => {
     // Keep ball far away to isolate player motion
     engine.ball.pos.set(1000, 1000);
     const disc = engine.playerDiscs.get('p1')!;
@@ -48,9 +48,9 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     }
 
     expect(playerRed.isDashing).toBe(false);
-    // 4 ticks * 18.75 px/tick = 75 px displacement (subject to mid-step substepping damping ~73.8 px)
-    expect(disc.pos.x).toBeGreaterThanOrEqual(73);
-    expect(disc.pos.x).toBeLessThanOrEqual(76);
+    // 4 ticks * 4.6875 px/tick = 18.75 px displacement (subject to mid-step substepping damping ~18.56 px)
+    expect(disc.pos.x).toBeGreaterThanOrEqual(18.0);
+    expect(disc.pos.x).toBeLessThanOrEqual(19.2);
 
     // Attempt second dash with 50% stamina remaining
     inputs.set('p1', INPUT_RIGHT | INPUT_DASH);
@@ -102,7 +102,7 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     expect(playerRed.isDashing).toBe(true);
   });
 
-  it('drains Turbo at 40%/s clamped to max speed of 150 px/s (375 px over 2.5s)', () => {
+  it('drains Turbo at 40%/s reaching scaled max speed (x2.0 over base ~168 px/s -> ~336 px/s terminal velocity)', () => {
     engine.ball.pos.set(1000, 1000);
     const disc = engine.playerDiscs.get('p1')!;
     disc.pos.set(0, 0);
@@ -120,9 +120,9 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     // Stamina should drain ~40% (leaving ~60%)
     expect(playerRed.stamina).toBeCloseTo(60, 0);
     expect(playerRed.isTurbo).toBe(true);
-    // Speed clamped to turboMaxSpeed (x1.85 over base ~103.45 px/s terminal velocity), resulting in 103.45 * 1.85 * 0.96 = 183.73 post-damping
+    // Speed reaches turboMaxSpeed (x2.0 over base 168 px/s terminal velocity = 336 px/s), resulting in 336 * 0.96 = 322.56 post-damping
     const speed = Math.hypot(disc.vel.x, disc.vel.y);
-    expect(speed).toBeCloseTo(103.45 * 1.85 * 0.96, 0.5);
+    expect(speed).toBeCloseTo(336.0 * 0.96, 0.5);
 
     // Drain remaining stamina (another 90 ticks = 1.5s, total 150 ticks = 2.5s)
     for (let i = 0; i < 90; i++) {

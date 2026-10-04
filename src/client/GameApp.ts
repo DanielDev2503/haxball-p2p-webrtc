@@ -156,10 +156,7 @@ export class GameApp {
       this.gameplayConfig,
       (newConfig) => this.onGameplayConfigChanged(newConfig),
       () => Boolean(this.mode === 'host' || this.localPlayer.isHost),
-      () => {
-        const phase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
-        return phase !== MatchPhase.STOPPED;
-      }
+      () => false
     );
     this.keybindModal = new KeybindModal(this.inputManager);
 
@@ -1611,11 +1608,6 @@ export class GameApp {
   }
 
   private onGameplayConfigChanged(newConfig: GameplayConfig): void {
-    const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
-    if (currentPhase !== MatchPhase.STOPPED) {
-      this.chat.addSystemMessage('⚠️ Los modificadores de física solo se pueden ajustar antes de empezar una partida.');
-      return;
-    }
     this.gameplayConfig = newConfig;
     $gameConfig.set(newConfig);
     this.canvasRenderer?.handleResize();
@@ -2006,15 +1998,21 @@ export class GameApp {
 
     if (this.clientIsDashing) {
       this.clientDashTicks--;
-      const dashSpeed = 18.75 * 60;
+      const dashSpeed = (this.gameplayConfig.dashDistance / 4) * 60;
       this.predictedVel.x = this.clientDashDir.x * dashSpeed;
       this.predictedVel.y = this.clientDashDir.y * dashSpeed;
       if (this.clientDashTicks <= 0) {
         this.clientIsDashing = false;
       }
     } else {
-      // Predicción de Turbo en No-Host: aceleración x2.5 y velocidad tope x1.85
+      // Predicción de Turbo en No-Host: aceleración escalada y velocidad terminal
       const wantsTurbo = Boolean(isTurbo) || ((mask & INPUT_TURBO) !== 0);
+      const baseSpeed = (this.gameplayConfig.playerMaxSpeed / 2.8) * 168.0;
+      const kSpeedTurbo = this.gameplayConfig.boostMultiplier ?? 2.0;
+      const maxTurboSpeed = baseSpeed * kSpeedTurbo;
+      const kAccelTurbo = Math.max(2.8, kSpeedTurbo * 1.5);
+      const turboAccel = accel * kAccelTurbo;
+
       if (wantsTurbo && hasMoveInput && this.clientStamina > 0) {
         this.clientIsTurbo = true;
         this.clientStamina = Math.max(0, this.clientStamina - 40 * dt);
@@ -2022,12 +2020,9 @@ export class GameApp {
           this.clientIsTurbo = false;
         }
 
-        const turboAccel = accel * 2.5;
         this.predictedVel.x += uMoveX * turboAccel;
         this.predictedVel.y += uMoveY * turboAccel;
 
-        const baseSpeed = (this.gameplayConfig.playerMaxSpeed / 2.8) * 103.45;
-        const maxTurboSpeed = baseSpeed * 1.85;
         const curSpeed = Math.hypot(this.predictedVel.x, this.predictedVel.y);
         if (curSpeed > maxTurboSpeed) {
           this.predictedVel.x = (this.predictedVel.x / curSpeed) * maxTurboSpeed;
@@ -2036,8 +2031,16 @@ export class GameApp {
       } else {
         this.clientIsTurbo = false;
         if (hasMoveInput) {
-          this.predictedVel.x += uMoveX * accel;
-          this.predictedVel.y += uMoveY * accel;
+          const curSpeed = Math.hypot(this.predictedVel.x, this.predictedVel.y);
+          if (curSpeed < baseSpeed) {
+            this.predictedVel.x += uMoveX * accel;
+            this.predictedVel.y += uMoveY * accel;
+            const postSpeed = Math.hypot(this.predictedVel.x, this.predictedVel.y);
+            if (postSpeed > baseSpeed) {
+              this.predictedVel.x = (this.predictedVel.x / postSpeed) * baseSpeed;
+              this.predictedVel.y = (this.predictedVel.y / postSpeed) * baseSpeed;
+            }
+          }
         }
       }
     }

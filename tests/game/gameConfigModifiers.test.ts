@@ -43,16 +43,18 @@ describe('Gameplay Modifiers & Continuous A/D Magnus Physics Suite', () => {
 
     it('clamps values below safe minimums to min limits', () => {
       const clamped = sanitizeGameplayConfig({
-        playerMaxSpeed: 0.1, // min is 1.5
-        playerAcceleration: 0.001, // min is 0.04
-        kickStrength: 0.5, // min is 2.0
-        playerRadius: 5.0, // min is 10.0
-        ballRadius: 1.0, // min is 3.8
-        ballRestitution: 0.05, // min is 0.15
-        boostMultiplier: 0.5, // min is 1.2
-        dashDistance: 10.0, // min is 40.0
-        staminaRechargeRate: 2.0, // min is 10.0
-        magnusCurveStrength: 0.01 // min is 0.08
+        playerMaxSpeed: 0.1, // min is 0.7
+        playerAcceleration: 0.001, // min is 0.03
+        kickStrength: 0.2, // min is 0.9
+        playerRadius: 5.0, // min is 8.0
+        ballRadius: 1.0, // min is 3.0
+        ballRestitution: -0.5, // min is 0.0
+        boostMultiplier: 0.5, // min is 1.1
+        dashDistance: 0.5, // min is 1.8
+        staminaRechargeRate: 1.0, // min is 5.0
+        magnusCurveStrength: -1.0, // min is 0.0
+        ballMass: 0.01, // min is 0.1
+        playerMass: 0.01 // min is 0.1
       });
 
       expect(clamped.playerMaxSpeed).toBe(GAMEPLAY_CONFIG_LIMITS.playerMaxSpeed.min);
@@ -65,20 +67,24 @@ describe('Gameplay Modifiers & Continuous A/D Magnus Physics Suite', () => {
       expect(clamped.dashDistance).toBe(GAMEPLAY_CONFIG_LIMITS.dashDistance.min);
       expect(clamped.staminaRechargeRate).toBe(GAMEPLAY_CONFIG_LIMITS.staminaRechargeRate.min);
       expect(clamped.magnusCurveStrength).toBe(GAMEPLAY_CONFIG_LIMITS.magnusCurveStrength.min);
+      expect(clamped.ballMass).toBe(GAMEPLAY_CONFIG_LIMITS.ballMass.min);
+      expect(clamped.playerMass).toBe(GAMEPLAY_CONFIG_LIMITS.playerMass.min);
     });
 
     it('clamps values above safe maximums to max limits', () => {
       const clamped = sanitizeGameplayConfig({
-        playerMaxSpeed: 99.0, // max is 5.5
-        playerAcceleration: 5.0, // max is 0.28
-        kickStrength: 50.0, // max is 9.0
-        playerRadius: 100.0, // max is 26.0
-        ballRadius: 50.0, // max is 12.0
-        ballRestitution: 1.5, // max is 0.92
-        boostMultiplier: 10.0, // max is 3.0
-        dashDistance: 500.0, // max is 140.0
-        staminaRechargeRate: 200.0, // max is 70.0
-        magnusCurveStrength: 2.0 // max is 0.70
+        playerMaxSpeed: 99.0, // max is 11.2
+        playerAcceleration: 5.0, // max is 0.55
+        kickStrength: 50.0, // max is 18.2
+        playerRadius: 100.0, // max is 30.0
+        ballRadius: 50.0, // max is 16.0
+        ballRestitution: 5.0, // max is 1.8
+        boostMultiplier: 10.0, // max is 4.0
+        dashDistance: 500.0, // max is 56.5
+        staminaRechargeRate: 200.0, // max is 100.0
+        magnusCurveStrength: 20.0, // max is 5.0
+        ballMass: 50.0, // max is 10.0
+        playerMass: 50.0 // max is 10.0
       });
 
       expect(clamped.playerMaxSpeed).toBe(GAMEPLAY_CONFIG_LIMITS.playerMaxSpeed.max);
@@ -91,22 +97,56 @@ describe('Gameplay Modifiers & Continuous A/D Magnus Physics Suite', () => {
       expect(clamped.dashDistance).toBe(GAMEPLAY_CONFIG_LIMITS.dashDistance.max);
       expect(clamped.staminaRechargeRate).toBe(GAMEPLAY_CONFIG_LIMITS.staminaRechargeRate.max);
       expect(clamped.magnusCurveStrength).toBe(GAMEPLAY_CONFIG_LIMITS.magnusCurveStrength.max);
+      expect(clamped.ballMass).toBe(GAMEPLAY_CONFIG_LIMITS.ballMass.max);
+      expect(clamped.playerMass).toBe(GAMEPLAY_CONFIG_LIMITS.playerMass.max);
     });
 
     it('dynamically reconfigures GameEngine and PhysicsWorld parameters in real time', () => {
+      const playerDisc = engine.playerDiscs.get('p1')!;
+
       engine.setGameplayConfig({
+        playerMaxSpeed: 5.0,
+        playerAcceleration: 0.3,
+        kickStrength: 12.0,
+        playerRadius: 22.0,
         ballRadius: 8.5,
-        ballRestitution: 0.85
+        ballRestitution: 1.2,
+        boostMultiplier: 3.0,
+        dashDistance: 35.0,
+        staminaRechargeRate: 50.0,
+        magnusCurveStrength: 2.5,
+        ballMass: 3.5,
+        playerMass: 4.0
       });
 
+      // Verify GameEngine state
+      expect(engine.gameplayConfig.playerMaxSpeed).toBe(5.0);
+      expect(engine.gameplayConfig.playerAcceleration).toBe(0.3);
+      expect(engine.gameplayConfig.kickStrength).toBe(12.0);
+      expect(engine.gameplayConfig.playerRadius).toBe(22.0);
       expect(engine.gameplayConfig.ballRadius).toBe(8.5);
+      expect(engine.gameplayConfig.ballRestitution).toBe(1.2);
+      expect(engine.gameplayConfig.boostMultiplier).toBe(3.0);
+      expect(engine.gameplayConfig.dashDistance).toBe(35.0);
+      expect(engine.gameplayConfig.staminaRechargeRate).toBe(50.0);
+      expect(engine.gameplayConfig.magnusCurveStrength).toBe(2.5);
+      expect(engine.gameplayConfig.ballMass).toBe(3.5);
+      expect(engine.gameplayConfig.playerMass).toBe(4.0);
+
+      // Verify live physical entities in PhysicsWorld
       expect(engine.ball.radius).toBe(8.5);
-      expect(engine.ball.bounciness).toBe(0.85);
+      expect(engine.ball.bounciness).toBe(1.2);
+      expect(engine.ball.mass).toBe(3.5);
+      expect(engine.ball.invMass).toBeCloseTo(1 / 3.5, 5);
+
+      expect(playerDisc.radius).toBe(22.0);
+      expect(playerDisc.mass).toBe(4.0);
+      expect(playerDisc.invMass).toBeCloseTo(1 / 4.0, 5);
     });
   });
 
   describe('Continuous A/D Relative Magnus Curve', () => {
-    it('curves the ball laterally to the left when kicker presses Key A (curveInput = 1)', () => {
+    it('curves the ball laterally to the left when kicker presses Key A (curveInput = 1) and stops curving when released', () => {
       const disc = engine.playerDiscs.get('p1')!;
       // Player kicks ball forwards (+X)
       disc.pos.set(-25, 0);
@@ -137,9 +177,16 @@ describe('Gameplay Modifiers & Continuous A/D Magnus Physics Suite', () => {
       // Ball curves along u_izq = (0, -1) in screen coordinates -> vel.y develops towards top (negative)
       expect(engine.ball.vel.y).toBeLessThan(initialVy);
       expect(engine.ball.pos.y).toBeLessThan(-1.0);
+      expect(engine.ball.isCurving).toBe(true);
+
+      // Release Key A: centripetal acceleration ceases immediately
+      player.curveInput = 0;
+      engine.tick(new Map());
+      expect(engine.ball.isCurving).toBe(false);
+      expect(engine.ball.curvePerp).toBe(0);
     });
 
-    it('curves the ball laterally to the right when kicker presses Key D (curveInput = 2)', () => {
+    it('curves the ball laterally to the right when kicker presses Key D (curveInput = 2) and stops curving when released', () => {
       const disc = engine.playerDiscs.get('p1')!;
       // Player kicks ball forwards (+X)
       disc.pos.set(-25, 0);
@@ -168,6 +215,13 @@ describe('Gameplay Modifiers & Continuous A/D Magnus Physics Suite', () => {
       // Ball curves along u_der = (0, 1) in screen coordinates -> vel.y develops towards bottom (positive)
       expect(engine.ball.vel.y).toBeGreaterThan(initialVy);
       expect(engine.ball.pos.y).toBeGreaterThan(1.0);
+      expect(engine.ball.isCurving).toBe(true);
+
+      // Release Key D
+      player.curveInput = 0;
+      engine.tick(new Map());
+      expect(engine.ball.isCurving).toBe(false);
+      expect(engine.ball.curvePerp).toBe(0);
     });
 
     it('extinguishes isCurvingAllowed as soon as ball collides with another entity', () => {

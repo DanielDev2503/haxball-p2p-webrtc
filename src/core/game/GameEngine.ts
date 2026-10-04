@@ -81,7 +81,7 @@ export class GameEngine {
       x: 0,
       y: 0,
       radius: this.gameplayConfig.ballRadius,
-      mass: 1,
+      mass: this.gameplayConfig.ballMass ?? 1,
       damping: 0.99,
       bounciness: this.gameplayConfig.ballRestitution,
       cGroup: COLLISION_GROUP_BALL,
@@ -151,11 +151,19 @@ export class GameEngine {
   }
 
   public setGameplayConfig(newConfig: Partial<GameplayConfig>): void {
-    this.gameplayConfig = sanitizeGameplayConfig(newConfig);
-    this.ball.radius = this.gameplayConfig.ballRadius;
-    this.ball.bounciness = this.gameplayConfig.ballRestitution;
+    this.gameplayConfig = sanitizeGameplayConfig({ ...this.gameplayConfig, ...newConfig });
+    if (this.ball) {
+      this.ball.radius = this.gameplayConfig.ballRadius;
+      this.ball.bounciness = this.gameplayConfig.ballRestitution;
+      if (this.gameplayConfig.ballMass !== undefined) {
+        this.ball.setMass(this.gameplayConfig.ballMass);
+      }
+    }
     for (const disc of this.playerDiscs.values()) {
       disc.radius = this.gameplayConfig.playerRadius;
+      if (this.gameplayConfig.playerMass !== undefined) {
+        disc.setMass(this.gameplayConfig.playerMass);
+      }
     }
   }
 
@@ -221,7 +229,7 @@ export class GameEngine {
       x: spawnX ?? defaultX,
       y: spawnY ?? 0,
       radius: this.gameplayConfig.playerRadius,
-      mass: 2,
+      mass: this.gameplayConfig.playerMass ?? 2,
       damping: 0.96,
       bounciness: 0.5,
       cGroup: isRed ? COLLISION_GROUP_RED : COLLISION_GROUP_BLUE,
@@ -459,8 +467,8 @@ export class GameEngine {
       const wasDashing = player.isDashing;
       if (player.isDashing) {
         player.dashTicksRemaining--;
-        // v_dash = d_dash * 18.75 px/tick * 60 ticks/s = 1125 px/s
-        const dashSpeed = 18.75 * 60;
+        // v_dash = (dashDistance / 4 ticks) * 60 ticks/s (impulso de 18.75 px en 4 ticks a velocidad 281.25 px/s)
+        const dashSpeed = (this.gameplayConfig.dashDistance / 4) * 60;
         disc.vel.x = player.dashDirX * dashSpeed;
         disc.vel.y = player.dashDirY * dashSpeed;
 
@@ -468,7 +476,13 @@ export class GameEngine {
           player.isDashing = false;
         }
       } else {
-        // Turbo Mechanic: aceleración x2.5 y velocidad máxima x1.85 sobre base
+        // Cinemática de Velocidad Base y Turbo Escalado
+        const baseMaxSpeed = (this.gameplayConfig.playerMaxSpeed / 2.8) * 168.0;
+        const kSpeedTurbo = this.gameplayConfig.boostMultiplier ?? 2.0;
+        const turboMaxSpeed = baseMaxSpeed * kSpeedTurbo;
+        const kAccelTurbo = Math.max(2.8, kSpeedTurbo * 1.5);
+        const turboAccel = accel * kAccelTurbo;
+
         const wantsTurbo = ((mask & INPUT_TURBO) !== 0) || player.isTurbo;
         if (wantsTurbo && hasMoveInput && player.stamina > 0) {
           player.isTurbo = true;
@@ -476,11 +490,6 @@ export class GameEngine {
           if (player.stamina <= 0) {
             player.isTurbo = false;
           }
-
-          // Aceleración x2.5 y velocidad tope x1.85
-          const turboAccel = accel * 2.5;
-          const baseSpeed = (this.gameplayConfig.playerMaxSpeed / 2.8) * 103.45;
-          const turboMaxSpeed = baseSpeed * 1.85;
 
           disc.vel.x += uMoveX * turboAccel;
           disc.vel.y += uMoveY * turboAccel;
@@ -493,8 +502,16 @@ export class GameEngine {
         } else {
           player.isTurbo = false;
           if (hasMoveInput) {
-            disc.vel.x += uMoveX * accel;
-            disc.vel.y += uMoveY * accel;
+            const curSpeed = Math.hypot(disc.vel.x, disc.vel.y);
+            if (curSpeed < baseMaxSpeed) {
+              disc.vel.x += uMoveX * accel;
+              disc.vel.y += uMoveY * accel;
+              const postSpeed = Math.hypot(disc.vel.x, disc.vel.y);
+              if (postSpeed > baseMaxSpeed) {
+                disc.vel.x = (disc.vel.x / postSpeed) * baseMaxSpeed;
+                disc.vel.y = (disc.vel.y / postSpeed) * baseMaxSpeed;
+              }
+            }
           }
         }
       }
@@ -546,13 +563,15 @@ export class GameEngine {
             this.ball.kickerHeading = new Vec2(diffX / dLen, diffY / dLen);
           }
           this.ball.isCurvingAllowed = true;
-          this.ball.isCurving = true;
+          this.ball.isCurving = false;
+          this.ball.curvePerp = 0;
+          this.ball.curveBrake = 0;
 
           // Iniciación o compatibilidad de Efecto Magnus con inputs inmediatos
           let ex = player.curveX;
           let ey = player.curveY;
-          if (player.curveInput === 1) ex = -1;
-          else if (player.curveInput === 2) ex = 1;
+          if (player.curveInput === 1 || Boolean(player.inputMask & INPUT_MAGNUS_LEFT)) ex = -1;
+          else if (player.curveInput === 2 || Boolean(player.inputMask & INPUT_MAGNUS_RIGHT)) ex = 1;
 
           if (ex !== 0 || ey !== 0) {
             const eLen = Math.hypot(ex, ey);
@@ -563,13 +582,7 @@ export class GameEngine {
             if (bSpeed > 1e-6) {
               const ux = this.ball.vel.x / bSpeed;
               const uy = this.ball.vel.y / bSpeed;
-              const uPerpX = -uy;
-              const uPerpY = ux;
-
               const cParallel = ex * ux + ey * uy;
-              const cPerp = ex * uPerpX + ey * uPerpY;
-
-              this.ball.curvePerp = cPerp;
               this.ball.curveBrake = cParallel < 0 ? Math.abs(cParallel) : 0;
             }
           }
@@ -589,18 +602,23 @@ export class GameEngine {
     }
 
     // Integración continua del Efecto Magnus Dirigido (Z / C post-disparo)
+    // Regla estricta: se aplica única y exclusivamente con tecla presionada activa
     if (this.ball.isCurvingAllowed && this.ball.lastKickerId) {
       const kicker = this.players.get(this.ball.lastKickerId);
       const bSpeed = Math.hypot(this.ball.vel.x, this.ball.vel.y);
       if (bSpeed > 0.05 && kicker) {
-        const kMagnus = this.gameplayConfig.magnusCurveStrength ?? 0.35;
+        const kMagnus = this.gameplayConfig.magnusCurveStrength ?? 1.05;
         const hasZ = kicker.curveInput === 1 || Boolean(kicker.inputMask & INPUT_MAGNUS_LEFT) || (kicker.curveX === -1);
         const hasC = kicker.curveInput === 2 || Boolean(kicker.inputMask & INPUT_MAGNUS_RIGHT) || (kicker.curveX === 1);
 
-        if (hasZ || hasC) {
-          this.ball.applyMagnusCurve(hasZ, hasC, kMagnus);
-        } else if (this.ball.curvePerp !== 0) {
-          this.ball.applyMagnusCurve(this.ball.curvePerp < 0, this.ball.curvePerp > 0, kMagnus);
+        if (hasZ && !hasC) {
+          this.ball.applyMagnusCurve(true, false, kMagnus);
+        } else if (hasC && !hasZ) {
+          this.ball.applyMagnusCurve(false, true, kMagnus);
+        } else {
+          // Soltar tecla => aceleración lateral exactamente cero
+          this.ball.isCurving = false;
+          this.ball.curvePerp = 0;
         }
 
         if (this.ball.curveBrake > 0) {
@@ -614,32 +632,7 @@ export class GameEngine {
         this.ball.resetCurve();
       }
     } else if (this.ball.isCurving) {
-      // Fallback para pruebas que configuran isCurving sin kickerHeading
-      const bvx = this.ball.vel.x;
-      const bvy = this.ball.vel.y;
-      const bSpeed = Math.hypot(bvx, bvy);
-      if (bSpeed > 0.1) {
-        const ux = bvx / bSpeed;
-        const uy = bvy / bSpeed;
-        const uPerpX = -uy;
-        const uPerpY = ux;
-
-        const kMagnus = this.gameplayConfig.magnusCurveStrength;
-        const kBrake = 1.8;
-
-        const aCurveMag = kMagnus * this.ball.curvePerp * bSpeed;
-        const aCurveX = aCurveMag * uPerpX;
-        const aCurveY = aCurveMag * uPerpY;
-
-        const aBrakeMag = kBrake * this.ball.curveBrake * bSpeed;
-        const aBrakeX = -aBrakeMag * ux;
-        const aBrakeY = -aBrakeMag * uy;
-
-        this.ball.vel.x += (aCurveX + aBrakeX) * dt;
-        this.ball.vel.y += (aCurveY + aBrakeY) * dt;
-      } else {
-        this.ball.resetCurve();
-      }
+      this.ball.resetCurve();
     }
 
     // Step physics simulation (activa en PLAYING y GOAL_CELEBRATION)
