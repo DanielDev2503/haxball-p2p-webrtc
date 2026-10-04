@@ -9,9 +9,15 @@ function createDummySnapshot(tick: number): GameSnapshot {
   return {
     tick,
     matchPhase: MatchPhase.PLAYING,
+    matchState: MatchPhase.PLAYING,
+    timerSeconds: 120,
     matchTimerSeconds: 120,
+    subStateTimer: 0,
     countdownSeconds: 0,
+    targetTeam: 0,
+    scoreRed: 1,
     redScore: 1,
+    scoreBlue: 0,
     blueScore: 0,
     discs: [
       {
@@ -22,9 +28,6 @@ function createDummySnapshot(tick: number): GameSnapshot {
         vx: 1.5,
         vy: -0.5,
         radius: 10,
-        invMass: 1,
-        damping: 0.99,
-        bounciness: 0.5,
         avatar: '',
         kicking: false
       }
@@ -101,9 +104,10 @@ describe('Adaptive JitterBuffer & Zero-GC Replication Netcode', () => {
     expect(encodedInput.byteLength).toBe(InputPacket.BYTE_LENGTH);
 
     const decoded = InputPacket.decode(encodedInput);
-    expect(decoded.sequence).toBe(42);
-    expect(decoded.isTurbo).toBe(true);
-    expect(decoded.triggerDash).toBe(true);
+    expect(decoded).not.toBeNull();
+    expect(decoded?.sequence).toBe(42);
+    expect(decoded?.isTurbo).toBe(true);
+    expect(decoded?.triggerDash).toBe(true);
 
     // Test SnapshotPacket with preallocated buffer
     const snapshot = createDummySnapshot(100);
@@ -115,6 +119,7 @@ describe('Adaptive JitterBuffer & Zero-GC Replication Netcode', () => {
     expect(encodedSnap.byteLength).toBe(totalSnapLength);
 
     const decodedSnap = SnapshotPacket.decode(encodedSnap);
+    expect(decodedSnap).not.toBeNull();
     expect(decodedSnap?.tick).toBe(100);
     expect(decodedSnap?.discs.length).toBe(1);
     expect(decodedSnap?.discs[0].id).toBe(0);
