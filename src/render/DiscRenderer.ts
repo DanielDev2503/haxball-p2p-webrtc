@@ -49,6 +49,7 @@ export class DiscRenderer {
   private scratchCoreRightY: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
 
   public extrapolationMs: number = 0;
+  public stadiumBounds: { halfWidth: number; halfHeight: number; goalDepth: number; goalHalfHeight: number } | null = null;
 
   private scratchDisc: DiscSnapshot = {
     id: 0,
@@ -69,13 +70,55 @@ export class DiscRenderer {
     this.extrapolationMs = Math.max(0, Math.min(150, ms));
   }
 
-  private getRenderDisc(disc: DiscSnapshot, isRemote: boolean): DiscSnapshot {
+  public setStadiumBounds(bounds: { halfWidth: number; halfHeight: number; goalDepth: number; goalHalfHeight: number } | null): void {
+    this.stadiumBounds = bounds;
+  }
+
+  private isBallControlledLocally(ball: DiscSnapshot, discs: DiscSnapshot[], localDiscId?: number | null): boolean {
+    if (localDiscId === null || localDiscId === undefined) return false;
+    for (let i = 0; i < discs.length; i++) {
+      const d = discs[i];
+      if (d.id === localDiscId && d.team !== 0) {
+        const dx = ball.x - d.x;
+        const dy = ball.y - d.y;
+        const touchDist = (ball.radius || 5.8) + (d.radius || 15) + 4;
+        if ((dx * dx + dy * dy) <= touchDist * touchDist && d.kicking) {
+          return true;
+        }
+        break;
+      }
+    }
+    return false;
+  }
+
+  public getRenderDisc(disc: DiscSnapshot, isRemote: boolean): DiscSnapshot {
     if (!isRemote || this.extrapolationMs <= 0) return disc;
     const dt = this.extrapolationMs / 1000;
     const s = this.scratchDisc;
     s.id = disc.id;
-    s.x = disc.x + (disc.vx || 0) * dt;
-    s.y = disc.y + (disc.vy || 0) * dt;
+    let px = disc.x + (disc.vx || 0) * dt;
+    let py = disc.y + (disc.vy || 0) * dt;
+
+    if (this.stadiumBounds) {
+      const hw = this.stadiumBounds.halfWidth;
+      const hh = this.stadiumBounds.halfHeight;
+      const gh = this.stadiumBounds.goalHalfHeight;
+      const gd = this.stadiumBounds.goalDepth;
+      const r = disc.radius || (disc.team === 0 ? 5.8 : 15);
+
+      // Clamp vertical limits
+      py = Math.max(-hh + r, Math.min(hh - r, py));
+
+      // Clamp horizontal limits: if in goal mouth, can enter up to goalDepth
+      if (Math.abs(py) <= gh - r) {
+        px = Math.max(-(hw + gd - r), Math.min(hw + gd - r, px));
+      } else {
+        px = Math.max(-hw + r, Math.min(hw - r, px));
+      }
+    }
+
+    s.x = px;
+    s.y = py;
     s.vx = disc.vx;
     s.vy = disc.vy;
     s.radius = disc.radius;
@@ -163,7 +206,8 @@ export class DiscRenderer {
     // 6. Balón físico, textura y su resplandor/sombra (RENDERIZADO POR ENCIMA DE LOS DISCOS Y AROS)
     for (const disc of discs) {
       if (disc.team === 0) {
-        const renderD = this.getRenderDisc(disc, true);
+        const isLocallyControlled = this.isBallControlledLocally(disc, discs, localDiscId);
+        const renderD = this.getRenderDisc(disc, !isLocallyControlled);
         this.renderBall(ctx, renderD);
       }
     }

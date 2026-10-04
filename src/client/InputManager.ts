@@ -31,7 +31,7 @@ export const DEFAULT_KEYBINDS: KeyBinds = {
   left: ['KeyA'],
   right: ['KeyD'],
   kick: ['Space'],
-  turbo: ['ShiftLeft'],
+  turbo: ['ShiftLeft', 'ShiftRight'],
   dash: ['ArrowUp'],
   curveLeft: ['ArrowLeft'],
   curveRight: ['ArrowRight'],

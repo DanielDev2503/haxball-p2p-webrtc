@@ -193,8 +193,7 @@ export class GameEngine {
       backX: -(hw + gd),
       topY: -gh,
       bottomY: gh,
-      cols: 6,
-      rows: 5
+      nodeCount: 11
     });
 
     this.rightGoalNet = new GoalNet({
@@ -203,8 +202,7 @@ export class GameEngine {
       backX: hw + gd,
       topY: -gh,
       bottomY: gh,
-      cols: 6,
-      rows: 5
+      nodeCount: 11
     });
 
     this.physicsWorld.goalNets = [this.leftGoalNet, this.rightGoalNet];

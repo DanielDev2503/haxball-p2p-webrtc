@@ -43,6 +43,12 @@ export class CanvasRenderer {
     this.stadium = stadium;
     this.pitchRenderer = new PitchRenderer();
     this.discRenderer = new DiscRenderer();
+    this.discRenderer.setStadiumBounds({
+      halfWidth: this.stadium.halfWidth,
+      halfHeight: this.stadium.halfHeight,
+      goalDepth: this.stadium.goalDepth,
+      goalHalfHeight: this.stadium.goalHalfHeight
+    });
     this.camera = new Camera();
     this.offscreenRenderer = new OffscreenIndicatorRenderer();
 
@@ -69,25 +75,26 @@ export class CanvasRenderer {
   };
 
   private initLocalGoalNets(): void {
-    const mouthX = this.stadium.width;
+    const hw = this.stadium.halfWidth;
+    const gh = this.stadium.goalHalfHeight;
     const depth = this.stadium.goalDepth || 35;
-    const topY = -this.stadium.goalSize / 2;
-    const bottomY = this.stadium.goalSize / 2;
 
     this.localGoalNets = [
       new GoalNet({
         side: 'left',
-        mouthX: -mouthX,
-        backX: -mouthX - depth,
-        topY,
-        bottomY
+        mouthX: -hw,
+        backX: -(hw + depth),
+        topY: -gh,
+        bottomY: gh,
+        nodeCount: 11
       }),
       new GoalNet({
         side: 'right',
-        mouthX: mouthX,
-        backX: mouthX + depth,
-        topY,
-        bottomY
+        mouthX: hw,
+        backX: hw + depth,
+        topY: -gh,
+        bottomY: gh,
+        nodeCount: 11
       })
     ];
   }
@@ -131,6 +138,12 @@ export class CanvasRenderer {
 
   public setStadium(stadium: Stadium): void {
     this.stadium = stadium;
+    this.discRenderer.setStadiumBounds({
+      halfWidth: stadium.halfWidth,
+      halfHeight: stadium.halfHeight,
+      goalDepth: stadium.goalDepth,
+      goalHalfHeight: stadium.goalHalfHeight
+    });
     this.initLocalGoalNets();
     this.handleResize();
   }

@@ -16,6 +16,7 @@ export class ScoreboardHUD {
   private matchClockContainerEl: HTMLElement | null = null;
   private clockSlot: HTMLElement | null = null;
   private wifiSlot: HTMLElement | null = null;
+  public onMenuToggle?: () => void;
 
   constructor() {
     this.capsuleEl = (document.querySelector('.scoreboard-capsule') || document.querySelector('.scoreboard')) as HTMLElement | null;
@@ -55,6 +56,16 @@ export class ScoreboardHUD {
 
     // Inicializar tokens y estilos base de ScoreboardHUD
     this.applyTheme($theme.get());
+
+    // Botón de alternancia de menú de sala (#btn-menu / #menu-toggle-btn) para todos los jugadores
+    const menuBtn = document.getElementById('btn-menu') || document.getElementById('menu-toggle-btn');
+    if (menuBtn) {
+      menuBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.onMenuToggle?.();
+      });
+    }
 
     // Botón Switch de Modo Oscuro / Claro en el HUD superior
     const themeBtn = document.getElementById('theme-toggle-btn');

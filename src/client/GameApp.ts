@@ -518,12 +518,11 @@ export class GameApp {
     });
 
     // In-game menu overlay toggle (Button & Escape/Menu key)
-    const menuToggleBtn = document.getElementById('menu-toggle-btn') || document.getElementById('btn-menu');
-    const btnMenu = document.getElementById('btn-menu');
-
     const toggleMenu = () => {
       if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') return;
-      if (this.getAuthoritativeMatchState() === MatchPhase.STOPPED || this.teamSelect.getMatchState() === MatchPhase.STOPPED) {
+      const currentPhase = this.getAuthoritativeMatchState();
+      // Excepción: Durante STOPPED (partido no iniciado), el menú permanece abierto para todos y Escape no lo cierra
+      if (currentPhase === MatchPhase.STOPPED) {
         return;
       }
       this.teamSelect.toggle();
@@ -531,8 +530,9 @@ export class GameApp {
       this.updateTeamLists();
     };
 
+    const menuToggleBtn = document.getElementById('btn-menu') || document.getElementById('menu-toggle-btn');
     if (menuToggleBtn) menuToggleBtn.addEventListener('click', toggleMenu);
-    if (btnMenu && btnMenu !== menuToggleBtn) btnMenu.addEventListener('click', toggleMenu);
+    this.hud.onMenuToggle = toggleMenu;
 
     window.addEventListener('keydown', (e) => {
       // Si no estamos en STATE_IN_GAME, no procesar atajos de partido
@@ -558,7 +558,7 @@ export class GameApp {
         }
 
         // Si el partido está en STOPPED, el menú está forzado y no se debe alternar ni mutar
-        if (this.getAuthoritativeMatchState() === MatchPhase.STOPPED || this.teamSelect.getMatchState() === MatchPhase.STOPPED) {
+        if (this.getAuthoritativeMatchState() === MatchPhase.STOPPED) {
           e.preventDefault();
           return;
         }
@@ -1297,7 +1297,13 @@ export class GameApp {
         const snap = SnapshotPacket.decode(data);
         if (snap) {
           if (snap.matchPhase !== undefined) {
+            const prevPhase = this.currentMatchState;
             this.currentMatchState = snap.matchPhase;
+            if (prevPhase !== snap.matchPhase || this.teamSelect.getMatchState() !== snap.matchPhase) {
+              const isLocalHost = Boolean(this.mode === 'host' || this.localPlayer.isHost);
+              this.teamSelect.updateMatchState(snap.matchPhase, undefined, this.localPlayer.isAdmin, isLocalHost);
+              this.updateAdminControlsUI();
+            }
           }
           if (snap.matchPhase === MatchPhase.STOPPED) {
             this.resetClientPrediction();
@@ -2303,7 +2309,12 @@ export class GameApp {
    */
   private reconcileClientPrediction(snap: GameSnapshot): void {
     if (snap.matchPhase !== undefined) {
-      this.currentMatchState = snap.matchPhase;
+      if (this.currentMatchState !== snap.matchPhase || this.teamSelect.getMatchState() !== snap.matchPhase) {
+        this.currentMatchState = snap.matchPhase;
+        const isLocalHost = Boolean(this.mode === 'host' || this.localPlayer.isHost);
+        this.teamSelect.updateMatchState(snap.matchPhase, undefined, this.localPlayer.isAdmin, isLocalHost);
+        this.updateAdminControlsUI();
+      }
     }
     if (snap.kickoffActive !== undefined) {
       this.currentKickoffActive = snap.kickoffActive;

@@ -11,7 +11,7 @@ export const ACTIVE_KEYBIND_ROWS: KeybindRowConfig[] = [
   { key: 'left', label: 'Izquierda (A)' },
   { key: 'right', label: 'Derecha (D)' },
   { key: 'kick', label: 'Patear / Chutar (Espacio)' },
-  { key: 'turbo', label: 'Turbo / Sprint (Shift Izq)' },
+  { key: 'turbo', label: 'Turbo / Sprint (Shift)' },
   { key: 'dash', label: 'Dash / Impulso Rápido (Flecha Arriba)' },
   { key: 'curveLeft', label: 'Comba / Curva Izquierda (Flecha Izq)' },
   { key: 'curveRight', label: 'Comba / Curva Derecha (Flecha Der)' }

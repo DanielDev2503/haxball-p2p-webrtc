@@ -372,7 +372,7 @@ export class ChatBox {
       row.style.color = '#00E5FF';
       row.style.fontWeight = '600';
     }
-    row.textContent = 'Controles: WASD (Moverse) | Espacio (Patear) | Shift Izq (Turbo) | Flecha Arriba (Dash) | Flechas Izq/Der (Comba)';
+    row.textContent = 'Controles: WASD (Moverse) | Espacio (Patear) | Shift (Turbo) | Flecha Arriba (Dash) | Flechas Izq/Der (Efecto)';
     this.container.appendChild(row);
     this.container.scrollTop = this.container.scrollHeight;
     this.animateRowEntry(row);
