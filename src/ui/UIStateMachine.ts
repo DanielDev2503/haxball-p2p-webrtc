@@ -73,21 +73,21 @@ export class UIStateMachine {
   public toggleModal(modalName: string = 'teamSelect', _isHost?: boolean, matchPhase?: MatchPhase | number): boolean {
     if (modalName === 'teamSelect' || modalName === 'ingameMenu') {
       if (matchPhase === MatchPhase.STOPPED) {
-        this.openModal(modalName);
+        this.openModal(modalName, true);
         return true;
       }
       if (this.isModalOpen(modalName)) {
         this.closeModal(modalName);
         return false;
       } else {
-        this.openModal(modalName);
+        this.openModal(modalName, false);
         return true;
       }
     }
     return false;
   }
 
-  public openModal(modalName: string = 'teamSelect'): void {
+  public openModal(modalName: string = 'teamSelect', isForced: boolean = false): void {
     if (modalName === 'teamSelect' || modalName === 'ingameMenu') {
       this.activeModal = 'teamSelect';
       if (!this.elIngameMenu && typeof document !== 'undefined') {
@@ -97,6 +97,11 @@ export class UIStateMachine {
         this.elIngameMenu.classList.remove('hidden', 'u-hidden', 'ui-screen-hidden');
         this.elIngameMenu.style.display = 'flex';
         this.elIngameMenu.style.pointerEvents = 'auto';
+        if (isForced) {
+          this.elIngameMenu.classList.add('is-forced-open');
+        } else {
+          this.elIngameMenu.classList.remove('is-forced-open');
+        }
       }
     } else {
       this.activeModal = modalName;

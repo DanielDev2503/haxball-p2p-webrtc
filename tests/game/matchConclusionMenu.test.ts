@@ -149,7 +149,7 @@ describe('Match Conclusion Flow and Menu Synchronization', () => {
 
       modal.updateMatchState(MatchPhase.PLAYING);
       expect(closeBtn.style.display).toBe('');
-      expect(returnBtn.style.display).toBe('inline-block');
+      expect(returnBtn.style.display).toBe('none'); // Return button permanently eliminated in favor of 'X' close button
     });
   });
 

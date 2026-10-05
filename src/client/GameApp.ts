@@ -564,12 +564,12 @@ export class GameApp {
       lastMenuToggleTime = now;
 
       if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') return;
-      const currentPhase = this.getAuthoritativeMatchState();
+      const currentPhase = this.matchPhase;
       // Excepción: Durante STOPPED (partido no iniciado), el menú permanece abierto para todos y Escape no lo cierra
       if (currentPhase === MatchPhase.STOPPED) {
         return;
       }
-      this.uiStateMachine.toggleModal('teamSelect');
+      this.uiStateMachine.toggleModal('teamSelect', this.isHost, currentPhase);
       this.updateAdminControlsUI();
       this.updateTeamLists();
     };
@@ -1281,7 +1281,7 @@ export class GameApp {
         } else if (msg.type === 'MAP_CHANGE_REQUEST') {
           const requester = this.engine?.players.get(peerId);
           if (!requester?.isAdmin && peerId !== this.currentHostId) return;
-          const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+          const currentPhase = this.matchPhase;
           if (currentPhase !== MatchPhase.STOPPED) return;
           this.setMapStadium(msg.stadiumId, true);
         }
@@ -1808,7 +1808,7 @@ export class GameApp {
   private updateAdminControlsUI(): void {
     const isAdmin = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost);
     const isHost = this.mode === 'host' || Boolean(this.localPlayer.isHost);
-    const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+    const currentPhase = this.matchPhase;
     const isMatchStopped = currentPhase === MatchPhase.STOPPED;
     const canChangeStadium = isAdmin && isMatchStopped;
 
@@ -1892,7 +1892,7 @@ export class GameApp {
     const isAdmin = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost);
     if (!isAdmin) return;
 
-    const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+    const currentPhase = this.matchPhase;
     if (currentPhase !== MatchPhase.STOPPED) {
       this.chat.addSystemMessage('⚠️ El estadio solo se puede cambiar antes de empezar una partida.');
       return;
@@ -1910,7 +1910,7 @@ export class GameApp {
 
   public setMapStadium(stadiumId: string, broadcast: boolean = false, force: boolean = false): void {
     if (!StadiumRegistry[stadiumId]) return;
-    const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+    const currentPhase = this.matchPhase;
     if (broadcast && !force && currentPhase !== MatchPhase.STOPPED) {
       return;
     }
@@ -1943,7 +1943,7 @@ export class GameApp {
 
   public broadcastMatchStateSync(): void {
     if (this.mode !== 'host' && this.mode !== 'practice') return;
-    const currentState = this.engine ? this.engine.fsm.currentState : this.currentMatchState;
+    const currentState = this.matchPhase;
     const timeRemaining = this.engine?.matchTimerSeconds ?? 0;
     const redScore = this.engine?.redScore ?? 0;
     const blueScore = this.engine?.blueScore ?? 0;
@@ -2007,6 +2007,11 @@ export class GameApp {
       this.hostPeer.sendReliable(JSON.stringify({
         type: 'ADMIN_START_MATCH'
       }));
+      // Feedback visual optimista instantáneo para admin no-host
+      this.currentMatchState = MatchPhase.COUNTDOWN;
+      $matchPhase.set(MatchPhase.COUNTDOWN);
+      this.teamSelect.updateMatchState(MatchPhase.COUNTDOWN, undefined, Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost), this.isHost);
+      this.updateAdminControlsUI();
     } else if (this.engine) {
       this.engine.startMatch();
       this.enforceMenuState(this.engine.fsm.currentState);
@@ -2024,6 +2029,11 @@ export class GameApp {
       this.hostPeer.sendReliable(JSON.stringify({
         type: 'ADMIN_STOP_MATCH'
       }));
+      // Feedback visual optimista instantáneo para admin no-host
+      this.currentMatchState = MatchPhase.STOPPED;
+      $matchPhase.set(MatchPhase.STOPPED);
+      this.teamSelect.updateMatchState(MatchPhase.STOPPED, undefined, Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost), this.isHost);
+      this.updateAdminControlsUI();
     } else if (this.mode === 'host' || this.mode === 'practice') {
       if (this.engine) {
         this.engine.stopMatch();

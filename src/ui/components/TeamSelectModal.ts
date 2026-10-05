@@ -136,14 +136,17 @@ export class TeamSelectModal {
     }
 
     // Botón de contingencia para regresar a la partida en curso
-    const handleContingencyClose = () => {
-      if (this.currentMatchState !== MatchPhase.STOPPED) {
+    const handleContingencyClose = (e?: Event) => {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      const currentPhase = this.gameApp ? this.gameApp.matchPhase : this.currentMatchState;
+      if (currentPhase !== MatchPhase.STOPPED) {
         if (this.uiStateMachine) {
           this.uiStateMachine.closeModal('teamSelect');
-          this.onVisibilityChange?.(false);
         } else {
-          this.close();
+          this.close(true);
         }
+        this.onVisibilityChange?.(false);
       }
     };
 
@@ -292,7 +295,10 @@ export class TeamSelectModal {
 
   public setHost(isHost: boolean): void {
     this.isUserHost = isHost;
-    this.updateMatchControlButton(this.currentMatchState, this.isUserAdmin, isHost);
+    const currentPhase = this.gameApp ? this.gameApp.matchPhase : this.currentMatchState;
+    this.currentMatchState = currentPhase;
+    this.updateMatchControlButton(currentPhase, this.isUserAdmin, isHost);
+    this.updateMatchToggleButton(currentPhase);
   }
 
   public updateStadiumControls(phase: MatchPhase, isAdmin?: boolean, isHost?: boolean): void {
@@ -334,18 +340,35 @@ export class TeamSelectModal {
 
   public updateMatchControlButton(phase: MatchPhase, isAdmin?: boolean, isHost?: boolean): void {
     this.currentMatchState = phase;
-    if (isAdmin !== undefined) {
-      this.isUserAdmin = isAdmin;
-    }
-    if (isHost !== undefined) {
-      this.isUserHost = isHost;
-    } else if (isAdmin === false) {
-      this.isUserHost = false;
-    }
+    const effectiveAdmin = isAdmin !== undefined
+      ? isAdmin
+      : Boolean(this.isUserAdmin || this.localPlayer?.isAdmin || this.gameApp?.localPlayer?.isAdmin);
+    const effectiveHost = isHost !== undefined
+      ? isHost
+      : Boolean(this.isUserHost || this.localPlayer?.isHost || this.gameApp?.isHost);
+
+    this.isUserAdmin = effectiveAdmin;
+    this.isUserHost = effectiveHost;
     this.updateStadiumControls(phase, this.isUserAdmin, this.isUserHost);
 
     const isStopped = phase === MatchPhase.STOPPED;
     const canModifySettings = (this.isUserHost || this.isUserAdmin) && isStopped;
+
+    if (this.menuEl) {
+      if (!isStopped) {
+        this.menuEl.classList.remove('is-forced-open');
+      } else {
+        this.menuEl.classList.add('is-forced-open');
+      }
+    }
+
+    if (this.closeBtn?.style) {
+      this.closeBtn.style.display = isStopped ? 'none' : '';
+    }
+
+    if (this.returnGameBtn?.style) {
+      this.returnGameBtn.style.display = 'none';
+    }
 
     const timeLimitSelect = document.getElementById('select-time-limit') as HTMLSelectElement | null;
     if (timeLimitSelect) {
@@ -433,6 +456,8 @@ export class TeamSelectModal {
         // En entornos sin Web Animations API continúa sin fallar
       }
     }
+
+    this.updateMatchToggleButton(phase);
   }
 
   public updateMatchState(newState: MatchPhase | MatchState | string, outcomeText?: string, isAdmin?: boolean, isHost?: boolean): void {
@@ -444,10 +469,17 @@ export class TeamSelectModal {
 
     // Actualizar visibilidad del botón de retorno y botón de cierre ('✕')
     if (this.returnGameBtn?.style) {
-      this.returnGameBtn.style.display = phase !== MatchPhase.STOPPED ? 'inline-block' : 'none';
+      this.returnGameBtn.style.display = 'none';
     }
     if (this.closeBtn?.style) {
       this.closeBtn.style.display = phase === MatchPhase.STOPPED ? 'none' : '';
+    }
+    if (this.menuEl) {
+      if (phase !== MatchPhase.STOPPED) {
+        this.menuEl.classList.remove('is-forced-open');
+      } else {
+        this.menuEl.classList.add('is-forced-open');
+      }
     }
 
     // Banner de resultado del partido al finalizar
@@ -486,10 +518,11 @@ export class TeamSelectModal {
     ) as HTMLButtonElement | null;
     if (!btn) return;
 
-    const canManage = Boolean(this.isUserHost || this.isUserAdmin || this.gameApp?.isHost || this.localPlayer?.isAdmin);
+    const canManage = Boolean(this.isUserHost || this.isUserAdmin || this.gameApp?.isHost || this.localPlayer?.isAdmin || this.gameApp?.localPlayer?.isAdmin);
     btn.disabled = !canManage;
     if (btn.style) {
       btn.style.opacity = canManage ? '1' : '0.5';
+      btn.style.display = canManage ? '' : 'none';
     }
 
     if (phase === MatchPhase.STOPPED) {
@@ -513,9 +546,11 @@ export class TeamSelectModal {
 
   public open(forced: boolean = false): void {
     if (!this.menuEl) return;
-    const isForced = forced || this.currentMatchState === MatchPhase.STOPPED;
+    const currentPhase = this.gameApp ? this.gameApp.matchPhase : this.currentMatchState;
+    this.currentMatchState = currentPhase;
+    const isForced = forced || currentPhase === MatchPhase.STOPPED;
     if (this.uiStateMachine) {
-      this.uiStateMachine.openModal('teamSelect');
+      this.uiStateMachine.openModal('teamSelect', isForced);
     } else {
       this.menuEl.classList.remove('hidden', 'u-hidden', 'ui-screen-hidden');
       this.menuEl.style.display = 'flex';
@@ -523,9 +558,16 @@ export class TeamSelectModal {
     }
     if (isForced) {
       this.menuEl.classList.add('is-forced-open');
+      if (this.closeBtn?.style) this.closeBtn.style.display = 'none';
     } else {
       this.menuEl.classList.remove('is-forced-open');
+      if (this.closeBtn?.style) this.closeBtn.style.display = '';
     }
+    if (this.returnGameBtn?.style) {
+      this.returnGameBtn.style.display = 'none';
+    }
+    this.updateMatchControlButton(currentPhase, this.isUserAdmin, this.isUserHost);
+    this.updateMatchToggleButton(currentPhase);
     this.onVisibilityChange?.(true);
   }
 
