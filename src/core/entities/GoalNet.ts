@@ -8,51 +8,74 @@ export interface GoalNetOptions {
   topCornerY?: number; // Compatibility
   bottomCornerY?: number; // Compatibility
   rearLimitX?: number; // Hard stop back limit (e.g. -650 or 650)
-  nodeCount?: number; // default 13 (particles in back drop net chain)
-  damping?: number; // default 0.20
-  kShape?: number; // default 0
-  kSpring?: number; // compatibility alias
+  nodeCount?: number; // default 15 (particles in back drop net chain)
+  damping?: number; // default 0.05 (underdamped, range [0.045, 0.055])
+  kSpring?: number; // default 0.14 (restoring spring, range [0.12, 0.16])
+  kShape?: number; // compatibility alias of kSpring
+  nodeMass?: number; // default 0.40 (invMass = 2.5)
   color?: string; // default '#717F98'
   cols?: number;  // Compatibility
   rows?: number;  // Compatibility
 }
 
+/** Minimal kinematic view of the ball used by the net (structural typing, Zero-GC). */
+export interface NetBall {
+  pos: { x: number; y: number };
+  vel: { x: number; y: number };
+  radius?: number;
+  isBall?: boolean;
+}
+
+/** Fixed simulation step (60 Hz). */
+const FIXED_DT = 1 / 60;
+/** Default physical parameters of the underdamped net. */
+const DEFAULT_NODE_COUNT = 15;
+const DEFAULT_NODE_MASS = 0.40;
+const DEFAULT_K_SPRING = 0.14;
+const DEFAULT_DAMPING = 0.05;
 /**
- * GoalNet: Portería de Caja 2D con 4 Anclajes (Stadium Box Net Model)
- * con Cortina de Fondo Viscoelástica, Restricción de Flexión Anti-Bucle y Contención Unilateral.
- * 
- * Topología de la Portería de Caja:
- * - 4 Anclajes Rígidos (invMass = 0):
- *     Poste Superior: P_top = (mouthX, topY)
- *     Poste Inferior: P_bottom = (mouthX, bottomY)
- *     Esquina Trasera Sup: S_top = (backX, topY)
- *     Esquina Trasera Inf: S_bottom = (backX, bottomY)
- *   donde backX = mouthX + (signoX * depth) (con depth ≈ 36 px).
- * 
- * - Laterales Tensados Semirrígidos (Side Nets):
- *     Lateral Superior: Segmento restrictivo entre P_top y S_top.
- *     Lateral Inferior: Segmento restrictivo entre P_bottom y S_bottom.
- *     Comportamiento: Actúan como deflectores elásticos que deslizan la pelota hacia el fondo,
- *     impidiendo físicamente que la red se pliegue hacia adentro o forme lazos.
- * 
- * - Cortina de Fondo Viscoelástica (Back Drop Net Chain):
- *     Cadena de N = 13 partículas suspendidas verticalmente entre S_top y S_bottom.
- *     Nodo 0: anclado en S_top (invMass = 0).
- *     Nodo N-1: anclado en S_bottom (invMass = 0).
- *     Nodos 1 ... N-2: masa m = 0.35 (w_i ≈ 2.857). Concavidad suave hacia atrás en reposo.
- * 
- * - Algoritmos Físicos Deterministas:
- *     1. Restricción de flexión anti-bucle (Second-Neighbor Bending Constraints):
- *        Si dist(p_i, p_{i+2}) < L_bend * 0.85 => corrige separación angular.
- *     2. Ordenamiento monótono en Y:
- *        Garantiza y_0 < y_1 < ... < y_{N-1} (si y_{i+1} <= y_i => y_{i+1} = y_i + 1.0 px).
- *     3. Transferencia progresiva de momento:
- *        v_node <- v_node + v_ball * 0.35. Desaceleración proporcional a tensión.
- *     4. Contención unilateral infranqueable (Anti-Tunneling Projection):
- *        Proyección estricta sobre la cortina de fondo. Cero tunelización.
- *     5. Memoria plástica transitoria y relajación suave (lerp 0.06) en countdown.
- *     6. Permeabilidad absoluta para jugadores (cero colisión con discos no-balón).
- *     7. Invariante Zero-GC en 60 Hz con Float32Array.
+ * Normalization of k_spring into the tick domain: (F/m)·Δt² is evaluated with Δt measured
+ * in fixed ticks and this gain, giving ω = sqrt(k·w·gain) ≈ 0.17 rad/tick for k = 0.14, m = 0.40.
+ * Period ≈ 37 ticks (~0.6 s) → 2–3 visible harmonic cycles in ~1.5 s, ζ ≈ 0.15 (< 1).
+ */
+const SPRING_TICK_GAIN = 1 / 12;
+/** Gauss-Seidel iterations for distance / bending constraints. */
+const CONSTRAINT_ITERATIONS = 2;
+/** Max elastic elongation of each segment (25 %). */
+const MAX_ELONGATION = 1.25;
+/** Minimum second-neighbor distance ratio (anti-loop). */
+const BEND_MIN_RATIO = 0.85;
+/** Momentum transfer ratio |v_ball|·0.30 applied along impact normal. */
+const PUSH_RATIO = 0.30;
+/** Tension deceleration gain and clamp. */
+const TENSION_GAIN = 0.75;
+const TENSION_MAX = 0.90;
+/** Ball inverse mass used to split contact penetration with the net nodes. */
+const BALL_INV_MASS = 1.0;
+/** Countdown smooth reset lerp factor. */
+const RELAX_LERP = 0.06;
+
+/**
+ * GoalNet: Portería de Caja 2D (4 anclajes) con Red Elástica Subamortiguada.
+ *
+ * - 4 Anclajes Rígidos (invMass = 0): P_top, P_bottom (postes) y S_top, S_bottom (esquinas traseras).
+ * - Laterales tensados semirrígidos (P_top→S_top, P_bottom→S_bottom) que deslizan el balón al fondo.
+ * - Cortina de fondo: cadena Verlet de N = 15 partículas (m = 0.40, w = 2.5) entre S_top y S_bottom.
+ *
+ * Modelo físico (oscilador armónico subamortiguado, ζ < 1):
+ *   F_spring,i = -k_spring · (p_i - restPos_i)                  (cero efecto plastilina)
+ *   v_i        = (p_i,t - p_i,t-Δt) · (1 - damping)
+ *   p_i,t+Δt   = p_i,t + v_i + (F_spring,i / m) · Δt²
+ *   + 2 iteraciones Gauss-Seidel de distancia (elongación máx. 25 %), flexión anti-bucle (i, i+2)
+ *     y orden monótono en Y.
+ *
+ * Interacción con el balón:
+ *   - Transferencia progresiva de momento a_push = n̂ · |v_ball| · 0.30 (sin frenado en seco).
+ *   - Desaceleración por tensión: F = clamp(|p_net - rest| / profMax · 0.75, 0, 0.90).
+ *   - Contención unilateral infranqueable: el balón jamás cruza la cortina hacia afuera.
+ *   - Permeabilidad absoluta para jugadores (sólo interactúa con el balón).
+ *
+ * Invariante Zero-GC: todo el estado vive en Float32Array prealocados en el constructor.
  */
 export class GoalNet {
   public side: 'left' | 'right';
@@ -94,9 +117,10 @@ export class GoalNet {
   public segRestLen: Float32Array;
 
   public damping: number;
-  public kShape: number;
   public kSpring: number;
-  public relaxationIterations: number = 4;
+  public kShape: number; // alias de kSpring (compatibilidad)
+  public nodeMass: number;
+  public relaxationIterations: number = CONSTRAINT_ITERATIONS;
   public color: string;
   public isRelaxing: boolean = false;
 
@@ -110,7 +134,6 @@ export class GoalNet {
     this.topY = options.topY;
     this.bottomY = options.bottomY;
 
-    // 4 Anclajes Rígidos
     this.pTopX = this.mouthX;
     this.pTopY = this.topY;
     this.pBottomX = this.mouthX;
@@ -120,23 +143,17 @@ export class GoalNet {
     this.sBottomX = this.backX;
     this.sBottomY = this.bottomY;
 
-    // Límite de elongación máxima en el fondo (tope infranqueable)
-    if (options.rearLimitX !== undefined) {
-      this.rearLimitX = options.rearLimitX;
-    } else {
-      this.rearLimitX = this.backX + signX * 14;
-    }
+    this.rearLimitX = options.rearLimitX ?? (this.backX + signX * 14);
 
-    this.damping = options.damping ?? 0.20;
-    this.kShape = options.kShape ?? options.kSpring ?? 0;
-    this.kSpring = this.kShape;
+    this.damping = options.damping ?? DEFAULT_DAMPING;
+    this.kSpring = options.kSpring ?? options.kShape ?? DEFAULT_K_SPRING;
+    this.kShape = this.kSpring;
+    this.nodeMass = options.nodeMass ?? DEFAULT_NODE_MASS;
     this.color = options.color ?? '#717F98';
 
-    // Discretización de la cortina de fondo en N partículas (por defecto N = 13)
-    this.nodeCount = options.nodeCount ?? 13;
-    if (this.nodeCount < 4) this.nodeCount = 13;
+    this.nodeCount = options.nodeCount ?? DEFAULT_NODE_COUNT;
+    if (this.nodeCount < 4) this.nodeCount = DEFAULT_NODE_COUNT;
 
-    // Prealocación Zero-GC en arreglos tipados
     const N = this.nodeCount;
     this.posX = new Float32Array(N);
     this.posY = new Float32Array(N);
@@ -148,7 +165,6 @@ export class GoalNet {
     this.restLen = new Float32Array(N - 1);
     this.restLenBend = new Float32Array(N - 2);
 
-    // Aliases para compatibilidad
     this.prevX = this.oldPosX;
     this.prevY = this.oldPosY;
     this.restX = this.restPosX;
@@ -158,122 +174,94 @@ export class GoalNet {
     this.initGeometry();
   }
 
-  /**
-   * Inicializa la geometría en reposo de la cortina de fondo viscoelástica (Back Drop Net Chain).
-   * Nodo 0 anclado en S_top = (backX, topY) con invMass = 0.
-   * Nodo N-1 anclado en S_bottom = (backX, bottomY) con invMass = 0.
-   * Nodos intermedios i in [1, N-2] con masa m = 0.35 (invMass ≈ 2.857)
-   * colgando holgados hacia atrás formando una suave concavidad.
-   */
+  /** Geometría de reposo: cortina con concavidad suave hacia atrás, anclada en S_top / S_bottom. */
   private initGeometry(): void {
     const N = this.nodeCount;
     const signX = this.mouthX < 0 ? -1 : 1;
-    const yTop = this.topY;
-    const yBottom = this.bottomY;
+    const w = 1 / this.nodeMass;
 
     for (let i = 0; i < N; i++) {
       const u = i / (N - 1);
-      const y = yTop + u * (yBottom - yTop);
-      // Concavidad suave hacia atrás (máximo en el centro de la red)
+      const y = this.topY + u * (this.bottomY - this.topY);
       const slack = 4 * u * (1 - u);
       const x = this.backX + signX * (3.5 * slack);
 
       this.restPosX[i] = x;
       this.restPosY[i] = y;
-      this.posX[i] = x;
-      this.posY[i] = y;
-      this.oldPosX[i] = x;
-      this.oldPosY[i] = y;
-
-      if (i === 0 || i === N - 1) {
-        // Anclajes fijos en esquinas traseras S_top y S_bottom
-        this.invMass[i] = 0;
-      } else {
-        // Partículas dinámicas móviles: masa m = 0.35 => invMass ≈ 2.857
-        this.invMass[i] = 1 / 0.35;
-      }
+      this.invMass[i] = (i === 0 || i === N - 1) ? 0 : w;
     }
 
-    // Asegurar anclaje exacto en esquinas traseras
     this.restPosX[0] = this.sTopX;
     this.restPosY[0] = this.sTopY;
-    this.posX[0] = this.sTopX;
-    this.posY[0] = this.sTopY;
-    this.oldPosX[0] = this.sTopX;
-    this.oldPosY[0] = this.sTopY;
-
     this.restPosX[N - 1] = this.sBottomX;
     this.restPosY[N - 1] = this.sBottomY;
-    this.posX[N - 1] = this.sBottomX;
-    this.posY[N - 1] = this.sBottomY;
-    this.oldPosX[N - 1] = this.sBottomX;
-    this.oldPosY[N - 1] = this.sBottomY;
 
-    // Longitudes de reposo para segmentos adyacentes (i e i+1)
-    for (let i = 0; i < N - 1; i++) {
-      const dx = this.restPosX[i + 1] - this.restPosX[i];
-      const dy = this.restPosY[i + 1] - this.restPosY[i];
-      this.restLen[i] = Math.hypot(dx, dy);
+    for (let i = 0; i < N; i++) {
+      this.posX[i] = this.restPosX[i];
+      this.posY[i] = this.restPosY[i];
+      this.oldPosX[i] = this.restPosX[i];
+      this.oldPosY[i] = this.restPosY[i];
     }
 
-    // Longitudes de reposo para restricción de flexión anti-bucle (segundo vecino: i e i+2)
+    for (let i = 0; i < N - 1; i++) {
+      this.restLen[i] = Math.hypot(this.restPosX[i + 1] - this.restPosX[i], this.restPosY[i + 1] - this.restPosY[i]);
+    }
     for (let i = 0; i < N - 2; i++) {
-      const bx = this.restPosX[i + 2] - this.restPosX[i];
-      const by = this.restPosY[i + 2] - this.restPosY[i];
-      this.restLenBend[i] = Math.hypot(bx, by);
+      this.restLenBend[i] = Math.hypot(this.restPosX[i + 2] - this.restPosX[i], this.restPosY[i + 2] - this.restPosY[i]);
     }
   }
 
   /**
-   * Paso determinista de simulación física a 60 Hz (Zero-GC).
+   * Paso determinista de simulación a 60 Hz (Zero-GC).
+   * Acepta `step(dt)` o `step(ball, dt)` (en el segundo caso avanza el balón y resuelve la colisión).
    */
-  public step(
-    ballOrDt?: { pos: { x: number; y: number }; vel: { x: number; y: number }; radius?: number; isBall?: boolean } | number | null,
-    maybeDt: number = 1 / 60
-  ): void {
-    let _dt = 1 / 60;
-    let ball: { pos: { x: number; y: number }; vel: { x: number; y: number }; radius?: number; isBall?: boolean } | null = null;
-
+  public step(ballOrDt?: NetBall | number | null, maybeDt: number = FIXED_DT): void {
+    let dt = FIXED_DT;
+    let ball: NetBall | null = null;
     if (typeof ballOrDt === 'number') {
-      _dt = ballOrDt;
+      dt = ballOrDt;
     } else if (ballOrDt && typeof ballOrDt === 'object') {
       ball = ballOrDt;
-      if (typeof maybeDt === 'number') _dt = maybeDt;
+      dt = maybeDt;
     }
-    void _dt;
 
     const N = this.nodeCount;
-    const damping = this.damping;
-    const kShape = this.kShape;
+    const keep = 1 - this.damping;
+    const springK = this.kSpring * SPRING_TICK_GAIN;
 
-    // 1. Integración Temporal Verlet con Damping y Modo de Relajación Suave
-    // En juego activo y celebración: kShape = 0 (memoria plástica transitoria).
-    // Si isRelaxing es true (COUNTDOWN): flotación suave hacia reposo con factor 0.06 por tick.
+    // 1. Integración Verlet subamortiguada con resorte de restitución
     for (let i = 1; i < N - 1; i++) {
-      let restoreX = 0;
-      let restoreY = 0;
+      const w = this.invMass[i];
+      const px = this.posX[i];
+      const py = this.posY[i];
+      const ox = px - this.restPosX[i];
+      const oy = py - this.restPosY[i];
+
+      // (F_spring / m) · Δt²  con F_spring = -k · (p - rest)
+      let ax = -springK * w * ox;
+      let ay = -springK * w * oy;
 
       if (this.isRelaxing) {
-        restoreX = (this.restPosX[i] - this.posX[i]) * 0.06;
-        restoreY = (this.restPosY[i] - this.posY[i]) * 0.06;
-      } else if (kShape > 0) {
-        restoreX = -kShape * (this.posX[i] - this.restPosX[i]);
-        restoreY = -kShape * (this.posY[i] - this.restPosY[i]);
+        ax -= ox * RELAX_LERP;
+        ay -= oy * RELAX_LERP;
       }
 
-      const vx = (this.posX[i] - this.oldPosX[i]) * (1 - damping);
-      const vy = (this.posY[i] - this.oldPosY[i]) * (1 - damping);
+      const vx = (px - this.oldPosX[i]) * keep;
+      const vy = (py - this.oldPosY[i]) * keep;
 
-      const nextX = this.posX[i] + vx + restoreX;
-      const nextY = this.posY[i] + vy + restoreY;
-
-      this.oldPosX[i] = this.posX[i];
-      this.oldPosY[i] = this.posY[i];
-      this.posX[i] = nextX;
-      this.posY[i] = nextY;
+      this.oldPosX[i] = px;
+      this.oldPosY[i] = py;
+      this.posX[i] = px + vx + ax;
+      this.posY[i] = py + vy + ay;
     }
 
-    // Comprobación de convergencia para el modo de relajación suave
+    // 2. Restricciones (Gauss-Seidel)
+    this.solveConstraints();
+
+    // 3. Tope posterior y saneamiento numérico (anti-NaN)
+    this.clampRearAndSanitize();
+
+    // 4. Convergencia del modo de relajación suave
     if (this.isRelaxing) {
       let maxDev = 0;
       for (let i = 1; i < N - 1; i++) {
@@ -282,115 +270,129 @@ export class GoalNet {
         if (dx > maxDev) maxDev = dx;
         if (dy > maxDev) maxDev = dy;
       }
-      if (maxDev < 0.05) {
-        this.resetShape(false);
-      }
+      if (maxDev < 0.05) this.resetShape(false);
     }
 
-    // 2. Relajación de Restricciones PBD (Distancia + Flexión Anti-Bucle + Orden Monótono en Y)
+    // 5. Uso aislado (tests): avanzar el balón y resolver colisión
+    if (ball && ball.isBall !== false) {
+      ball.pos.x += ball.vel.x * dt;
+      ball.pos.y += ball.vel.y * dt;
+      this.checkBallCollision(ball);
+    }
+  }
+
+  private solveConstraints(): void {
+    const N = this.nodeCount;
     for (let iter = 0; iter < this.relaxationIterations; iter++) {
-      // A. Restricción de Distancia entre Vecinos Contiguos (i e i+1) con tolerancia de elongación del 30%
+      // A. Distancia entre vecinos (i, i+1): corrección suave hacia L0 + tope duro en 1.25·L0
       for (let i = 0; i < N - 1; i++) {
-        const dx = this.posX[i + 1] - this.posX[i];
-        const dy = this.posY[i + 1] - this.posY[i];
-        const d = Math.hypot(dx, dy);
+        const w1 = this.invMass[i];
+        const w2 = this.invMass[i + 1];
+        const wSum = w1 + w2;
+        if (wSum <= 0) continue;
 
-        if (d > 1e-6) {
-          const lMax = this.restLen[i] * 1.30;
-          if (d > lMax) {
-            const diff = (d - lMax) / d;
-            const w1 = this.invMass[i];
-            const w2 = this.invMass[i + 1];
-            const wSum = w1 + w2;
+        let dx = this.posX[i + 1] - this.posX[i];
+        let dy = this.posY[i + 1] - this.posY[i];
+        let d = Math.hypot(dx, dy);
+        if (d < 1e-6) continue;
 
-            if (wSum > 0) {
-              const corrX = dx * diff;
-              const corrY = dy * diff;
-              this.posX[i] += corrX * (w1 / wSum);
-              this.posY[i] += corrY * (w1 / wSum);
-              this.posX[i + 1] -= corrX * (w2 / wSum);
-              this.posY[i + 1] -= corrY * (w2 / wSum);
-            }
-          }
+        const l0 = this.restLen[i];
+        if (Math.abs(d - l0) < 1e-4) continue; // dead-zone: evita micro-deriva por redondeo Float32
+        const soft = ((d - l0) / d) * 0.5;
+        const s1 = soft * (w1 / wSum);
+        const s2 = soft * (w2 / wSum);
+        this.posX[i] += dx * s1;
+        this.posY[i] += dy * s1;
+        this.posX[i + 1] -= dx * s2;
+        this.posY[i + 1] -= dy * s2;
+
+        const lMax = l0 * MAX_ELONGATION;
+        dx = this.posX[i + 1] - this.posX[i];
+        dy = this.posY[i + 1] - this.posY[i];
+        d = Math.hypot(dx, dy);
+        if (d > lMax) {
+          const hard = (d - lMax) / d;
+          const h1 = hard * (w1 / wSum);
+          const h2 = hard * (w2 / wSum);
+          this.posX[i] += dx * h1;
+          this.posY[i] += dy * h1;
+          this.posX[i + 1] -= dx * h2;
+          this.posY[i + 1] -= dy * h2;
         }
       }
 
-      // B. Restricción de Flexión Anti-Bucle (Second-Neighbor Bending Constraints: i e i+2)
-      // Garantiza un radio de curvatura mínimo que erradica la formación de lazos o nudos invertidos
+      // B. Flexión anti-bucle (i, i+2): d_b >= 0.85 · L_bend
       for (let i = 0; i < N - 2; i++) {
+        const w1 = this.invMass[i];
+        const w2 = this.invMass[i + 2];
+        const wSum = w1 + w2;
+        if (wSum <= 0) continue;
+
         const dbx = this.posX[i + 2] - this.posX[i];
         const dby = this.posY[i + 2] - this.posY[i];
         const db = Math.hypot(dbx, dby);
-        const lMinBend = this.restLenBend[i] * 0.85;
+        const lMin = this.restLenBend[i] * BEND_MIN_RATIO;
+        if (db >= lMin) continue;
 
-        if (db < lMinBend) {
-          const diff = db > 1e-6 ? (db - lMinBend) / db : -1.0;
-          const w1 = this.invMass[i];
-          const w2 = this.invMass[i + 2];
-          const wSum = w1 + w2;
-
-          if (wSum > 0) {
-            const corrX = (db > 1e-6 ? dbx : 0) * diff;
-            const corrY = (db > 1e-6 ? dby : 1.0) * diff;
-            this.posX[i] += corrX * (w1 / wSum);
-            this.posY[i] += corrY * (w1 / wSum);
-            this.posX[i + 2] -= corrX * (w2 / wSum);
-            this.posY[i + 2] -= corrY * (w2 / wSum);
-          }
+        let cx: number;
+        let cy: number;
+        if (db > 1e-6) {
+          const diff = (db - lMin) / db;
+          cx = dbx * diff;
+          cy = dby * diff;
+        } else {
+          cx = 0;
+          cy = -lMin;
         }
+        this.posX[i] += cx * (w1 / wSum);
+        this.posY[i] += cy * (w1 / wSum);
+        this.posX[i + 2] -= cx * (w2 / wSum);
+        this.posY[i + 2] -= cy * (w2 / wSum);
       }
 
-      // C. Ordenamiento Monótono Estricto en Y: y_0 < y_1 < ... < y_{N-1}
+      // C. Orden monótono en Y
       for (let i = 0; i < N - 1; i++) {
         if (this.posY[i + 1] <= this.posY[i]) {
           this.posY[i + 1] = this.posY[i] + 1.0;
         }
       }
 
-      // D. Re-anclaje inviolable de esquinas traseras S_top y S_bottom
+      // D. Re-anclaje inviolable
       this.posX[0] = this.sTopX;
       this.posY[0] = this.sTopY;
       this.posX[N - 1] = this.sBottomX;
       this.posY[N - 1] = this.sBottomY;
     }
+  }
 
-    // 3. Tope posterior de contención máxima en X
-    if (this.side === 'left') {
-      for (let i = 1; i < N - 1; i++) {
-        if (this.posX[i] < this.rearLimitX) {
-          this.posX[i] = this.rearLimitX;
-        }
+  private clampRearAndSanitize(): void {
+    const N = this.nodeCount;
+    const left = this.side === 'left';
+    for (let i = 1; i < N - 1; i++) {
+      if (!Number.isFinite(this.posX[i]) || !Number.isFinite(this.posY[i]) ||
+          !Number.isFinite(this.oldPosX[i]) || !Number.isFinite(this.oldPosY[i])) {
+        this.posX[i] = this.restPosX[i];
+        this.posY[i] = this.restPosY[i];
+        this.oldPosX[i] = this.restPosX[i];
+        this.oldPosY[i] = this.restPosY[i];
+        continue;
       }
-    } else {
-      for (let i = 1; i < N - 1; i++) {
-        if (this.posX[i] > this.rearLimitX) {
-          this.posX[i] = this.rearLimitX;
-        }
+      if (left ? this.posX[i] < this.rearLimitX : this.posX[i] > this.rearLimitX) {
+        this.posX[i] = this.rearLimitX;
       }
-    }
-
-    // 4. Si se proveyó el balón directamente a step (p. ej. en tests aislados), avanzar su posición y resolver colisión
-    if (ball && ball.isBall !== false) {
-      ball.pos.x += ball.vel.x * _dt;
-      ball.pos.y += ball.vel.y * _dt;
-      this.checkBallCollision(ball);
     }
   }
 
   /**
-   * Cálculo determinista de Colisión Balón-Red con:
-   * - Deflexión Elástica en Laterales Tensados Semirrígidos (Side Nets).
-   * - Transferencia Progresiva de Momento y Tensión en Cortina de Fondo.
-   * - Contención Unilateral Infranqueable (Anti-Tunneling Projection).
-   * - Permeabilidad absoluta para jugadores (ignora disc si !isBall).
+   * Colisión determinista Balón-Red:
+   * - Deflexión en laterales tensados semirrígidos.
+   * - Transferencia progresiva de momento y desaceleración por tensión en la cortina.
+   * - Contención unilateral infranqueable (anti-tunneling).
+   * - Permeabilidad absoluta para jugadores (ignora discos con isBall === false).
    */
-  public checkBallCollision(
-    ball?: { pos: { x: number; y: number }; vel: { x: number; y: number }; radius?: number; isBall?: boolean } | null
-  ): void {
+  public checkBallCollision(ball?: NetBall | null): void {
     if (!ball || ball.isBall === false) return;
 
-    const bx = ball.pos.x;
-    const by = ball.pos.y;
     const rBall = ball.radius ?? 5.8;
     const signX = this.mouthX < 0 ? -1 : 1;
 
@@ -398,176 +400,142 @@ export class GoalNet {
     const maxX = Math.max(this.mouthX, this.rearLimitX) + rBall + 15;
     const minY = Math.min(this.topY, this.bottomY) - rBall - 15;
     const maxY = Math.max(this.topY, this.bottomY) + rBall + 15;
-
-    // Guarda AABB rápida para descartar cálculos fuera del perímetro del arco
-    if (bx < minX || bx > maxX || by < minY || by > maxY) {
-      return;
-    }
+    if (ball.pos.x < minX || ball.pos.x > maxX || ball.pos.y < minY || ball.pos.y > maxY) return;
 
     const N = this.nodeCount;
+
+    // 1. LATERALES TENSADOS SEMIRRÍGIDOS
     const xMinSide = Math.min(this.mouthX, this.backX) - rBall;
     const xMaxSide = Math.max(this.mouthX, this.backX) + rBall;
-
-    // -------------------------------------------------------------
-    // 1. LATERALES TENSADOS SEMIRRÍGIDOS (SIDE NETS)
-    // Lateral Superior (P_top -> S_top) y Lateral Inferior (P_bottom -> S_bottom)
-    // Deflectores elásticos que deslizan la pelota hacia el fondo del arco
-    // -------------------------------------------------------------
-    if (bx >= xMinSide && bx <= xMaxSide) {
-      // Lateral Superior: Y = topY (e.g. -85)
-      const distTop = Math.abs(by - this.topY);
-      if (distTop < rBall) {
+    if (ball.pos.x >= xMinSide && ball.pos.x <= xMaxSide) {
+      if (Math.abs(ball.pos.y - this.topY) < rBall) {
         ball.pos.y = this.topY + rBall;
-        if (ball.vel.y < 0) {
-          ball.vel.y = -ball.vel.y * 0.35;
-        }
-        // Deslizamiento tangencial guiado hacia el fondo (signX)
+        if (ball.vel.y < 0) ball.vel.y = -ball.vel.y * 0.35;
         ball.vel.x = signX * (Math.abs(ball.vel.x) * 0.7 + 2.5);
       }
-
-      // Lateral Inferior: Y = bottomY (e.g. 85)
-      const distBottom = Math.abs(by - this.bottomY);
-      if (distBottom < rBall) {
+      if (Math.abs(ball.pos.y - this.bottomY) < rBall) {
         ball.pos.y = this.bottomY - rBall;
-        if (ball.vel.y > 0) {
-          ball.vel.y = -ball.vel.y * 0.35;
-        }
-        // Deslizamiento tangencial guiado hacia el fondo (signX)
+        if (ball.vel.y > 0) ball.vel.y = -ball.vel.y * 0.35;
         ball.vel.x = signX * (Math.abs(ball.vel.x) * 0.7 + 2.5);
       }
     }
 
-    // -------------------------------------------------------------
-    // 2. CORTINA DE FONDO VISCOELÁSTICA (BACK DROP NET CHAIN)
-    // Contacto con segmentos (i, i+1), transferencia de momento y frenado progresivo
-    // -------------------------------------------------------------
+    // 2. CORTINA DE FONDO: contacto, cesión, transferencia de momento y tensión
+    const speed = Math.hypot(ball.vel.x, ball.vel.y);
+    const push = speed * PUSH_RATIO * FIXED_DT; // a_push · Δt
+    const profMax = Math.max(1, Math.abs(this.rearLimitX - this.backX));
+    let maxDeform = -1;
+
     for (let i = 0; i < N - 1; i++) {
       const x0 = this.posX[i];
       const y0 = this.posY[i];
       const sx = this.posX[i + 1] - x0;
       const sy = this.posY[i + 1] - y0;
       const sLenSq = sx * sx + sy * sy;
-
       if (sLenSq < 1e-6) continue;
 
-      const t = Math.max(0, Math.min(1, ((bx - x0) * sx + (by - y0) * sy) / sLenSq));
+      const t = ((ball.pos.x - x0) * sx + (ball.pos.y - y0) * sy) / sLenSq;
+      if (t < 0 || t > 1) continue;
+
+      // Normal del segmento orientada hacia el campo (-signX)
+      const sLen = Math.sqrt(sLenSq);
+      let nx = -sy / sLen;
+      let ny = sx / sLen;
+      if (nx * -signX < 0) {
+        nx = -nx;
+        ny = -ny;
+      }
+
       const qx = x0 + t * sx;
       const qy = y0 + t * sy;
-      const dx = bx - qx;
-      const dy = by - qy;
-      const d = Math.hypot(dx, dy);
+      const sDist = (ball.pos.x - qx) * nx + (ball.pos.y - qy) * ny; // distancia con signo (lado campo > 0)
+      if (sDist >= rBall || sDist < -(rBall + 20)) continue;
 
-      if (d < rBall) {
-        const pen = rBall - d;
-        const nx = d > 1e-4 ? dx / d : (signX < 0 ? 1 : -1);
-        const ny = d > 1e-4 ? dy / d : 0;
+      const pen = rBall - sDist;
+      const w1 = this.invMass[i];
+      const w2 = this.invMass[i + 1];
+      const wNet = (1 - t) * w1 + t * w2;
+      const wTotal = wNet + BALL_INV_MASS;
+      const netShare = wNet > 0 ? pen * (wNet / wTotal) : 0;
+      const ballShare = pen - netShare;
 
-        // A. Transferencia de Momento Progresiva (0.35 * v_ball):
-        const dt = 1 / 60;
-        const momX = ball.vel.x * 0.35 * dt;
-        const momY = ball.vel.y * 0.35 * dt;
-        const dragX = ball.vel.x * 0.05 * dt - nx * (pen * 0.3);
-        const dragY = ball.vel.y * 0.05 * dt - ny * (pen * 0.3);
-
-        if (this.invMass[i] > 0) {
-          this.oldPosX[i] -= momX * (1 - t);
-          this.oldPosY[i] -= momY * (1 - t);
-          this.posX[i] += dragX * (1 - t);
-          this.posY[i] += dragY * (1 - t);
-          if (signX < 0 && this.posX[i] < this.rearLimitX) this.posX[i] = this.rearLimitX;
-          if (signX > 0 && this.posX[i] > this.rearLimitX) this.posX[i] = this.rearLimitX;
-        }
-
-        if (this.invMass[i + 1] > 0) {
-          this.oldPosX[i + 1] -= momX * t;
-          this.oldPosY[i + 1] -= momY * t;
-          this.posX[i + 1] += dragX * t;
-          this.posY[i + 1] += dragY * t;
-          if (signX < 0 && this.posX[i + 1] < this.rearLimitX) this.posX[i + 1] = this.rearLimitX;
-          if (signX > 0 && this.posX[i + 1] > this.rearLimitX) this.posX[i + 1] = this.rearLimitX;
-        }
-
-        // B. Desaceleración Proporcional a la Tensión Acumulada:
-        // F_tension = clamp(((Delta_L) / L_0) * 0.80, 0.0, 0.95)
-        // v_ball <- v_ball * (1 - F_tension)
-        const l0 = this.restLen[i];
-        const updatedSx = this.posX[i + 1] - this.posX[i];
-        const updatedSy = this.posY[i + 1] - this.posY[i];
-        const updatedSLen = Math.hypot(updatedSx, updatedSy);
-        const updatedQx = this.posX[i] + t * updatedSx;
-        const qxRest = this.restPosX[i] + t * (this.restPosX[i + 1] - this.restPosX[i]);
-        const defX = Math.abs(updatedQx - qxRest);
-        const deltaL = Math.max(updatedSLen - l0, defX, pen);
-
-        if (l0 > 1e-4) {
-          const fTension = Math.min(0.95, Math.max(0.0, (deltaL / l0) * 0.80));
-          const decel = Math.max(0.08, fTension);
-          ball.vel.x *= (1 - decel);
-          ball.vel.y *= (1 - decel);
-        }
+      // Cesión de la red (barycentric) + empuje progresivo a_push·Δt hacia el fondo (−n̂)
+      const denom = (1 - t) * (1 - t) + t * t;
+      const yieldScale = denom > 1e-6 ? netShare / denom : 0;
+      if (w1 > 0) {
+        const m1 = yieldScale * (1 - t) + push;
+        this.posX[i] -= nx * m1;
+        this.posY[i] -= ny * m1;
       }
+      if (w2 > 0) {
+        const m2 = yieldScale * t + push;
+        this.posX[i + 1] -= nx * m2;
+        this.posY[i + 1] -= ny * m2;
+      }
+
+      // El balón sólo se separa la parte de la penetración que no absorbe la red
+      ball.pos.x += nx * ballShare;
+      ball.pos.y += ny * ballShare;
+
+      // Deformación local respecto a reposo en el punto de contacto
+      const curQx = this.posX[i] + t * (this.posX[i + 1] - this.posX[i]);
+      const curQy = this.posY[i] + t * (this.posY[i + 1] - this.posY[i]);
+      const restQx = this.restPosX[i] + t * (this.restPosX[i + 1] - this.restPosX[i]);
+      const restQy = this.restPosY[i] + t * (this.restPosY[i + 1] - this.restPosY[i]);
+      const deform = Math.hypot(curQx - restQx, curQy - restQy);
+      if (deform > maxDeform) maxDeform = deform;
     }
 
-    // -------------------------------------------------------------
-    // 3. CONTENCIÓN UNILATERAL INFRANQUEABLE (ANTI-TUNNELING PROJECTION)
-    // Garantiza que el balón no pueda cruzar al otro lado de la cortina de fondo
-    // -------------------------------------------------------------
+    if (maxDeform >= 0) {
+      this.clampRearAndSanitize();
+      // Desaceleración elástica progresiva (Δt normalizado al tick fijo)
+      let fTension = (maxDeform / profMax) * TENSION_GAIN;
+      if (fTension < 0) fTension = 0;
+      if (fTension > TENSION_MAX) fTension = TENSION_MAX;
+      ball.vel.x *= (1 - fTension);
+      ball.vel.y *= (1 - fTension);
+    }
+
+    // 3. CONTENCIÓN UNILATERAL INFRANQUEABLE
+    const by = ball.pos.y;
     for (let k = 0; k < N - 1; k++) {
-      const yMinSeg = Math.min(this.posY[k], this.posY[k + 1]);
-      const yMaxSeg = Math.max(this.posY[k], this.posY[k + 1]);
-
-      if (by >= yMinSeg - rBall && by <= yMaxSeg + rBall) {
-        const segDy = this.posY[k + 1] - this.posY[k];
-        const tSeg = Math.abs(segDy) > 1e-4 ? Math.max(0, Math.min(1, (by - this.posY[k]) / segDy)) : 0.5;
-        const xSeg = this.posX[k] + tSeg * (this.posX[k + 1] - this.posX[k]);
-
-        if (signX > 0) {
-          // Portería derecha (X > 0): si el balón intenta rebasar la cortina hacia afuera
-          if (ball.pos.x > xSeg) {
-            ball.pos.x = xSeg - rBall;
-            if (ball.vel.x > 0) ball.vel.x = 0;
-          }
-        } else {
-          // Portería izquierda (X < 0): si el balón intenta rebasar la cortina hacia afuera
-          if (ball.pos.x < xSeg) {
-            ball.pos.x = xSeg + rBall;
-            if (ball.vel.x < 0) ball.vel.x = 0;
-          }
+      const ya = this.posY[k];
+      const yb = this.posY[k + 1];
+      if (by < ya || by > yb) continue;
+      const segDy = yb - ya;
+      const tSeg = segDy > 1e-4 ? (by - ya) / segDy : 0.5;
+      const xSeg = this.posX[k] + tSeg * (this.posX[k + 1] - this.posX[k]);
+      if (signX > 0) {
+        if (ball.pos.x > xSeg - rBall) {
+          ball.pos.x = xSeg - rBall;
+          if (ball.vel.x > 0) ball.vel.x = 0;
         }
+      } else if (ball.pos.x < xSeg + rBall) {
+        ball.pos.x = xSeg + rBall;
+        if (ball.vel.x < 0) ball.vel.x = 0;
       }
+      break;
     }
 
-    // -------------------------------------------------------------
-    // 4. TOPE ABSOLUTO DE FONDO (REAR LIMIT X)
-    // -------------------------------------------------------------
+    // 4. TOPE ABSOLUTO DE FONDO
     if (signX < 0) {
       if (ball.pos.x - rBall < this.rearLimitX) {
         ball.pos.x = this.rearLimitX + rBall;
         if (ball.vel.x < 0) ball.vel.x = 0;
-        ball.vel.y *= 0.7;
       }
-    } else {
-      if (ball.pos.x + rBall > this.rearLimitX) {
-        ball.pos.x = this.rearLimitX - rBall;
-        if (ball.vel.x > 0) ball.vel.x = 0;
-        ball.vel.y *= 0.7;
-      }
+    } else if (ball.pos.x + rBall > this.rearLimitX) {
+      ball.pos.x = this.rearLimitX - rBall;
+      if (ball.vel.x > 0) ball.vel.x = 0;
     }
   }
 
-  /**
-   * Método de colisión explícito para validación arquitectónica.
-   * Filtra estrictamente discos que no sean el balón.
-   */
-  public resolveDiscCollision(disc: any): void {
+  /** Colisión explícita: filtra estrictamente discos que no sean el balón. */
+  public resolveDiscCollision(disc: NetBall | null | undefined): void {
     if (!disc || !disc.isBall) return;
-    this.step(disc, 1 / 60);
+    this.step(disc, FIXED_DT);
   }
 
-  /**
-   * Renderiza la portería de caja (4 anclajes, laterales tensados y cortina de fondo viscoelástica)
-   * en Canvas 2D sin alocaciones de memoria (Zero-GC).
-   */
+  /** Render Canvas 2D Zero-GC: laterales, cortina con curvas cuadráticas y costillas de profundidad. */
   public render(ctx: CanvasRenderingContext2D): void {
     const N = this.nodeCount;
     if (N < 2) return;
@@ -578,62 +546,53 @@ export class GoalNet {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // 1. Laterales Tensados Semirrígidos (P_top -> S_top y P_bottom -> S_bottom)
+    // 1. Laterales tensados
     ctx.beginPath();
     ctx.moveTo(this.pTopX, this.pTopY);
     ctx.lineTo(this.posX[0], this.posY[0]);
-
     ctx.moveTo(this.pBottomX, this.pBottomY);
     ctx.lineTo(this.posX[N - 1], this.posY[N - 1]);
     ctx.stroke();
 
-    // 2. Cortina de Fondo Viscoelástica (Back Drop Net Chain)
+    // 2. Cortina de fondo (curva continua cuadrática por puntos medios)
     ctx.beginPath();
     ctx.moveTo(this.posX[0], this.posY[0]);
-
     if (typeof ctx.quadraticCurveTo === 'function') {
-      for (let i = 0; i < N - 1; i++) {
+      for (let i = 1; i < N - 1; i++) {
         const xc = (this.posX[i] + this.posX[i + 1]) * 0.5;
         const yc = (this.posY[i] + this.posY[i + 1]) * 0.5;
         ctx.quadraticCurveTo(this.posX[i], this.posY[i], xc, yc);
       }
       ctx.lineTo(this.posX[N - 1], this.posY[N - 1]);
     } else {
-      for (let i = 1; i < N; i++) {
-        ctx.lineTo(this.posX[i], this.posY[i]);
-      }
+      for (let i = 1; i < N; i++) ctx.lineTo(this.posX[i], this.posY[i]);
     }
     ctx.stroke();
 
-    // 3. Malla interior / Costillas de profundidad estilo Box Net (Zero-GC)
-    ctx.save();
-    ctx.strokeStyle = this.color;
+    // 3. Costillas de profundidad
     ctx.globalAlpha = 0.28;
     ctx.lineWidth = 1;
-
     const ribCount = 4;
     for (let k = 1; k < ribCount; k++) {
       const u = k / ribCount;
       const frontY = this.pTopY + u * (this.pBottomY - this.pTopY);
       const nodeIdx = Math.min(N - 2, Math.floor(u * (N - 1)));
       const tSub = (u * (N - 1)) - nodeIdx;
-      const backX = this.posX[nodeIdx] + tSub * (this.posX[nodeIdx + 1] - this.posX[nodeIdx]);
-      const backY = this.posY[nodeIdx] + tSub * (this.posY[nodeIdx + 1] - this.posY[nodeIdx]);
-
+      const bx = this.posX[nodeIdx] + tSub * (this.posX[nodeIdx + 1] - this.posX[nodeIdx]);
+      const byy = this.posY[nodeIdx] + tSub * (this.posY[nodeIdx + 1] - this.posY[nodeIdx]);
       ctx.beginPath();
       ctx.moveTo(this.mouthX, frontY);
-      ctx.lineTo(backX, backY);
+      ctx.lineTo(bx, byy);
       ctx.stroke();
     }
-    ctx.restore();
 
     ctx.restore();
   }
 
   /**
-   * Ciclo de Restauración de la Red (Kickoff Reset):
-   * - smooth === false: Reasigna instantáneamente p_i = restPos_i y resetea velocidades a cero.
-   * - smooth === true: Activa modo de relajación durante COUNTDOWN (lerp 0.06 por tick).
+   * Restauración de la red:
+   * - smooth === false: p_i = restPos_i y velocidades a cero.
+   * - smooth === true: relajación adicional (lerp 0.06 por tick) durante COUNTDOWN.
    */
   public resetShape(smooth: boolean = false): void {
     if (!smooth) {
@@ -649,10 +608,18 @@ export class GoalNet {
     }
   }
 
-  /**
-   * Restablece todos los nodos a su geometría de reposo (alias de resetShape(false)).
-   */
+  /** Alias de resetShape(false). */
   public reset(): void {
     this.resetShape(false);
+  }
+
+  /** Energía/desviación máxima respecto al reposo (útil para tests y telemetría). */
+  public maxDeviation(): number {
+    let maxDev = 0;
+    for (let i = 1; i < this.nodeCount - 1; i++) {
+      const d = Math.hypot(this.posX[i] - this.restPosX[i], this.posY[i] - this.restPosY[i]);
+      if (d > maxDev) maxDev = d;
+    }
+    return maxDev;
   }
 }

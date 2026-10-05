@@ -37,9 +37,9 @@ describe('Stadium Box Net Model (4 Rigid Anchors, Anti-Loop Bending & Unilateral
       expect(netLeft.restPosX[12]).toBe(-636);
       expect(netLeft.restPosY[12]).toBe(85);
 
-      // Dynamic nodes have mass m = 0.35 => invMass ≈ 2.857
+      // Dynamic nodes have mass m = 0.40 => invMass = 2.5
       for (let i = 1; i <= 11; i++) {
-        expect(netLeft.invMass[i]).toBeCloseTo(1 / 0.35, 2);
+        expect(netLeft.invMass[i]).toBeCloseTo(1 / 0.40, 2);
       }
 
       // Middle node has gentle concavity towards rear (X <= -636) and Y ≈ 0
@@ -248,7 +248,7 @@ describe('Stadium Box Net Model (4 Rigid Anchors, Anti-Loop Bending & Unilateral
       expect(Math.abs(ball.vel.x)).toBeGreaterThan(0.5); // Still retains momentum!
     });
 
-    it('keeps plastic shape deformation during play and floats back on resetShape(smooth: true)', () => {
+    it('springs back elastically (no plastic memory) and also floats back on resetShape(smooth: true)', () => {
       const net = new GoalNet({
         side: 'left',
         mouthX: -600,
@@ -259,18 +259,17 @@ describe('Stadium Box Net Model (4 Rigid Anchors, Anti-Loop Bending & Unilateral
         nodeCount: 13
       });
 
-      // Displace middle node
+      // Displace middle node: the restoring spring starts pulling it back immediately
       net.posX[6] = -645;
+      net.oldPosX[6] = -645;
       net.step(1 / 60);
+      expect(net.posX[6]).toBeGreaterThan(-645);
 
-      // With kShape = 0, node does not return to rest
-      expect(net.posX[6]).toBeLessThan(-640);
-
-      // Trigger smooth reset (lerp 0.06)
+      // Trigger smooth reset (lerp 0.06) on top of the springs
       net.resetShape(true);
       expect(net.isRelaxing).toBe(true);
 
-      for (let tick = 0; tick < 80; tick++) {
+      for (let tick = 0; tick < 150; tick++) {
         net.step(1 / 60);
       }
 

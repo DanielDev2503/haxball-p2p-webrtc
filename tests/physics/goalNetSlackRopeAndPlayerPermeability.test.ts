@@ -97,9 +97,9 @@ describe('Slack Trapezoid Rope Net, Player Permeability & Non-Host Modal Toggle'
       expect(netLeft.restPosY[12]).toBe(85);
       expect(netLeft.invMass[12]).toBe(0);
 
-      // Mobile nodes have mass m = 0.35 => invMass ≈ 2.857
+      // Mobile nodes have mass m = 0.40 => invMass = 2.5
       for (let i = 1; i <= 11; i++) {
-        expect(netLeft.invMass[i]).toBeCloseTo(1 / 0.35, 2);
+        expect(netLeft.invMass[i]).toBeCloseTo(1 / 0.40, 2);
       }
 
       // Center back node (i = 6) cuelga con suave concavidad hacia atrás (X <= -636) y Y = 0
@@ -118,7 +118,7 @@ describe('Slack Trapezoid Rope Net, Player Permeability & Non-Host Modal Toggle'
       }
     });
 
-    it('deforms with dynamic stretching, transfers momentum, deflects off side nets, and retains plastic shape', () => {
+    it('deforms with dynamic stretching, transfers momentum, deflects off side nets, and returns elastically', () => {
       const net = new GoalNet({
         side: 'left',
         mouthX: -600,
@@ -160,15 +160,11 @@ describe('Slack Trapezoid Rope Net, Player Permeability & Non-Host Modal Toggle'
       expect(fastBall.pos.x).toBeGreaterThanOrEqual(-652);
       expect(Math.hypot(fastBall.vel.x, fastBall.vel.y)).toBeLessThan(initialSpeed);
 
-      // Memoria plástica transitoria: los nodos permanecen deformados envolviendo el balón (kShape = 0, sin resorte de retorno)
-      const deformedMiddleX = net.posX[6];
-      expect(deformedMiddleX).not.toBeCloseTo(net.restPosX[6], 0.5);
-
-      // Ticks adicionales con el balón en reposo: la red NO intenta regresar a reposo
-      for (let tick = 0; tick < 30; tick++) {
-        net.step(fastBall, 1 / 60);
+      // Red elástica subamortiguada: sin memoria plástica. Al retirar el balón, vibra y regresa a reposo.
+      for (let tick = 0; tick < 180; tick++) {
+        net.step(1 / 60);
       }
-      expect(net.posX[6]).toBeCloseTo(deformedMiddleX, 0.5);
+      expect(net.maxDeviation()).toBeLessThan(0.5);
 
       // Restauración suave (COUNTDOWN Kickoff Reset: resetShape(true))
       net.resetShape(true);

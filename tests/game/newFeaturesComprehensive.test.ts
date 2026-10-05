@@ -326,10 +326,10 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
       expect(net.invMass[0]).toBe(0);
       expect(net.invMass[net.nodeCount - 1]).toBe(0);
 
-      // Dynamic nodes: invMass = 1 / 0.35 ≈ 2.857 (m = 0.35)
-      expect(net.invMass[1]).toBeCloseTo(1 / 0.35, 2);
-      expect(net.invMass[8]).toBeCloseTo(1 / 0.35, 2);
-      expect(net.invMass[net.nodeCount - 2]).toBeCloseTo(1 / 0.35, 2);
+      // Dynamic nodes: invMass = 1 / 0.40 = 2.5 (m = 0.40)
+      expect(net.invMass[1]).toBeCloseTo(1 / 0.40, 2);
+      expect(net.invMass[8]).toBeCloseTo(1 / 0.40, 2);
+      expect(net.invMass[net.nodeCount - 2]).toBeCloseTo(1 / 0.40, 2);
     });
 
     it('transfers momentum to rope nodes, creates deep pocket and dissipates ball energy smoothly without NaN', () => {

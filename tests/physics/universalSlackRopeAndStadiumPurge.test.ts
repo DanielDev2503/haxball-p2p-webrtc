@@ -54,8 +54,8 @@ describe('Universal Slack Rope Net Physics & Goal Boundary Purge', () => {
         expect(netLeft.side).toBe('left');
         expect(netRight.side).toBe('right');
 
-        expect(netLeft.nodeCount).toBe(13);
-        expect(netRight.nodeCount).toBe(13);
+        expect(netLeft.nodeCount).toBe(15);
+        expect(netRight.nodeCount).toBe(15);
 
         // Find reference goal post positions
         const redGoal = stadium.goals.find(g => g.team === 'red') || stadium.goals[0];
@@ -75,7 +75,7 @@ describe('Universal Slack Rope Net Physics & Goal Boundary Purge', () => {
   });
 
   describe('2. Stadium Box Net (4-Anchor, N=13 Back Curtain) Geometry and Kinetic Damping', () => {
-    it('anchors rear corners (0 and N-1) and front posts firmly (invMass = 0) while intermediate nodes have invMass = 1 / 0.35 ≈ 2.857', () => {
+    it('anchors rear corners (0 and N-1) and front posts firmly (invMass = 0) while intermediate nodes have invMass = 1 / 0.40 = 2.5', () => {
       const net = new GoalNet({
         side: 'left',
         mouthX: -400,
@@ -101,7 +101,7 @@ describe('Universal Slack Rope Net Physics & Goal Boundary Purge', () => {
       expect(net.invMass[12]).toBe(0); // Bottom rear corner anchor
 
       for (let i = 1; i <= 11; i++) {
-        expect(net.invMass[i]).toBeCloseTo(1 / 0.35, 2); // Mobile nodes
+        expect(net.invMass[i]).toBeCloseTo(1 / 0.40, 2); // Mobile nodes
       }
 
       // Rest positions check: curtain spans from S_top to S_bottom

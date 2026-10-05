@@ -103,7 +103,7 @@ export class PhysicsWorld {
       this.addDisc(post);
     }
 
-    // 5. Instanciar GoalNet de caja (Stadium Box Net Model, N = 13 partículas, profundidad ≈ 36 px)
+    // 5. Instanciar GoalNet de caja con red elástica subamortiguada (N = 15 partículas, profundidad ≈ 36 px)
     const depth = 36;
     const leftNet = new GoalNet({
       side: 'left',
@@ -112,7 +112,7 @@ export class PhysicsWorld {
       depth,
       topY: -leftYPost,
       bottomY: leftYPost,
-      nodeCount: 13
+      nodeCount: 15
     });
 
     const rightNet = new GoalNet({
@@ -122,7 +122,7 @@ export class PhysicsWorld {
       depth,
       topY: -rightYPost,
       bottomY: rightYPost,
-      nodeCount: 13
+      nodeCount: 15
     });
 
     this.goalNets = [leftNet, rightNet];
