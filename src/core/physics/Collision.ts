@@ -196,35 +196,46 @@ export function resolveGoalAndPitchBoundaries(
     if (vel.y > 0) vel.y = 0;
   }
 
-  // 2. Paredes superior e inferior de la red de la portería (y = ±gh para |x| in [pitchHw, netX])
-  const absX = Math.abs(pos.x);
-  if (absX >= pitchHw && absX <= netX + radius) {
-    if (pos.y < -gh + radius) {
-      pos.y = -gh + radius;
-      if (vel.y < 0) vel.y = 0;
-    } else if (pos.y > gh - radius) {
-      pos.y = gh - radius;
-      if (vel.y > 0) vel.y = 0;
+  // 2. Paridad Geométrica con Host:
+  // Si runOff === 0 (escenarios analíticos cerrados): la red restringe a netX y ±gh.
+  // Si runOff > 0 (partido real con zona de escape): la red es 100% permeable para jugadores,
+  // permitiendo libre circulación hasta los límites perimetrales exteriores extHw y extHh.
+  if (runOff === 0) {
+    const absX = Math.abs(pos.x);
+    if (absX >= pitchHw && absX <= netX + radius) {
+      if (pos.y < -gh + radius) {
+        pos.y = -gh + radius;
+        if (vel.y < 0) vel.y = 0;
+      } else if (pos.y > gh - radius) {
+        pos.y = gh - radius;
+        if (vel.y > 0) vel.y = 0;
+      }
     }
-  }
 
-  // 3. Paredes verticales perimetrales (X = ±extHw) y fondo de red (X = ±netX)
-  if (Math.abs(pos.y) > gh) {
-    // Fuera de la boca de la portería: límites en X = ±extHw (zona de escape)
+    if (Math.abs(pos.y) > gh) {
+      if (pos.x < -extHw + radius) {
+        pos.x = -extHw + radius;
+        if (vel.x < 0) vel.x = 0;
+      } else if (pos.x > extHw - radius) {
+        pos.x = extHw - radius;
+        if (vel.x > 0) vel.x = 0;
+      }
+    } else {
+      if (pos.x < -netX + radius) {
+        pos.x = -netX + radius;
+        if (vel.x < 0) vel.x = 0;
+      } else if (pos.x > netX - radius) {
+        pos.x = netX - radius;
+        if (vel.x > 0) vel.x = 0;
+      }
+    }
+  } else {
+    // Paridad total con Host en partido activo: libre paso a través de la red hasta el perímetro exterior extHw
     if (pos.x < -extHw + radius) {
       pos.x = -extHw + radius;
       if (vel.x < 0) vel.x = 0;
     } else if (pos.x > extHw - radius) {
       pos.x = extHw - radius;
-      if (vel.x > 0) vel.x = 0;
-    }
-  } else {
-    // Dentro de la boca de la portería (|y| <= gh): el límite se extiende hasta el fondo de la red X = ±netX
-    if (pos.x < -netX + radius) {
-      pos.x = -netX + radius;
-      if (vel.x < 0) vel.x = 0;
-    } else if (pos.x > netX - radius) {
-      pos.x = netX - radius;
       if (vel.x > 0) vel.x = 0;
     }
   }

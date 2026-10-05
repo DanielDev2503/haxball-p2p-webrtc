@@ -57,9 +57,10 @@ export class ScoreboardHUD {
     // Inicializar tokens y estilos base de ScoreboardHUD
     this.applyTheme($theme.get());
 
-    // Botón de alternancia de menú de sala (#btn-menu / #menu-toggle-btn) para todos los jugadores
+    // Botón de alternancia de menú de sala (#btn-menu / #menu-toggle-btn) para todos los jugadores (Host y No-Host)
     const menuBtn = document.getElementById('btn-menu') || document.getElementById('menu-toggle-btn');
-    if (menuBtn) {
+    if (menuBtn && !menuBtn.dataset?.listenerBound) {
+      if (menuBtn.dataset) menuBtn.dataset.listenerBound = 'true';
       menuBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();

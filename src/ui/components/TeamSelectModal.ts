@@ -249,14 +249,14 @@ export class TeamSelectModal {
       this.isUserHost = isHost;
     }
     const isStopped = phase === MatchPhase.STOPPED;
-    const canChangeStadium = this.isUserHost && this.isUserAdmin && isStopped;
+    const canChangeStadium = (this.isUserHost || this.isUserAdmin) && isStopped;
 
     if (this.selectStadiumEl) {
       this.selectStadiumEl.disabled = !canChangeStadium;
     }
     const pickBtn = document.getElementById('btn-pick-stadium') as HTMLButtonElement | null;
     if (pickBtn) {
-      if (!this.isUserHost) {
+      if (!this.isUserHost && !this.isUserAdmin) {
         if (pickBtn.style) pickBtn.style.display = 'none';
         pickBtn.disabled = true;
       } else {
@@ -272,7 +272,7 @@ export class TeamSelectModal {
       }
     }
 
-    if ((!isStopped || !this.isUserHost) && this.stadiumPickerModalEl) {
+    if ((!isStopped || (!this.isUserHost && !this.isUserAdmin)) && this.stadiumPickerModalEl) {
       this.stadiumPickerModalEl.classList?.add?.('u-hidden');
       if (this.stadiumPickerModalEl.style) this.stadiumPickerModalEl.style.display = 'none';
     }
@@ -289,7 +289,7 @@ export class TeamSelectModal {
     this.updateStadiumControls(phase, this.isUserAdmin, this.isUserHost);
 
     const isStopped = phase === MatchPhase.STOPPED;
-    const canModifySettings = this.isUserHost && isStopped;
+    const canModifySettings = (this.isUserHost || this.isUserAdmin) && isStopped;
 
     const timeLimitSelect = document.getElementById('select-time-limit') as HTMLSelectElement | null;
     if (timeLimitSelect) {
@@ -307,12 +307,12 @@ export class TeamSelectModal {
     }
     const lockBtn = document.getElementById('btn-lock-teams') as HTMLButtonElement | null;
     if (lockBtn) {
-      lockBtn.disabled = !this.isUserHost;
-      if (lockBtn.style) lockBtn.style.display = this.isUserHost ? '' : 'none';
+      lockBtn.disabled = !this.isUserHost && !this.isUserAdmin;
+      if (lockBtn.style) lockBtn.style.display = (this.isUserHost || this.isUserAdmin) ? '' : 'none';
     }
     const modBtn = document.getElementById('btn-open-physics-modifiers') as HTMLButtonElement | null;
     if (modBtn) {
-      if (!this.isUserHost) {
+      if (!this.isUserHost && !this.isUserAdmin) {
         if (modBtn.style) modBtn.style.display = 'none';
         modBtn.disabled = true;
       } else {
@@ -372,6 +372,7 @@ export class TeamSelectModal {
   }
 
   public updateMatchState(newState: MatchPhase | MatchState | string, outcomeText?: string, isAdmin?: boolean, isHost?: boolean): void {
+    const prevPhase = this.currentMatchState;
     const phase = typeof newState === 'number' ? newState : toMatchPhase(newState);
     this.currentMatchState = phase;
     $matchPhase.set(phase);
@@ -396,16 +397,19 @@ export class TeamSelectModal {
       }
     }
 
-    if (phase === MatchPhase.COUNTDOWN || phase === MatchPhase.PLAYING || phase === MatchPhase.GOAL_CELEBRATION || phase === MatchPhase.MATCH_ENDED) {
-      // 1. Cierre Automático: Despeja la pantalla para ver el campo y la cuenta regresiva
-      this.close(true);
-    } else if (phase === MatchPhase.STOPPED) {
-      // 2. Apertura Forzada Únicamente en STOPPED y Game Over
+    // Cierre o apertura reactiva basada en transición de fase:
+    if (phase === MatchPhase.STOPPED) {
+      // Apertura Forzada Únicamente en STOPPED y Game Over
       this.open(true);
-    } else if (phase === MatchPhase.PAUSED) {
-      // En pausa se desbloquea el modo forzado, permitiendo alternar con Escape o botón
-      if (this.menuEl) {
-        this.menuEl.classList.remove('is-forced-open');
+    } else if (prevPhase !== phase) {
+      if (phase === MatchPhase.COUNTDOWN || phase === MatchPhase.PLAYING) {
+        // Cierre Automático: Solo en transición al iniciar o tras la cuenta regresiva hacia el partido
+        this.close(true);
+      } else if (phase === MatchPhase.PAUSED) {
+        // En pausa se desbloquea el modo forzado, permitiendo alternar con Escape o botón
+        if (this.menuEl) {
+          this.menuEl.classList.remove('is-forced-open');
+        }
       }
     }
   }

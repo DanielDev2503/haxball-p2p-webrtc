@@ -1,3 +1,5 @@
+import { MatchPhase } from '../core/game/GameFSM';
+
 export type UIState = 'STATE_NICKNAME' | 'STATE_LOBBY' | 'STATE_IN_GAME';
 
 export interface UIStateMachineOptions {
@@ -58,6 +60,70 @@ export class UIStateMachine {
     if (this.onStateChange) {
       this.onStateChange(nextState, prevState);
     }
+  }
+
+  /**
+   * Conmutación universal de modal de menú de sala para Host y No-Host.
+   * Tanto el Host como cualquier jugador No-Host pueden abrir/cerrar el modal
+   * durante todas las fases de juego (COUNTDOWN, PLAYING, PAUSED, GOAL_CELEBRATION, MATCH_ENDED).
+   * Excepción única: Durante STOPPED permanece abierto para todos de forma fija.
+   */
+  public toggleModal(modalName: string = 'teamSelect', _isHost?: boolean, matchPhase?: MatchPhase | number): boolean {
+    if (modalName === 'teamSelect' || modalName === 'ingameMenu') {
+      if (matchPhase === MatchPhase.STOPPED) {
+        this.openModal(modalName);
+        return true;
+      }
+      if (this.isModalOpen(modalName)) {
+        this.closeModal(modalName);
+        return false;
+      } else {
+        this.openModal(modalName);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public openModal(modalName: string = 'teamSelect'): void {
+    if (modalName === 'teamSelect' || modalName === 'ingameMenu') {
+      if (!this.elIngameMenu && typeof document !== 'undefined') {
+        this.elIngameMenu = document.getElementById('ingame-menu');
+      }
+      if (this.elIngameMenu) {
+        this.elIngameMenu.classList.remove('hidden', 'u-hidden', 'ui-screen-hidden');
+        this.elIngameMenu.style.display = 'flex';
+        this.elIngameMenu.style.pointerEvents = 'auto';
+      }
+    }
+  }
+
+  public closeModal(modalName: string = 'teamSelect'): void {
+    if (modalName === 'teamSelect' || modalName === 'ingameMenu') {
+      if (!this.elIngameMenu && typeof document !== 'undefined') {
+        this.elIngameMenu = document.getElementById('ingame-menu');
+      }
+      if (this.elIngameMenu) {
+        this.elIngameMenu.classList.add('hidden');
+        this.elIngameMenu.classList.remove('is-forced-open');
+        this.elIngameMenu.style.display = 'none';
+      }
+    }
+  }
+
+  public isModalOpen(modalName: string = 'teamSelect'): boolean {
+    if (modalName === 'teamSelect' || modalName === 'ingameMenu') {
+      if (!this.elIngameMenu && typeof document !== 'undefined') {
+        this.elIngameMenu = document.getElementById('ingame-menu');
+      }
+      if (!this.elIngameMenu) return false;
+      const isHidden = this.elIngameMenu.classList.contains('hidden') ||
+                       this.elIngameMenu.classList.contains('u-hidden') ||
+                       this.elIngameMenu.classList.contains('ui-screen-hidden') ||
+                       this.elIngameMenu.style.display === 'none';
+      return !isHidden;
+    }
+    return false;
   }
 
   /**

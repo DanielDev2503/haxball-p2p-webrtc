@@ -1,0 +1,303 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { GoalNet } from '../../src/core/entities/GoalNet';
+import { PhysicsWorld } from '../../src/core/physics/PhysicsWorld';
+import { Disc, COLLISION_GROUP_RED, COLLISION_GROUP_BLUE } from '../../src/core/entities/Disc';
+import { UIStateMachine } from '../../src/ui/UIStateMachine';
+import { MatchPhase } from '../../src/core/game/GameFSM';
+import { TeamSelectModal } from '../../src/ui/components/TeamSelectModal';
+
+describe('Slack Trapezoid Rope Net, Player Permeability & Non-Host Modal Toggle', () => {
+  describe('1. Non-Host Universal Modal Toggle in UIStateMachine', () => {
+    let ingameMenuEl: any;
+    let classes: Set<string>;
+
+    beforeEach(() => {
+      classes = new Set<string>(['hidden']);
+      ingameMenuEl = {
+        id: 'ingame-menu',
+        style: { display: 'none', pointerEvents: 'none' },
+        classList: {
+          add: vi.fn((...c: string[]) => c.forEach(cls => classes.add(cls))),
+          remove: vi.fn((...c: string[]) => c.forEach(cls => classes.delete(cls))),
+          contains: vi.fn((cls: string) => classes.has(cls))
+        }
+      };
+
+      (globalThis as any).document = {
+        getElementById: (id: string) => (id === 'ingame-menu' ? ingameMenuEl : null),
+        querySelector: () => null,
+        querySelectorAll: () => []
+      };
+    });
+
+    it('allows a Non-Host user (isHost = false) to toggle the menu open and closed during PLAYING phase', () => {
+      const fsm = new UIStateMachine('STATE_IN_GAME');
+
+      // Non-host toggles during active match (MatchPhase.PLAYING)
+      const isHost = false;
+      const opened = fsm.toggleModal('teamSelect', isHost, MatchPhase.PLAYING);
+      expect(opened).toBe(true);
+      expect(fsm.isModalOpen('teamSelect')).toBe(true);
+      expect(ingameMenuEl.classList.remove).toHaveBeenCalledWith('hidden', 'u-hidden', 'ui-screen-hidden');
+      expect(ingameMenuEl.style.display).toBe('flex');
+
+      // Non-host toggles again to close
+      const closed = fsm.toggleModal('teamSelect', isHost, MatchPhase.PLAYING);
+      expect(closed).toBe(false);
+      expect(fsm.isModalOpen('teamSelect')).toBe(false);
+      expect(ingameMenuEl.classList.add).toHaveBeenCalledWith('hidden');
+      expect(ingameMenuEl.style.display).toBe('none');
+    });
+
+    it('keeps menu open and prevents closing during STOPPED phase even for Non-Host', () => {
+      const fsm = new UIStateMachine('STATE_IN_GAME');
+
+      const isHost = false;
+      // In STOPPED phase, toggleModal keeps the menu open
+      const res = fsm.toggleModal('teamSelect', isHost, MatchPhase.STOPPED);
+      expect(res).toBe(true);
+      expect(fsm.isModalOpen('teamSelect')).toBe(true);
+
+      // Attempting to toggle again in STOPPED phase does not close the menu
+      const res2 = fsm.toggleModal('teamSelect', isHost, MatchPhase.STOPPED);
+      expect(res2).toBe(true);
+      expect(fsm.isModalOpen('teamSelect')).toBe(true);
+    });
+  });
+
+  describe('2. Slack Trapezoid Rope Geometry & Dynamics', () => {
+    it('initializes slack trapezoid contour with rounded corners and vertical back wall', () => {
+      const netLeft = new GoalNet({
+        side: 'left',
+        mouthX: -600,
+        backX: -635,
+        topY: -85,
+        bottomY: 85,
+        topCornerY: -65,
+        bottomCornerY: 65,
+        nodeCount: 11
+      });
+
+      expect(netLeft.nodeCount).toBe(11);
+      // Fixed anchors at posts
+      expect(netLeft.restPosX[0]).toBe(-600);
+      expect(netLeft.restPosY[0]).toBe(-85);
+      expect(netLeft.invMass[0]).toBe(0);
+
+      expect(netLeft.restPosX[10]).toBe(-600);
+      expect(netLeft.restPosY[10]).toBe(85);
+      expect(netLeft.invMass[10]).toBe(0);
+
+      // Mobile nodes have mass m = 0.4 => invMass = 2.5
+      for (let i = 1; i <= 9; i++) {
+        expect(netLeft.invMass[i]).toBe(2.5);
+      }
+
+      // Center back node (i = 5) is at X = -635 and Y = 0
+      expect(netLeft.restPosX[5]).toBe(-635);
+      expect(netLeft.restPosY[5]).toBeCloseTo(0, 1);
+
+      // Top corner rounded nodes (i = 1, 2) curve smoothly towards X = -635
+      expect(netLeft.restPosX[1]).toBeLessThan(-600);
+      expect(netLeft.restPosX[1]).toBeGreaterThan(-635);
+      expect(netLeft.restPosY[1]).toBeGreaterThan(-85);
+      expect(netLeft.restPosY[1]).toBeLessThan(-65);
+
+      // Vertical back wall nodes are at X = -635
+      expect(netLeft.restPosX[4]).toBe(-635);
+      expect(netLeft.restPosX[6]).toBe(-635);
+    });
+
+    it('dissipates high-velocity ball shot into the net elastically (v_ball * 0.65) without NaN or overflow', () => {
+      const net = new GoalNet({
+        side: 'left',
+        mouthX: -600,
+        backX: -635,
+        topY: -85,
+        bottomY: 85,
+        rearLimitX: -640,
+        nodeCount: 11
+      });
+
+      const fastBall = {
+        pos: { x: -634, y: 0 },
+        vel: { x: -35, y: 5 }, // High velocity shot
+        radius: 5.8,
+        isBall: true
+      };
+
+      const initialSpeed = Math.hypot(fastBall.vel.x, fastBall.vel.y);
+
+      // Step simulation
+      net.step(fastBall, 1 / 60);
+
+      // Velocity must be dissipated by factor of 0.65
+      const postSpeed = Math.hypot(fastBall.vel.x, fastBall.vel.y);
+      expect(postSpeed).toBeLessThan(initialSpeed);
+      expect(fastBall.vel.x).toBeCloseTo(-35 * 0.65, 1);
+
+      // Nodes must not have NaN
+      for (let i = 0; i < net.nodeCount; i++) {
+        expect(Number.isNaN(net.posX[i])).toBe(false);
+        expect(Number.isNaN(net.posY[i])).toBe(false);
+        expect(Number.isFinite(net.posX[i])).toBe(true);
+        expect(Number.isFinite(net.posY[i])).toBe(true);
+      }
+
+      // Multiple ticks of intense impact simulation
+      for (let tick = 0; tick < 60; tick++) {
+        net.step(fastBall, 1 / 60);
+      }
+
+      expect(Number.isNaN(fastBall.pos.x)).toBe(false);
+      expect(Number.isNaN(fastBall.pos.y)).toBe(false);
+      expect(Number.isNaN(fastBall.vel.x)).toBe(false);
+      expect(Number.isNaN(fastBall.vel.y)).toBe(false);
+
+      // Ball is retained within goal and does not violently bounce out
+      expect(fastBall.pos.x).toBeLessThan(-600);
+      expect(fastBall.pos.x).toBeGreaterThanOrEqual(-640);
+    });
+  });
+
+  describe('3. Absolute Net Permeability for Players', () => {
+    it('completely ignores player discs in GoalNet with zero collision and zero velocity alteration', () => {
+      const net = new GoalNet({
+        side: 'left',
+        mouthX: -600,
+        backX: -635,
+        topY: -85,
+        bottomY: 85,
+        nodeCount: 11
+      });
+
+      const playerDisc = new Disc({
+        id: 1,
+        x: -634,
+        y: 0, // In the middle of the goal net
+        radius: 15,
+        cGroup: COLLISION_GROUP_RED,
+        isBall: false
+      });
+      playerDisc.vel.set(-15, 2);
+
+      const initialPosX = playerDisc.pos.x;
+      const initialPosY = playerDisc.pos.y;
+      const initialVelX = playerDisc.vel.x;
+      const initialVelY = playerDisc.vel.y;
+
+      const middleNodeX = net.posX[5];
+      const middleNodeY = net.posY[5];
+
+      // Step GoalNet passing the player disc
+      net.step(playerDisc, 1 / 60);
+      net.resolveDiscCollision(playerDisc);
+
+      // Player must be completely unaffected
+      expect(playerDisc.pos.x).toBe(initialPosX);
+      expect(playerDisc.pos.y).toBe(initialPosY);
+      expect(playerDisc.vel.x).toBe(initialVelX);
+      expect(playerDisc.vel.y).toBe(initialVelY);
+
+      // Net nodes must not be perturbed
+      expect(net.posX[5]).toBe(middleNodeX);
+      expect(net.posY[5]).toBe(middleNodeY);
+    });
+
+    it('does not register any collision when players move through goal nets in PhysicsWorld', () => {
+      const world = new PhysicsWorld();
+      const net = new GoalNet({
+        side: 'left',
+        mouthX: -600,
+        backX: -635,
+        topY: -85,
+        bottomY: 85,
+        nodeCount: 11
+      });
+      world.goalNets = [net];
+
+      const player = new Disc({
+        id: 2,
+        x: -610,
+        y: 0,
+        radius: 15,
+        mass: 2,
+        cGroup: COLLISION_GROUP_BLUE,
+        isBall: false
+      });
+      player.vel.set(-20, 0); // Running into the goal net
+      world.addDisc(player);
+
+      const collisions: any[] = [];
+      world.onCollision = (e) => collisions.push(e);
+
+      // Run multiple physics steps
+      for (let i = 0; i < 5; i++) {
+        world.step();
+      }
+
+      // No collisions recorded for the player with the net
+      expect(collisions).toHaveLength(0);
+      // Player continues moving through the net unobstructed
+      expect(player.pos.x).toBeLessThan(-610);
+    });
+  });
+
+  describe('4. TeamSelectModal Permissions Isolation for Non-Host', () => {
+    let elements: Record<string, any>;
+
+    beforeEach(() => {
+      elements = {
+        'ingame-menu': { classList: { add: vi.fn(), remove: vi.fn(), contains: () => false }, style: {} },
+        'menu-close-btn': { style: {}, addEventListener: vi.fn() },
+        'btn-return-game': { style: {}, addEventListener: vi.fn() },
+        'btn-match-toggle': { style: {}, disabled: false, textContent: '', className: '', addEventListener: vi.fn() },
+        'btn-open-physics-modifiers': { style: {}, disabled: false, addEventListener: vi.fn() },
+        'btn-pick-stadium': { style: {}, disabled: false, addEventListener: vi.fn() },
+        'select-stadium-size': { disabled: false, addEventListener: vi.fn() },
+        'select-time-limit': { disabled: false, addEventListener: vi.fn() },
+        'select-goal-limit': { disabled: false, addEventListener: vi.fn() },
+        'btn-lock-teams': { style: {}, disabled: false, addEventListener: vi.fn() },
+        'btn-pause-resume': { style: {}, disabled: false, addEventListener: vi.fn() },
+        'joinRedBtn': { disabled: false, addEventListener: vi.fn() },
+        'joinBlueBtn': { disabled: false, addEventListener: vi.fn() },
+        'joinSpecBtn': { disabled: false, addEventListener: vi.fn() },
+        'btn-copy-link': { addEventListener: vi.fn() },
+        'btn-leave-room': { addEventListener: vi.fn() }
+      };
+
+      (globalThis as any).document = {
+        getElementById: (id: string) => elements[id] || null,
+        querySelector: () => null,
+        querySelectorAll: () => []
+      };
+    });
+
+    it('hides or disables admin controls for non-host non-admin player while keeping team and leave buttons active', () => {
+      const modal = new TeamSelectModal();
+
+      // Configure as Non-Host & Non-Admin
+      modal.setHost(false);
+      modal.updateMatchControlButton(MatchPhase.STOPPED, false, false);
+
+      // Admin controls must be hidden or disabled
+      expect(elements['btn-match-toggle'].disabled).toBe(true);
+      expect(elements['btn-match-toggle'].style.display).toBe('none');
+
+      expect(elements['btn-pick-stadium'].disabled).toBe(true);
+      expect(elements['btn-pick-stadium'].style.display).toBe('none');
+
+      expect(elements['btn-open-physics-modifiers'].disabled).toBe(true);
+      expect(elements['btn-open-physics-modifiers'].style.display).toBe('none');
+
+      expect(elements['select-stadium-size'].disabled).toBe(true);
+      expect(elements['select-time-limit'].disabled).toBe(true);
+      expect(elements['select-goal-limit'].disabled).toBe(true);
+
+      // Team switch and interaction buttons must remain enabled
+      expect(elements['joinRedBtn'].disabled).toBe(false);
+      expect(elements['joinBlueBtn'].disabled).toBe(false);
+      expect(elements['joinSpecBtn'].disabled).toBe(false);
+    });
+  });
+});

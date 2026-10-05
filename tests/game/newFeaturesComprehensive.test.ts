@@ -326,13 +326,13 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
       expect(net.invMass[0]).toBe(0);
       expect(net.invMass[net.nodeCount - 1]).toBe(0);
 
-      // Dynamic nodes: invMass = 2.0 (m = 0.5)
-      expect(net.invMass[1]).toBe(2.0);
-      expect(net.invMass[5]).toBe(2.0);
-      expect(net.invMass[net.nodeCount - 2]).toBe(2.0);
+      // Dynamic nodes: invMass = 2.5 (m = 0.4, w_i = 2.5)
+      expect(net.invMass[1]).toBe(2.5);
+      expect(net.invMass[5]).toBe(2.5);
+      expect(net.invMass[net.nodeCount - 2]).toBe(2.5);
     });
 
-    it('dissipates ball energy (v_ball * 0.75) and pushes rope nodes backward upon impact without NaN', () => {
+    it('dissipates ball energy (v_ball * 0.65) and pushes rope nodes backward upon impact without NaN', () => {
       const net = new GoalNet({
         side: 'left',
         mouthX: -600,
@@ -359,7 +359,7 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
 
       // Ball velocity dissipated
       expect(Math.abs(ball.vel.x)).toBeLessThan(Math.abs(initialVelX));
-      expect(ball.vel.x).toBeCloseTo(initialVelX * 0.75, 1);
+      expect(ball.vel.x).toBeCloseTo(initialVelX * 0.65, 1);
 
       // Rope nodes displaced without NaN
       expect(Number.isNaN(net.posX[5])).toBe(false);

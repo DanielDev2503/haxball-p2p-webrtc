@@ -518,7 +518,12 @@ export class GameApp {
     });
 
     // In-game menu overlay toggle (Button & Escape/Menu key)
+    let lastMenuToggleTime = 0;
     const toggleMenu = () => {
+      const now = performance.now();
+      if (now - lastMenuToggleTime < 150) return; // Debounce contra doble disparo por click simultáneo
+      lastMenuToggleTime = now;
+
       if (this.uiStateMachine.getState() !== 'STATE_IN_GAME') return;
       const currentPhase = this.getAuthoritativeMatchState();
       // Excepción: Durante STOPPED (partido no iniciado), el menú permanece abierto para todos y Escape no lo cierra
@@ -526,13 +531,21 @@ export class GameApp {
         return;
       }
       this.teamSelect.toggle();
+      this.uiStateMachine.toggleModal('teamSelect', Boolean(this.localPlayer.isHost || this.mode === 'host'), currentPhase);
       this.updateAdminControlsUI();
       this.updateTeamLists();
     };
 
-    const menuToggleBtn = document.getElementById('btn-menu') || document.getElementById('menu-toggle-btn');
-    if (menuToggleBtn) menuToggleBtn.addEventListener('click', toggleMenu);
     this.hud.onMenuToggle = toggleMenu;
+    const menuToggleBtn = document.getElementById('btn-menu') || document.getElementById('menu-toggle-btn');
+    if (menuToggleBtn && !menuToggleBtn.dataset?.listenerBound) {
+      if (menuToggleBtn.dataset) menuToggleBtn.dataset.listenerBound = 'true';
+      menuToggleBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleMenu();
+      });
+    }
 
     window.addEventListener('keydown', (e) => {
       // Si no estamos en STATE_IN_GAME, no procesar atajos de partido
@@ -1299,7 +1312,7 @@ export class GameApp {
           if (snap.matchPhase !== undefined) {
             const prevPhase = this.currentMatchState;
             this.currentMatchState = snap.matchPhase;
-            if (prevPhase !== snap.matchPhase || this.teamSelect.getMatchState() !== snap.matchPhase) {
+            if (prevPhase !== snap.matchPhase) {
               const isLocalHost = Boolean(this.mode === 'host' || this.localPlayer.isHost);
               this.teamSelect.updateMatchState(snap.matchPhase, undefined, this.localPlayer.isAdmin, isLocalHost);
               this.updateAdminControlsUI();
@@ -1819,13 +1832,19 @@ export class GameApp {
 
     const btnPickStadium = document.getElementById('btn-pick-stadium') as HTMLButtonElement | null;
     if (btnPickStadium) {
-      btnPickStadium.disabled = !canChangeStadium;
-      if (!isMatchStopped) {
-        btnPickStadium.title = 'No se puede cambiar de estadio durante el partido';
-        btnPickStadium.classList.add('opacity-50', 'cursor-not-allowed');
+      if (!isHost && !isAdmin) {
+        btnPickStadium.style.display = 'none';
+        btnPickStadium.disabled = true;
       } else {
-        btnPickStadium.title = isAdmin ? 'Elegir estadio' : 'Solo los administradores pueden cambiar el estadio';
-        btnPickStadium.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnPickStadium.style.display = '';
+        btnPickStadium.disabled = !canChangeStadium;
+        if (!isMatchStopped) {
+          btnPickStadium.title = 'No se puede cambiar de estadio durante el partido';
+          btnPickStadium.classList.add('opacity-50', 'cursor-not-allowed');
+        } else {
+          btnPickStadium.title = isAdmin ? 'Elegir estadio' : 'Solo los administradores pueden cambiar el estadio';
+          btnPickStadium.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
       }
     }
 
@@ -2309,7 +2328,7 @@ export class GameApp {
    */
   private reconcileClientPrediction(snap: GameSnapshot): void {
     if (snap.matchPhase !== undefined) {
-      if (this.currentMatchState !== snap.matchPhase || this.teamSelect.getMatchState() !== snap.matchPhase) {
+      if (this.currentMatchState !== snap.matchPhase) {
         this.currentMatchState = snap.matchPhase;
         const isLocalHost = Boolean(this.mode === 'host' || this.localPlayer.isHost);
         this.teamSelect.updateMatchState(snap.matchPhase, undefined, this.localPlayer.isAdmin, isLocalHost);
