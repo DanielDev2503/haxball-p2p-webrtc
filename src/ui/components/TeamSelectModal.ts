@@ -11,7 +11,7 @@ export class TeamSelectModal {
   private returnGameBtn: HTMLElement | null;
   private matchToggleBtn: HTMLButtonElement | null = null;
   private isUserAdmin: boolean = true;
-  private isUserHost: boolean = true;
+  private isUserHost: boolean = false;
   private redListEl: HTMLElement | null;
   private blueListEl: HTMLElement | null;
   private specListEl: HTMLElement | null;
@@ -59,23 +59,43 @@ export class TeamSelectModal {
 
     const joinRedBtn = document.getElementById('joinRedBtn');
     if (joinRedBtn) {
-      joinRedBtn.addEventListener('click', () => this.onSelectTeam?.('red'));
+      joinRedBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.onSelectTeam?.('red');
+      });
     } else {
       console.warn('[TeamSelectModal] Element "#joinRedBtn" was not found in DOM.');
     }
 
     const joinBlueBtn = document.getElementById('joinBlueBtn');
     if (joinBlueBtn) {
-      joinBlueBtn.addEventListener('click', () => this.onSelectTeam?.('blue'));
+      joinBlueBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.onSelectTeam?.('blue');
+      });
     } else {
       console.warn('[TeamSelectModal] Element "#joinBlueBtn" was not found in DOM.');
     }
 
     const joinSpecBtn = document.getElementById('joinSpecBtn');
     if (joinSpecBtn) {
-      joinSpecBtn.addEventListener('click', () => this.onSelectTeam?.('spec'));
+      joinSpecBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.onSelectTeam?.('spec');
+      });
     } else {
       console.warn('[TeamSelectModal] Element "#joinSpecBtn" was not found in DOM.');
+    }
+
+    // Cerrar al hacer clic en el fondo oscuro únicamente si la partida está en curso
+    if (this.menuEl && typeof this.menuEl.addEventListener === 'function') {
+      this.menuEl.addEventListener('click', (e) => {
+        if (e.target === this.menuEl) {
+          if (this.currentMatchState !== MatchPhase.STOPPED) {
+            this.close();
+          }
+        }
+      });
     }
 
     // Botón de ajustes de teclado (⚙ Keys)
@@ -187,10 +207,10 @@ export class TeamSelectModal {
 
     this.setupDragAndDropColumns();
 
-    // Suscripción reactiva con Nano Stores
+    // Suscripción reactiva universal con Nano Stores
     this.unsubs.push(
       $matchPhase.subscribe((phase) => {
-        this.updateMatchControlButton(phase, this.isUserAdmin);
+        this.updateMatchControlButton(phase, this.isUserAdmin, this.isUserHost);
       })
     );
 
@@ -285,6 +305,8 @@ export class TeamSelectModal {
     }
     if (isHost !== undefined) {
       this.isUserHost = isHost;
+    } else if (isAdmin === false) {
+      this.isUserHost = false;
     }
     this.updateStadiumControls(phase, this.isUserAdmin, this.isUserHost);
 
@@ -341,6 +363,23 @@ export class TeamSelectModal {
     }
     if (!this.matchToggleBtn) return;
 
+    const prevClass = this.matchToggleBtn.className;
+    if (isStopped) {
+      this.matchToggleBtn.textContent = '▶ Iniciar Partido';
+      this.matchToggleBtn.className = 'btn btn-success btn-match-toggle';
+      if (this.matchToggleBtn.style) {
+        this.matchToggleBtn.style.backgroundColor = '#10B981';
+        this.matchToggleBtn.style.borderColor = '#059669';
+      }
+    } else {
+      this.matchToggleBtn.textContent = '■ Detener Partido';
+      this.matchToggleBtn.className = 'btn btn-danger btn-match-toggle';
+      if (this.matchToggleBtn.style) {
+        this.matchToggleBtn.style.backgroundColor = '#FF0055';
+        this.matchToggleBtn.style.borderColor = '#E11D48';
+      }
+    }
+
     if (!canControlMatch) {
       this.matchToggleBtn.disabled = true;
       if (this.matchToggleBtn.style) this.matchToggleBtn.style.display = 'none';
@@ -348,16 +387,7 @@ export class TeamSelectModal {
     }
 
     if (this.matchToggleBtn.style) this.matchToggleBtn.style.display = '';
-    this.matchToggleBtn.disabled = !this.isUserAdmin;
-
-    const prevClass = this.matchToggleBtn.className;
-    if (isStopped) {
-      this.matchToggleBtn.textContent = '▶ Start game';
-      this.matchToggleBtn.className = 'btn btn-success btn-match-toggle';
-    } else {
-      this.matchToggleBtn.textContent = '■ Stop game';
-      this.matchToggleBtn.className = 'btn btn-danger btn-match-toggle';
-    }
+    this.matchToggleBtn.disabled = false;
 
     // Micro-animación de pulso con Motion si la clase cambió
     if (prevClass && prevClass !== this.matchToggleBtn.className) {
@@ -430,7 +460,8 @@ export class TeamSelectModal {
 
   public close(force: boolean = false): void {
     if (!this.menuEl) return;
-    // Bloquear el cierre (ignorar Escape) exclusivamente mientras el estado sea STOPPED
+    // Blindaje del Estado Inicial (STOPPED): Mientras la partida no haya iniciado, el menú permanece abierto por defecto.
+    // Ignora cualquier llamada a close() o eventos de backdrop/Escape en esta fase, salvo forzado explícito
     if (this.currentMatchState === MatchPhase.STOPPED && !force) {
       return;
     }

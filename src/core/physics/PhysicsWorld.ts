@@ -1,6 +1,7 @@
-import { Disc } from '../entities/Disc';
+import { Disc, COLLISION_GROUP_BALL } from '../entities/Disc';
 import { Segment } from '../entities/Segment';
 import { GoalNet } from '../entities/GoalNet';
+import { Stadium } from '../entities/Stadium';
 import { resolveDiscDiscCollision, resolveDiscSegmentCollision, CollisionEvent } from './Collision';
 import { clamp } from '../math/MathUtils';
 
@@ -49,6 +50,79 @@ export class PhysicsWorld {
 
   public clearSegments(): void {
     this.segments = [];
+  }
+
+  /**
+   * Carga un estadio en el mundo físico purgando muros rígidos de portería
+   * e instanciando automáticamente la física de cuerda elástica holgada (GoalNet)
+   * adaptada a las dimensiones de los postes activos en cualquier estadio.
+   */
+  public loadStadium(stadium: Stadium): void {
+    // 1. Limpiar segmentos y postes antiguos
+    this.clearSegments();
+    if (this.discs.length > 0) {
+      this.discs = this.discs.filter(d => !d.isPost);
+    }
+
+    // 2. Determinar posición de los postes activos
+    let leftXPost = -stadium.halfWidth;
+    let rightXPost = stadium.halfWidth;
+    let leftYPost = stadium.goalHalfHeight;
+    let rightYPost = stadium.goalHalfHeight;
+
+    if (stadium.goals && stadium.goals.length >= 2) {
+      const gRed = stadium.goals.find(g => g.team === 'red') || stadium.goals[0];
+      const gBlue = stadium.goals.find(g => g.team === 'blue') || stadium.goals[1];
+      leftXPost = Math.min(gRed.p0.x, gRed.p1.x);
+      leftYPost = Math.max(Math.abs(gRed.p0.y), Math.abs(gRed.p1.y));
+      rightXPost = Math.max(gBlue.p0.x, gBlue.p1.x);
+      rightYPost = Math.max(Math.abs(gBlue.p0.y), Math.abs(gBlue.p1.y));
+    }
+
+    // 3. Purga estricta de segmentos rígidos detrás de los postes para el balón:
+    // Portería izquierda: cualquier segmento con X < -x_post y |Y| <= y_post + 15
+    // Portería derecha: cualquier segmento con X > x_post y |Y| <= y_post + 15
+    for (const seg of stadium.segments) {
+      const minX = Math.min(seg.p0.x, seg.p1.x);
+      const maxX = Math.max(seg.p0.x, seg.p1.x);
+      const maxY = Math.max(Math.abs(seg.p0.y), Math.abs(seg.p1.y));
+
+      const isLeftGoalArea = maxX < (leftXPost + 1) && maxY <= (leftYPost + 15);
+      const isRightGoalArea = minX > (rightXPost - 1) && maxY <= (rightYPost + 15);
+
+      if (isLeftGoalArea || isRightGoalArea) {
+        seg.cMask = seg.cMask & ~COLLISION_GROUP_BALL;
+      }
+
+      this.addSegment(seg);
+    }
+
+    // 4. Agregar postes físicos
+    for (const post of stadium.posts) {
+      post.isPost = true;
+      this.addDisc(post);
+    }
+
+    // 5. Instanciar GoalNet adaptativa para cada arco
+    const leftNet = new GoalNet({
+      side: 'left',
+      mouthX: leftXPost,
+      backX: leftXPost - 38,
+      topY: -leftYPost,
+      bottomY: leftYPost,
+      nodeCount: 11
+    });
+
+    const rightNet = new GoalNet({
+      side: 'right',
+      mouthX: rightXPost,
+      backX: rightXPost + 38,
+      topY: -rightYPost,
+      bottomY: rightYPost,
+      nodeCount: 11
+    });
+
+    this.goalNets = [leftNet, rightNet];
   }
 
   /**

@@ -1229,6 +1229,7 @@ export class GameApp {
           const isAuthorized = Boolean(requester?.isAdmin || requester?.isHost || peerId === this.currentHostId);
           if (isAuthorized && this.engine) {
             this.engine.startMatch();
+            this.enforceMenuState(this.engine.fsm.currentState);
             this.updateAdminControlsUI();
             this.broadcastMatchStateSync();
             this.broadcastSnapshot();
@@ -1969,7 +1970,8 @@ export class GameApp {
       this.isTogglingMatch = false;
     }, 300);
 
-    if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
+    const isAuthorized = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost || this.mode === 'host');
+    if (!isAuthorized) return;
     const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
     const action = currentPhase === MatchPhase.STOPPED ? 'START' : 'STOP';
 
@@ -1996,7 +1998,8 @@ export class GameApp {
   }
 
   public requestStopMatch(): void {
-    if (!this.localPlayer.isAdmin && !this.localPlayer.isHost) return;
+    const isAuthorized = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost || this.mode === 'host');
+    if (!isAuthorized) return;
 
     if (this.mode === 'client' && this.hostPeer) {
       this.hostPeer.sendReliable(JSON.stringify({

@@ -66,8 +66,14 @@ export class CreateRoomModal {
   }
 
   private setupListeners(): void {
-    this.closeBtn?.addEventListener('click', () => this.hide());
-    this.cancelBtn?.addEventListener('click', () => this.hide());
+    this.closeBtn?.addEventListener('click', (e) => {
+      e?.stopPropagation?.();
+      this.hide();
+    });
+    this.cancelBtn?.addEventListener('click', (e) => {
+      e?.stopPropagation?.();
+      this.hide();
+    });
 
     // Close when clicking directly on overlay background
     this.overlayEl?.addEventListener('click', (e) => {
@@ -112,7 +118,11 @@ export class CreateRoomModal {
       this.events.onSubmit(config);
     };
 
-    this.submitBtn?.addEventListener('click', handleSubmit);
+    this.submitBtn?.addEventListener('click', (e) => {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      handleSubmit();
+    });
 
     // Enter key submits when focused inside inputs
     const handleKeydown = (e: KeyboardEvent) => {

@@ -73,17 +73,21 @@ export class GoalNet {
   constructor(options: GoalNetOptions) {
     this.side = (options.side === 'red' || options.side === 'left') ? 'left' : 'right';
     this.mouthX = options.mouthX;
-    this.backX = options.backX;
+    const signX = this.mouthX < 0 ? -1 : 1;
+    this.backX = options.backX ?? (this.mouthX + signX * 38);
     this.topY = options.topY;
     this.bottomY = options.bottomY;
-    this.topCornerY = options.topCornerY ?? (this.topY < 0 ? -65 : 65);
-    this.bottomCornerY = options.bottomCornerY ?? (this.bottomY > 0 ? 65 : -65);
 
-    // Límite posterior de tensión máxima en X = ±640
+    const yPost = Math.max(Math.abs(this.topY), Math.abs(this.bottomY));
+    const yCorner = yPost * 0.75;
+    this.topCornerY = options.topCornerY ?? -yCorner;
+    this.bottomCornerY = options.bottomCornerY ?? yCorner;
+
+    // Límite de elongación máxima en X = X_back ± 12 px
     if (options.rearLimitX !== undefined) {
       this.rearLimitX = options.rearLimitX;
     } else {
-      this.rearLimitX = this.side === 'left' ? -640 : 640;
+      this.rearLimitX = this.backX + signX * 12;
     }
 
     this.damping = options.damping ?? 0.10;
@@ -117,34 +121,47 @@ export class GoalNet {
 
   /**
    * Inicializa la geometría en reposo del trapecio holgado con esquinas redondeadas.
+   * Adaptable a cualquier tamaño de arco y coordenadas de postes.
    */
   private initGeometry(): void {
     const N = this.nodeCount;
+    const xPost = this.mouthX;
+    const yPost = Math.max(Math.abs(this.topY), Math.abs(this.bottomY));
+    const xBack = this.backX;
+    const yCorner = yPost * 0.75;
 
     for (let i = 0; i < N; i++) {
-      const u = i / (N - 1); // Rango 0.0 a 1.0
-      let x = this.mouthX;
-      let y = this.topY;
+      let x = xPost;
+      let y = -yPost;
 
-      if (u <= 0.25) {
-        // Esquina superior redondeada: Curva cuadrática suave de (mouthX, topY) a (backX, topCornerY)
-        const t = u / 0.25;
+      if (i === 0) {
+        // Poste Superior (Anclaje fijo)
+        x = xPost;
+        y = -yPost;
+      } else if (i >= 1 && i <= 3) {
+        // Nodos 1 a 3: Esquina redondeada superior que curva suavemente desde P_top hacia (X_back, -y_post * 0.75)
+        const t = i / 3.5;
         const oneMinusT = 1 - t;
-        // P0=(mouthX, topY), C=(backX, topY), P1=(backX, topCornerY)
-        x = oneMinusT * oneMinusT * this.mouthX + 2 * oneMinusT * t * this.backX + t * t * this.backX;
-        y = oneMinusT * oneMinusT * this.topY + 2 * oneMinusT * t * this.topY + t * t * this.topCornerY;
-      } else if (u <= 0.75) {
-        // Fondo de la red: Segmento vertical holgado en X = backX entre topCornerY y bottomCornerY
-        const t = (u - 0.25) / 0.5;
-        x = this.backX;
-        y = this.topCornerY + t * (this.bottomCornerY - this.topCornerY);
+        // Curva Bezier cuadrática con punto de control (xBack, -yPost)
+        x = oneMinusT * oneMinusT * xPost + 2 * oneMinusT * t * xBack + t * t * xBack;
+        y = oneMinusT * oneMinusT * (-yPost) + 2 * oneMinusT * t * (-yPost) + t * t * (-yCorner);
+      } else if (i >= 4 && i <= 6) {
+        // Nodos 4 a 6: Fondo holgado de la red en X = X_back entre -y_post * 0.75 y y_post * 0.75
+        const t = (i - 3.5) / 3.0; // t varia simétricamente alrededor de 0.5 (nodo 5 en y = 0)
+        x = xBack;
+        y = -yCorner + t * (2 * yCorner);
+      } else if (i >= 7 && i <= 9) {
+        // Nodos 7 a 9: Esquina redondeada inferior que curva suavemente desde (X_back, y_post * 0.75) hacia P_bottom
+        const k = i - 6; // 1, 2, 3
+        const t = k / 3.5;
+        const oneMinusT = 1 - t;
+        // Curva Bezier cuadrática desde (xBack, yCorner) a (xPost, yPost) con control (xBack, yPost)
+        x = oneMinusT * oneMinusT * xBack + 2 * oneMinusT * t * xBack + t * t * xPost;
+        y = oneMinusT * oneMinusT * yCorner + 2 * oneMinusT * t * yPost + t * t * yPost;
       } else {
-        // Esquina inferior redondeada: Curva cuadrática suave de (backX, bottomCornerY) a (mouthX, bottomY)
-        const t = (u - 0.75) / 0.25;
-        const oneMinusT = 1 - t;
-        // P0=(backX, bottomCornerY), C=(backX, bottomY), P1=(mouthX, bottomY)
-        x = oneMinusT * oneMinusT * this.backX + 2 * oneMinusT * t * this.backX + t * t * this.mouthX;
-        y = oneMinusT * oneMinusT * this.bottomCornerY + 2 * oneMinusT * t * this.bottomY + t * t * this.bottomY;
+        // Nodo 10 (N - 1): Poste Inferior (Anclaje fijo)
+        x = xPost;
+        y = yPost;
       }
 
       this.restPosX[i] = x;
@@ -186,8 +203,8 @@ export class GoalNet {
     const kShape = this.kShape;
 
     // 1. Integración Temporal Verlet con Damping y Fuerza de Memoria de Forma
-    // v_i = (p_t - p_{t-dt}) * (1 - damping)
-    // p_{t+dt} = p_t + v_i - k_shape * (p_t - restPos)
+    // v_x = (x_t - x_{t-1}) * (1 - damping)
+    // x_{t+1} = x_t + v_x - k_shape * (x_t - restX[i])
     for (let i = 1; i < N - 1; i++) {
       const vx = (this.posX[i] - this.oldPosX[i]) * (1 - damping);
       const vy = (this.posY[i] - this.oldPosY[i]) * (1 - damping);
@@ -235,7 +252,7 @@ export class GoalNet {
       this.posY[N - 1] = this.restPosY[N - 1];
     }
 
-    // 3. Tope posterior de tensión máxima en X = ±640
+    // 3. Tope posterior de tensión máxima (X = X_back ± 12 px)
     if (this.side === 'left') {
       for (let i = 1; i < N - 1; i++) {
         if (this.posX[i] < this.rearLimitX) {
@@ -288,7 +305,7 @@ export class GoalNet {
             let nx = d > 1e-4 ? dx / d : (this.side === 'left' ? 1 : -1);
             let ny = d > 1e-4 ? dy / d : 0;
 
-            // Deformación de la cuerda: desplazar nodos i e i+1 en dirección del movimiento hacia el fondo
+            // Deformación de la cuerda: desplazar nodos i e i+1 en dirección del avance hacia el fondo
             const pushX = -nx * pen;
             const pushY = -ny * pen;
 
@@ -305,7 +322,7 @@ export class GoalNet {
               if (this.side === 'right' && this.posX[i + 1] > this.rearLimitX) this.posX[i + 1] = this.rearLimitX;
             }
 
-            // Freno y Retención del Balón: absorbe energía cinética y disipa la velocidad
+            // Amortiguación real: absorbe energía cinética y disipa la velocidad
             // v_ball <- v_ball * 0.65
             if (!ballDamped) {
               ball.vel.x *= 0.65;
@@ -319,16 +336,19 @@ export class GoalNet {
           }
         }
 
-        // Si la cuerda alcanza su tensión máxima (X = ±640), actúa como tope elástico suave
+        // Límite de contención: Si la cuerda alcanza su elongación máxima (X = X_back ± 12 px),
+        // aplica una fuerza de restitución normal que frena por completo el balón dentro de la portería
         if (this.side === 'left') {
           if (ball.pos.x - rBall < this.rearLimitX) {
             ball.pos.x = this.rearLimitX + rBall;
-            if (ball.vel.x < 0) ball.vel.x *= -0.2;
+            ball.vel.x = 0;
+            ball.vel.y *= 0.5;
           }
         } else {
           if (ball.pos.x + rBall > this.rearLimitX) {
             ball.pos.x = this.rearLimitX - rBall;
-            if (ball.vel.x > 0) ball.vel.x *= -0.2;
+            ball.vel.x = 0;
+            ball.vel.y *= 0.5;
           }
         }
       }

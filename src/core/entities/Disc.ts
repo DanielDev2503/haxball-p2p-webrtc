@@ -19,6 +19,7 @@ export interface DiscOptions {
   cGroup?: number;
   cMask?: number;
   isBall?: boolean;
+  isPost?: boolean;
   color?: string;
 }
 
@@ -35,6 +36,7 @@ export class Disc {
   public cGroup: number;
   public cMask: number;
   public isBall: boolean;
+  public isPost: boolean = false;
   public color: string;
   public kicking: boolean = false;
 

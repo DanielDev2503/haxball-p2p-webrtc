@@ -75,15 +75,10 @@ export class GameEngine {
       this.onStateChange?.(state);
     };
 
-    // Register stadium walls and goal posts
-    for (const seg of this.stadium.segments) {
-      this.physicsWorld.addSegment(seg);
-    }
-    for (const post of this.stadium.posts) {
-      this.physicsWorld.addDisc(post);
-    }
-
-    this.setupGoalNets();
+    // Cargar estadio en PhysicsWorld (purga de muros rígidos de arco y creación de GoalNet)
+    this.physicsWorld.loadStadium(this.stadium);
+    this.leftGoalNet = this.physicsWorld.goalNets[0];
+    this.rightGoalNet = this.physicsWorld.goalNets[1];
 
     // Create Ball using stadium.ballPhysics if defined, or gameplayConfig
     const ballRadius = this.stadium.ballPhysics?.radius ?? this.gameplayConfig.ballRadius;
@@ -183,53 +178,26 @@ export class GameEngine {
   }
 
   public setupGoalNets(): void {
-    const hw = this.stadium.halfWidth;
-    const gh = this.stadium.goalHalfHeight;
-    const gd = this.stadium.goalDepth;
-
-    this.leftGoalNet = new GoalNet({
-      side: 'left',
-      mouthX: -hw,
-      backX: -(hw + gd),
-      topY: -gh,
-      bottomY: gh,
-      nodeCount: 11
-    });
-
-    this.rightGoalNet = new GoalNet({
-      side: 'right',
-      mouthX: hw,
-      backX: hw + gd,
-      topY: -gh,
-      bottomY: gh,
-      nodeCount: 11
-    });
-
-    this.physicsWorld.goalNets = [this.leftGoalNet, this.rightGoalNet];
+    if (this.physicsWorld.goalNets.length === 2) {
+      this.leftGoalNet = this.physicsWorld.goalNets[0];
+      this.rightGoalNet = this.physicsWorld.goalNets[1];
+      return;
+    }
+    this.physicsWorld.loadStadium(this.stadium);
+    this.leftGoalNet = this.physicsWorld.goalNets[0];
+    this.rightGoalNet = this.physicsWorld.goalNets[1];
   }
 
   public setStadium(stadiumOrId: Stadium | string): void {
-    // Limpiar segmentos y postes antiguos del physicsWorld
-    this.physicsWorld.clearSegments();
-    for (const post of this.stadium.posts) {
-      this.physicsWorld.removeDisc(post);
-    }
-
     if (typeof stadiumOrId === 'string') {
       this.stadium = createStadium(stadiumOrId);
     } else {
       this.stadium = stadiumOrId;
     }
 
-    // Registrar nuevos segmentos y postes en physicsWorld
-    for (const seg of this.stadium.segments) {
-      this.physicsWorld.addSegment(seg);
-    }
-    for (const post of this.stadium.posts) {
-      this.physicsWorld.addDisc(post);
-    }
-
-    this.setupGoalNets();
+    this.physicsWorld.loadStadium(this.stadium);
+    this.leftGoalNet = this.physicsWorld.goalNets[0];
+    this.rightGoalNet = this.physicsWorld.goalNets[1];
   }
 
   public setPlayerTeam(playerId: string, team: 'red' | 'blue' | 'spec'): void {

@@ -75,25 +75,35 @@ export class CanvasRenderer {
   };
 
   private initLocalGoalNets(): void {
-    const hw = this.stadium.halfWidth;
-    const gh = this.stadium.goalHalfHeight;
-    const depth = this.stadium.goalDepth || 35;
+    let leftXPost = -this.stadium.halfWidth;
+    let rightXPost = this.stadium.halfWidth;
+    let leftYPost = this.stadium.goalHalfHeight;
+    let rightYPost = this.stadium.goalHalfHeight;
+
+    if (this.stadium.goals && this.stadium.goals.length >= 2) {
+      const gRed = this.stadium.goals.find(g => g.team === 'red') || this.stadium.goals[0];
+      const gBlue = this.stadium.goals.find(g => g.team === 'blue') || this.stadium.goals[1];
+      leftXPost = Math.min(gRed.p0.x, gRed.p1.x);
+      leftYPost = Math.max(Math.abs(gRed.p0.y), Math.abs(gRed.p1.y));
+      rightXPost = Math.max(gBlue.p0.x, gBlue.p1.x);
+      rightYPost = Math.max(Math.abs(gBlue.p0.y), Math.abs(gBlue.p1.y));
+    }
 
     this.localGoalNets = [
       new GoalNet({
         side: 'left',
-        mouthX: -hw,
-        backX: -(hw + depth),
-        topY: -gh,
-        bottomY: gh,
+        mouthX: leftXPost,
+        backX: leftXPost - 38,
+        topY: -leftYPost,
+        bottomY: leftYPost,
         nodeCount: 11
       }),
       new GoalNet({
         side: 'right',
-        mouthX: hw,
-        backX: hw + depth,
-        topY: -gh,
-        bottomY: gh,
+        mouthX: rightXPost,
+        backX: rightXPost + 38,
+        topY: -rightYPost,
+        bottomY: rightYPost,
         nodeCount: 11
       })
     ];

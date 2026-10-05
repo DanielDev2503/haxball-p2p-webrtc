@@ -14,7 +14,6 @@ export class PitchRenderer {
     const hh = height / 2;
     const goalSize = stadium.goals[0]?.size ?? (stadium.goalSize ?? (stadium.goalHalfHeight * 2));
     const gh = goalSize / 2;
-    const gd = stadium.goalDepth;
     const cr = stadium.centerRadius;
     const penaltyAreaWidth = width * 0.075; // Proporcional al ancho del estadio
     const penaltyAreaHeight = gh * 3;
@@ -55,8 +54,8 @@ export class PitchRenderer {
     ctx.stroke();
     ctx.restore();
 
-    // 3. Áreas de Penal y Redes de Portería con Identidad de Equipo Neón
-    // Área y Red Izquierda (Rojo Neón #FF0055)
+    // 3. Áreas de Penal con Identidad de Equipo Neón
+    // Área Izquierda (Rojo Neón #FF0055)
     ctx.save();
     ctx.fillStyle = isDark ? 'rgba(255, 0, 85, 0.06)' : 'rgba(255, 0, 85, 0.03)';
     ctx.fillRect(-hw, -penaltyAreaHeight / 2, penaltyAreaWidth, penaltyAreaHeight);
@@ -68,14 +67,9 @@ export class PitchRenderer {
     ctx.lineTo(-hw + penaltyAreaWidth, penaltyAreaHeight / 2);
     ctx.lineTo(-hw, penaltyAreaHeight / 2);
     ctx.stroke();
-
-    // Red Izquierda
-    ctx.fillStyle = isDark ? 'rgba(255, 0, 85, 0.12)' : 'rgba(255, 0, 85, 0.08)';
-    ctx.fillRect(-(hw + gd), -gh, gd, goalSize);
-    this.renderNetMesh(ctx, -(hw + gd), -gh, gd, goalSize, 'rgba(255, 0, 85, 0.25)');
     ctx.restore();
 
-    // Área y Red Derecha (Azul Neón #00E5FF)
+    // Área Derecha (Azul Neón #00E5FF)
     ctx.save();
     ctx.fillStyle = isDark ? 'rgba(0, 229, 255, 0.06)' : 'rgba(0, 229, 255, 0.03)';
     ctx.fillRect(hw - penaltyAreaWidth, -penaltyAreaHeight / 2, penaltyAreaWidth, penaltyAreaHeight);
@@ -87,11 +81,6 @@ export class PitchRenderer {
     ctx.lineTo(hw - penaltyAreaWidth, penaltyAreaHeight / 2);
     ctx.lineTo(hw, penaltyAreaHeight / 2);
     ctx.stroke();
-
-    // Red Derecha
-    ctx.fillStyle = isDark ? 'rgba(0, 229, 255, 0.12)' : 'rgba(0, 229, 255, 0.08)';
-    ctx.fillRect(hw, -gh, gd, goalSize);
-    this.renderNetMesh(ctx, hw, -gh, gd, goalSize, 'rgba(0, 229, 255, 0.25)');
     ctx.restore();
 
     // 4. Líneas de Marcación Técnicas: Modo Claro (#0EA5E9) vs Modo Oscuro (rgba(0, 229, 255, 0.45))
@@ -108,21 +97,17 @@ export class PitchRenderer {
     ctx.shadowColor = shadowColor;
     ctx.shadowBlur = 4;
 
-    // Perímetro y cajetines de portería
+    // Perímetro reglamentario con bocas de portería abiertas hacia la red dinámica GoalNet
     ctx.beginPath();
     ctx.moveTo(-hw, -hh);
     ctx.lineTo(hw, -hh);
     ctx.lineTo(hw, -gh);
-    ctx.lineTo(hw + gd, -gh);
-    ctx.lineTo(hw + gd, gh);
-    ctx.lineTo(hw, gh);
+    ctx.moveTo(hw, gh);
     ctx.lineTo(hw, hh);
     ctx.lineTo(-hw, hh);
     ctx.lineTo(-hw, gh);
-    ctx.lineTo(-(hw + gd), gh);
-    ctx.lineTo(-(hw + gd), -gh);
-    ctx.lineTo(-hw, -gh);
-    ctx.closePath();
+    ctx.moveTo(-hw, -gh);
+    ctx.lineTo(-hw, -hh);
     ctx.stroke();
 
     // Línea de medio campo
@@ -179,31 +164,6 @@ export class PitchRenderer {
     this.renderPosts(ctx, stadium);
   }
 
-  private renderNetMesh(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    color: string
-  ): void {
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.2;
-    const spacing = 12;
-
-    ctx.beginPath();
-    for (let lx = x; lx <= x + w; lx += spacing) {
-      ctx.moveTo(lx, y);
-      ctx.lineTo(lx, y + h);
-    }
-    for (let ly = y; ly <= y + h; ly += spacing) {
-      ctx.moveTo(x, ly);
-      ctx.lineTo(x + w, ly);
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
 
   private renderPost(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
     ctx.save();
