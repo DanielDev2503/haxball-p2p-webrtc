@@ -190,14 +190,23 @@ export class GoalNet {
 
   /**
    * Paso determinista de simulación de cuerda elástica holgada a 60 Hz (Zero-GC).
-   * 
-   * Filtro estricto: Si disc no es balón (!disc.isBall), se ignora completamente.
-   * Los jugadores atraviesan la red con permeabilidad 100% libre de colisiones.
+   * Soporta tanto llamada unificada step(ball, dt) como paso desacoplado step(dt).
    */
   public step(
-    ball?: { pos: { x: number; y: number }; vel: { x: number; y: number }; radius?: number; isBall?: boolean } | null,
-    _dt: number = 1 / 60
+    ballOrDt?: { pos: { x: number; y: number }; vel: { x: number; y: number }; radius?: number; isBall?: boolean } | number | null,
+    maybeDt: number = 1 / 60
   ): void {
+    let _dt = 1 / 60;
+    let ball: { pos: { x: number; y: number }; vel: { x: number; y: number }; radius?: number; isBall?: boolean } | null = null;
+
+    if (typeof ballOrDt === 'number') {
+      _dt = ballOrDt;
+    } else if (ballOrDt && typeof ballOrDt === 'object') {
+      ball = ballOrDt;
+      if (typeof maybeDt === 'number') _dt = maybeDt;
+    }
+    void _dt;
+
     const N = this.nodeCount;
     const damping = this.damping;
     const kShape = this.kShape;
@@ -267,90 +276,104 @@ export class GoalNet {
       }
     }
 
-    // 4. Interacción Balón vs. Cuerda (Permeabilidad absoluta para jugadores)
-    // PROHIBIDO colisionar o modificar velocidad/posición si no es el balón
-    if (ball && (ball.isBall === undefined || ball.isBall === true)) {
-      const bx = ball.pos.x;
-      const by = ball.pos.y;
-      const rBall = ball.radius ?? 5.8;
+    // 4. Si se proveyó el balón directamente a step, verificar colisión
+    if (ball) {
+      this.checkBallCollision(ball);
+    }
+  }
 
-      const minX = Math.min(this.mouthX, this.rearLimitX) - rBall - 10;
-      const maxX = Math.max(this.mouthX, this.rearLimitX) + rBall + 10;
-      const minY = Math.min(this.topY, this.bottomY) - rBall - 10;
-      const maxY = Math.max(this.topY, this.bottomY) + rBall + 10;
+  /**
+   * Cálculo determinista de Colisión Balón-Segmento (Cuerda Elástica).
+   * Permeabilidad absoluta para jugadores (ignora disc si !isBall).
+   */
+  public checkBallCollision(
+    ball?: { pos: { x: number; y: number }; vel: { x: number; y: number }; radius?: number; isBall?: boolean } | null
+  ): void {
+    if (!ball || ball.isBall === false) return;
 
-      // Guarda AABB rápida para evitar cálculos innecesarios fuera del arco
-      if (bx >= minX && bx <= maxX && by >= minY && by <= maxY) {
-        let ballDamped = false;
+    const bx = ball.pos.x;
+    const by = ball.pos.y;
+    const rBall = ball.radius ?? 5.8;
 
-        for (let i = 0; i < N - 1; i++) {
-          const x0 = this.posX[i];
-          const y0 = this.posY[i];
-          const sx = this.posX[i + 1] - x0;
-          const sy = this.posY[i + 1] - y0;
-          const sLenSq = sx * sx + sy * sy;
+    const minX = Math.min(this.mouthX, this.rearLimitX) - rBall - 10;
+    const maxX = Math.max(this.mouthX, this.rearLimitX) + rBall + 10;
+    const minY = Math.min(this.topY, this.bottomY) - rBall - 10;
+    const maxY = Math.max(this.topY, this.bottomY) + rBall + 10;
 
-          if (sLenSq < 1e-6) continue;
+    // Guarda AABB rápida para evitar cálculos innecesarios fuera del arco
+    if (bx < minX || bx > maxX || by < minY || by > maxY) {
+      return;
+    }
 
-          // Proyección del centro del balón sobre el segmento de cuerda
-          const t = Math.max(0, Math.min(1, ((bx - x0) * sx + (by - y0) * sy) / sLenSq));
-          const qx = x0 + t * sx;
-          const qy = y0 + t * sy;
-          const dx = bx - qx;
-          const dy = by - qy;
-          const d = Math.hypot(dx, dy);
+    let ballDamped = false;
+    const N = this.nodeCount;
 
-          if (d < rBall) {
-            const pen = rBall - d;
-            let nx = d > 1e-4 ? dx / d : (this.side === 'left' ? 1 : -1);
-            let ny = d > 1e-4 ? dy / d : 0;
+    for (let i = 0; i < N - 1; i++) {
+      const x0 = this.posX[i];
+      const y0 = this.posY[i];
+      const sx = this.posX[i + 1] - x0;
+      const sy = this.posY[i + 1] - y0;
+      const sLenSq = sx * sx + sy * sy;
 
-            // Deformación de la cuerda: desplazar nodos i e i+1 en dirección del avance hacia el fondo
-            const pushX = -nx * pen;
-            const pushY = -ny * pen;
+      if (sLenSq < 1e-6) continue;
 
-            if (this.invMass[i] > 0) {
-              this.posX[i] += pushX * (1 - t);
-              this.posY[i] += pushY * (1 - t);
-              if (this.side === 'left' && this.posX[i] < this.rearLimitX) this.posX[i] = this.rearLimitX;
-              if (this.side === 'right' && this.posX[i] > this.rearLimitX) this.posX[i] = this.rearLimitX;
-            }
-            if (this.invMass[i + 1] > 0) {
-              this.posX[i + 1] += pushX * t;
-              this.posY[i + 1] += pushY * t;
-              if (this.side === 'left' && this.posX[i + 1] < this.rearLimitX) this.posX[i + 1] = this.rearLimitX;
-              if (this.side === 'right' && this.posX[i + 1] > this.rearLimitX) this.posX[i + 1] = this.rearLimitX;
-            }
+      // Proyección del centro del balón sobre el segmento de cuerda
+      const t = Math.max(0, Math.min(1, ((bx - x0) * sx + (by - y0) * sy) / sLenSq));
+      const qx = x0 + t * sx;
+      const qy = y0 + t * sy;
+      const dx = bx - qx;
+      const dy = by - qy;
+      const d = Math.hypot(dx, dy);
 
-            // Amortiguación real: absorbe energía cinética y disipa la velocidad
-            // v_ball <- v_ball * 0.65
-            if (!ballDamped) {
-              ball.vel.x *= 0.65;
-              ball.vel.y *= 0.65;
-              ballDamped = true;
-            }
+      if (d < rBall) {
+        const pen = rBall - d;
+        let nx = d > 1e-4 ? dx / d : (this.side === 'left' ? 1 : -1);
+        let ny = d > 1e-4 ? dy / d : 0;
 
-            // Retención elástica suave dentro de la portería
-            ball.pos.x += nx * (pen * 0.4);
-            ball.pos.y += ny * (pen * 0.4);
-          }
+        // Deformación de la cuerda: desplazar nodos i e i+1 en dirección del avance hacia el fondo
+        const pushX = -nx * pen;
+        const pushY = -ny * pen;
+
+        if (this.invMass[i] > 0) {
+          this.posX[i] += pushX * (1 - t);
+          this.posY[i] += pushY * (1 - t);
+          if (this.side === 'left' && this.posX[i] < this.rearLimitX) this.posX[i] = this.rearLimitX;
+          if (this.side === 'right' && this.posX[i] > this.rearLimitX) this.posX[i] = this.rearLimitX;
+        }
+        if (this.invMass[i + 1] > 0) {
+          this.posX[i + 1] += pushX * t;
+          this.posY[i + 1] += pushY * t;
+          if (this.side === 'left' && this.posX[i + 1] < this.rearLimitX) this.posX[i + 1] = this.rearLimitX;
+          if (this.side === 'right' && this.posX[i + 1] > this.rearLimitX) this.posX[i + 1] = this.rearLimitX;
         }
 
-        // Límite de contención: Si la cuerda alcanza su elongación máxima (X = X_back ± 12 px),
-        // aplica una fuerza de restitución normal que frena por completo el balón dentro de la portería
-        if (this.side === 'left') {
-          if (ball.pos.x - rBall < this.rearLimitX) {
-            ball.pos.x = this.rearLimitX + rBall;
-            ball.vel.x = 0;
-            ball.vel.y *= 0.5;
-          }
-        } else {
-          if (ball.pos.x + rBall > this.rearLimitX) {
-            ball.pos.x = this.rearLimitX - rBall;
-            ball.vel.x = 0;
-            ball.vel.y *= 0.5;
-          }
+        // Amortiguación real: absorbe energía cinética y disipa la velocidad
+        // v_ball <- v_ball * 0.65
+        if (!ballDamped) {
+          ball.vel.x *= 0.65;
+          ball.vel.y *= 0.65;
+          ballDamped = true;
         }
+
+        // Retención elástica suave dentro de la portería
+        ball.pos.x += nx * (pen * 0.4);
+        ball.pos.y += ny * (pen * 0.4);
+      }
+    }
+
+    // Límite de contención: Si la cuerda alcanza su elongación máxima (X = X_back ± 12 px),
+    // aplica una fuerza de restitución normal que frena por completo el balón dentro de la portería
+    if (this.side === 'left') {
+      if (ball.pos.x - rBall < this.rearLimitX) {
+        ball.pos.x = this.rearLimitX + rBall;
+        ball.vel.x = 0;
+        ball.vel.y *= 0.5;
+      }
+    } else {
+      if (ball.pos.x + rBall > this.rearLimitX) {
+        ball.pos.x = this.rearLimitX - rBall;
+        ball.vel.x = 0;
+        ball.vel.y *= 0.5;
       }
     }
   }

@@ -4,6 +4,7 @@ import { $matchPhase, $players } from '../stores/gameStore';
 import { renderIconHTML, Crown, ShieldCheck } from '../utils/icons';
 import { StadiumRegistry } from '../../core/stadiums/StadiumRegistry';
 import { animate } from 'motion';
+import { UIStateMachine } from '../UIStateMachine';
 
 export class TeamSelectModal {
   private menuEl: HTMLElement | null;
@@ -25,6 +26,10 @@ export class TeamSelectModal {
   private currentRoomId: string = '';
   private unsubs: Array<() => void> = [];
 
+  public uiStateMachine?: UIStateMachine | undefined;
+  public gameApp?: any;
+  public localPlayer?: Player | undefined;
+
   public onSelectTeam?: (team: TeamType) => void;
   public onPlayerClick?: (player: Player, event: MouseEvent) => void;
   public onTeamChangeRequest?: (playerId: string, team: TeamType) => void;
@@ -34,10 +39,11 @@ export class TeamSelectModal {
   public onCopyLink?: () => void;
   public onVisibilityChange?: (isOpen: boolean) => void;
 
-  constructor() {
+  constructor(uiStateMachine?: UIStateMachine) {
+    this.uiStateMachine = uiStateMachine;
     this.menuEl = document.getElementById('ingame-menu');
-    this.closeBtn = document.getElementById('menu-close-btn');
-    this.returnGameBtn = document.getElementById('btn-return-game');
+    this.closeBtn = document.getElementById('menu-close-btn') || document.getElementById('btn-close-modal');
+    this.returnGameBtn = document.getElementById('btn-return-game') || document.getElementById('btn-back');
 
     this.redListEl = document.getElementById('redPlayersList');
     if (!this.redListEl) console.warn('[TeamSelectModal] Element "#redPlayersList" was not found in DOM.');
@@ -92,7 +98,12 @@ export class TeamSelectModal {
       this.menuEl.addEventListener('click', (e) => {
         if (e.target === this.menuEl) {
           if (this.currentMatchState !== MatchPhase.STOPPED) {
-            this.close();
+            if (this.uiStateMachine) {
+              this.uiStateMachine.closeModal('teamSelect');
+              this.onVisibilityChange?.(false);
+            } else {
+              this.close();
+            }
           }
         }
       });
@@ -127,7 +138,12 @@ export class TeamSelectModal {
     // Botón de contingencia para regresar a la partida en curso
     const handleContingencyClose = () => {
       if (this.currentMatchState !== MatchPhase.STOPPED) {
-        this.close();
+        if (this.uiStateMachine) {
+          this.uiStateMachine.closeModal('teamSelect');
+          this.onVisibilityChange?.(false);
+        } else {
+          this.close();
+        }
       }
     };
 
@@ -144,7 +160,24 @@ export class TeamSelectModal {
       this.matchToggleBtn.addEventListener('click', (e) => {
         e?.preventDefault?.();
         e?.stopPropagation?.();
-        this.onMatchToggle?.();
+        if (this.onMatchToggle) {
+          this.onMatchToggle();
+        } else if (this.gameApp) {
+          const isMatchActive = this.gameApp.matchPhase !== MatchPhase.STOPPED;
+          if (!isMatchActive) {
+            if (this.gameApp.isHost) {
+              this.gameApp.engine?.startMatch();
+            } else {
+              this.gameApp.network?.sendReliable({ type: 'ADMIN_START_MATCH' });
+            }
+          } else {
+            if (this.gameApp.isHost) {
+              this.gameApp.engine?.stopMatch();
+            } else {
+              this.gameApp.network?.sendReliable({ type: 'ADMIN_STOP_MATCH' });
+            }
+          }
+        }
       });
     }
 
@@ -211,6 +244,7 @@ export class TeamSelectModal {
     this.unsubs.push(
       $matchPhase.subscribe((phase) => {
         this.updateMatchControlButton(phase, this.isUserAdmin, this.isUserHost);
+        this.updateMatchToggleButton(phase);
       })
     );
 
@@ -444,17 +478,54 @@ export class TeamSelectModal {
     }
   }
 
+  public updateMatchToggleButton(phase: MatchPhase): void {
+    const btn = (
+      (typeof this.menuEl?.querySelector === 'function' ? this.menuEl.querySelector('#btn-match-toggle') : null) ||
+      (typeof document !== 'undefined' ? (document.getElementById('btn-match-toggle') || document.getElementById('btn-start-stop')) : null) ||
+      this.matchToggleBtn
+    ) as HTMLButtonElement | null;
+    if (!btn) return;
+
+    const canManage = Boolean(this.isUserHost || this.isUserAdmin || this.gameApp?.isHost || this.localPlayer?.isAdmin);
+    btn.disabled = !canManage;
+    if (btn.style) {
+      btn.style.opacity = canManage ? '1' : '0.5';
+    }
+
+    if (phase === MatchPhase.STOPPED) {
+      btn.textContent = '▶ Iniciar Partido';
+      btn.innerHTML = '▶ Iniciar Partido';
+      btn.className = 'btn btn-success btn-match-toggle';
+      if (btn.style) {
+        btn.style.backgroundColor = '#10B981';
+        btn.style.borderColor = '#059669';
+      }
+    } else {
+      btn.textContent = '■ Detener Partido';
+      btn.innerHTML = '■ Detener Partido';
+      btn.className = 'btn btn-danger btn-match-toggle';
+      if (btn.style) {
+        btn.style.backgroundColor = '#FF0055';
+        btn.style.borderColor = '#E11D48';
+      }
+    }
+  }
+
   public open(forced: boolean = false): void {
     if (!this.menuEl) return;
     const isForced = forced || this.currentMatchState === MatchPhase.STOPPED;
-    this.menuEl.classList.remove('hidden', 'u-hidden', 'ui-screen-hidden');
+    if (this.uiStateMachine) {
+      this.uiStateMachine.openModal('teamSelect');
+    } else {
+      this.menuEl.classList.remove('hidden', 'u-hidden', 'ui-screen-hidden');
+      this.menuEl.style.display = 'flex';
+      this.menuEl.style.pointerEvents = 'auto';
+    }
     if (isForced) {
       this.menuEl.classList.add('is-forced-open');
     } else {
       this.menuEl.classList.remove('is-forced-open');
     }
-    this.menuEl.style.display = 'flex';
-    this.menuEl.style.pointerEvents = 'auto';
     this.onVisibilityChange?.(true);
   }
 
@@ -465,9 +536,13 @@ export class TeamSelectModal {
     if (this.currentMatchState === MatchPhase.STOPPED && !force) {
       return;
     }
-    this.menuEl.classList.add('hidden');
-    this.menuEl.classList.remove('is-forced-open');
-    this.menuEl.style.display = 'none';
+    if (this.uiStateMachine) {
+      this.uiStateMachine.closeModal('teamSelect');
+    } else {
+      this.menuEl.classList.add('hidden');
+      this.menuEl.classList.remove('is-forced-open');
+      this.menuEl.style.display = 'none';
+    }
     this.onVisibilityChange?.(false);
   }
 
@@ -475,10 +550,15 @@ export class TeamSelectModal {
     if (this.currentMatchState === MatchPhase.STOPPED) {
       return;
     }
-    if (this.isOpen()) {
-      this.close();
+    if (this.uiStateMachine) {
+      this.uiStateMachine.toggleModal('teamSelect', this.isUserHost, this.currentMatchState);
+      this.onVisibilityChange?.(this.isOpen());
     } else {
-      this.open(false);
+      if (this.isOpen()) {
+        this.close();
+      } else {
+        this.open(false);
+      }
     }
   }
 
@@ -529,6 +609,7 @@ export class TeamSelectModal {
       this.isUserHost = isLocalHost;
     }
     this.updateMatchControlButton(this.currentMatchState, isLocalAdmin, this.isUserHost);
+    this.updateMatchToggleButton(this.currentMatchState);
 
     if (this.redListEl) this.redListEl.innerHTML = '';
     if (this.blueListEl) this.blueListEl.innerHTML = '';

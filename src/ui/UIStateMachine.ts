@@ -62,6 +62,8 @@ export class UIStateMachine {
     }
   }
 
+  public activeModal: string | null = null;
+
   /**
    * Conmutación universal de modal de menú de sala para Host y No-Host.
    * Tanto el Host como cualquier jugador No-Host pueden abrir/cerrar el modal
@@ -87,6 +89,7 @@ export class UIStateMachine {
 
   public openModal(modalName: string = 'teamSelect'): void {
     if (modalName === 'teamSelect' || modalName === 'ingameMenu') {
+      this.activeModal = 'teamSelect';
       if (!this.elIngameMenu && typeof document !== 'undefined') {
         this.elIngameMenu = document.getElementById('ingame-menu');
       }
@@ -95,11 +98,18 @@ export class UIStateMachine {
         this.elIngameMenu.style.display = 'flex';
         this.elIngameMenu.style.pointerEvents = 'auto';
       }
+    } else {
+      this.activeModal = modalName;
     }
   }
 
   public closeModal(modalName: string = 'teamSelect'): void {
     if (modalName === 'teamSelect' || modalName === 'ingameMenu') {
+      if (this.activeModal === 'teamSelect' || this.activeModal === 'ingameMenu' || !modalName) {
+        this.activeModal = null;
+      } else if (this.activeModal === modalName) {
+        this.activeModal = null;
+      }
       if (!this.elIngameMenu && typeof document !== 'undefined') {
         this.elIngameMenu = document.getElementById('ingame-menu');
       }
@@ -107,6 +117,10 @@ export class UIStateMachine {
         this.elIngameMenu.classList.add('hidden');
         this.elIngameMenu.classList.remove('is-forced-open');
         this.elIngameMenu.style.display = 'none';
+      }
+    } else {
+      if (this.activeModal === modalName) {
+        this.activeModal = null;
       }
     }
   }
@@ -116,14 +130,14 @@ export class UIStateMachine {
       if (!this.elIngameMenu && typeof document !== 'undefined') {
         this.elIngameMenu = document.getElementById('ingame-menu');
       }
-      if (!this.elIngameMenu) return false;
+      if (!this.elIngameMenu) return this.activeModal === 'teamSelect' || this.activeModal === 'ingameMenu';
       const isHidden = this.elIngameMenu.classList.contains('hidden') ||
                        this.elIngameMenu.classList.contains('u-hidden') ||
                        this.elIngameMenu.classList.contains('ui-screen-hidden') ||
                        this.elIngameMenu.style.display === 'none';
       return !isHidden;
     }
-    return false;
+    return this.activeModal === modalName;
   }
 
   /**
@@ -153,6 +167,7 @@ export class UIStateMachine {
 
     switch (targetState) {
       case 'STATE_NICKNAME': {
+        this.activeModal = null;
         // Modal de alias activo; canvas y lobby apagados
         show(this.elNicknameModal, 'flex');
         hide(this.elLobbyModal);
@@ -167,6 +182,7 @@ export class UIStateMachine {
       }
 
       case 'STATE_LOBBY': {
+        this.activeModal = null;
         // Lobby activo; modal de alias y juego (canvas/HUD) apagados
         hide(this.elNicknameModal);
         show(this.elLobbyModal, 'flex');
@@ -192,6 +208,7 @@ export class UIStateMachine {
         // TeamSelect / In-game menu: no mostrar automáticamente a menos que esté forzado
         if (this.elIngameMenu && !this.elIngameMenu.classList.contains('is-forced-open')) {
           hide(this.elIngameMenu);
+          this.activeModal = null;
         }
         hide(this.elSettingsModal);
         // NOTE: Do NOT hide elContextMenu here — it is managed by GameApp

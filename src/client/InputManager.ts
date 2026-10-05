@@ -9,6 +9,9 @@ import {
   INPUT_MAGNUS_LEFT,
   INPUT_MAGNUS_RIGHT
 } from '../core/game/Player';
+import { MatchPhase } from '../core/game/GameFSM';
+import { UIStateMachine } from '../ui/UIStateMachine';
+import { $matchPhase } from '../ui/stores/gameStore';
 
 export interface KeyBinds {
   up: string[];
@@ -49,6 +52,10 @@ export class InputManager {
   public keyBinds: KeyBinds;
   public isEnabled: boolean = false;
   private dashTriggered: boolean = false;
+
+  public chatInput: HTMLElement | null = null;
+  public gameApp?: any = null;
+  public uiStateMachine?: UIStateMachine | null = null;
 
   constructor() {
     this.keyBinds = this.loadKeyBinds();
@@ -129,6 +136,36 @@ export class InputManager {
     if (typeof window === 'undefined') return;
 
     window.addEventListener('keydown', (e) => {
+      if (e.code === 'Escape' || e.key === 'Escape' || this.isActionKey('menu', e.code)) {
+        if (this.uiStateMachine && this.uiStateMachine.getState() !== 'STATE_IN_GAME') return;
+        e.preventDefault();
+        // Si el chat tiene el foco, desenfocar y no abrir/cerrar menús
+        const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+        const chatInputEl = this.chatInput || (typeof document !== 'undefined' ? (document.getElementById('chat-input') || document.getElementById('chatInput')) : null);
+        if (activeEl && (activeEl === this.chatInput || activeEl === chatInputEl)) {
+          if (this.chatInput) {
+            this.chatInput.blur();
+          } else if (chatInputEl) {
+            (chatInputEl as HTMLElement).blur();
+          }
+          return;
+        }
+
+        // Si el modal de teclas/ajustes está abierto, cerrarlo
+        const settingsModal = typeof document !== 'undefined' ? document.getElementById('settingsModal') : null;
+        if (settingsModal && settingsModal.style.display !== 'none' && !settingsModal.classList.contains('ui-screen-hidden') && !settingsModal.classList.contains('u-hidden')) {
+          settingsModal.style.display = 'none';
+          settingsModal.classList.add('u-hidden');
+          return;
+        }
+
+        // En STOPPED el menú es obligatorio; no se cierra
+        const phase = this.gameApp?.matchPhase ?? ($matchPhase.get());
+        if (phase === MatchPhase.STOPPED) return;
+        this.uiStateMachine?.toggleModal('teamSelect');
+        return;
+      }
+
       if (!this.isEnabled) return;
       if (e.repeat) return; // Edge-trigger estricto: descartar auto-repeticiones del sistema operativo
 

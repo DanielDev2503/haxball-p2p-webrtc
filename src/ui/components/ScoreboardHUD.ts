@@ -1,5 +1,7 @@
-import { $score, $timer, $ping, $theme, toggleTheme } from '../stores/gameStore';
+import { $score, $timer, $ping, $theme, toggleTheme, $matchPhase } from '../stores/gameStore';
 import { renderIconHTML, renderIcon, Timer, Wifi, Sun, Moon } from '../utils/icons';
+import { MatchPhase } from '../../core/game/GameFSM';
+import { UIStateMachine } from '../UIStateMachine';
 
 export class ScoreboardHUD {
   private redScoreEl: HTMLElement | null = null;
@@ -17,6 +19,8 @@ export class ScoreboardHUD {
   private clockSlot: HTMLElement | null = null;
   private wifiSlot: HTMLElement | null = null;
   public onMenuToggle?: () => void;
+  public gameApp?: any = null;
+  public uiStateMachine?: UIStateMachine | null = null;
 
   constructor() {
     this.capsuleEl = (document.querySelector('.scoreboard-capsule') || document.querySelector('.scoreboard')) as HTMLElement | null;
@@ -64,7 +68,13 @@ export class ScoreboardHUD {
       menuBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.onMenuToggle?.();
+        const phase = this.gameApp?.matchPhase ?? ($matchPhase.get());
+        if (phase === MatchPhase.STOPPED) return;
+        if (this.uiStateMachine) {
+          this.uiStateMachine.toggleModal('teamSelect');
+        } else if (this.onMenuToggle) {
+          this.onMenuToggle();
+        }
       });
     }
 

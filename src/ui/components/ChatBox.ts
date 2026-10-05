@@ -15,7 +15,7 @@ export class ChatBox {
   private container: HTMLElement | null = null;
   private boxEl: HTMLElement | null = null;
   private resizeHandleEl: HTMLElement | null = null;
-  private inputEl: HTMLInputElement | null = null;
+  public inputEl: HTMLInputElement | null = null;
   private formEl: HTMLFormElement | null = null;
   private preferredHeight: number = DEFAULT_CHAT_HEIGHT;
 

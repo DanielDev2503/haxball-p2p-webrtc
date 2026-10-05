@@ -45,6 +45,25 @@ export class GameApp {
   public mode: AppMode = 'practice';
   public currentMatchState: MatchPhase = MatchPhase.STOPPED;
   private lastClientPhase: MatchPhase | null = null;
+  private unsubs: Array<() => void> = [];
+
+  public get matchPhase(): MatchPhase {
+    return toMatchPhase(this.getAuthoritativeMatchState());
+  }
+
+  public get isHost(): boolean {
+    return this.mode === 'host' || Boolean(this.localPlayer?.isHost);
+  }
+
+  public get network(): { sendReliable: (msg: any) => void } {
+    return {
+      sendReliable: (msg: any) => {
+        if (this.hostPeer) {
+          this.hostPeer.sendReliable(typeof msg === 'string' ? msg : JSON.stringify(msg));
+        }
+      }
+    };
+  }
   public localPlayer: Player;
   public engine: GameEngine | null = null;
   public canvasRenderer: CanvasRenderer;
@@ -324,6 +343,26 @@ export class GameApp {
       onStateChange: (newState, prevState) => this.handleUIStateChange(newState, prevState)
     });
 
+    this.teamSelect.uiStateMachine = this.uiStateMachine;
+    this.teamSelect.gameApp = this;
+    this.teamSelect.localPlayer = this.localPlayer;
+    this.inputManager.chatInput = this.chat.inputEl;
+    this.inputManager.gameApp = this;
+    this.inputManager.uiStateMachine = this.uiStateMachine;
+    this.hud.gameApp = this;
+    this.hud.uiStateMachine = this.uiStateMachine;
+
+    this.unsubs.push(
+      $matchPhase.subscribe((phase) => {
+        if (this.uiStateMachine?.getState() !== 'STATE_IN_GAME') return;
+        if (phase === MatchPhase.COUNTDOWN || phase === MatchPhase.PLAYING) {
+          this.uiStateMachine.closeModal('teamSelect');
+        } else if (phase === MatchPhase.STOPPED) {
+          this.uiStateMachine.openModal('teamSelect');
+        }
+      })
+    );
+
     this.setupUIEvents();
     const toggleSettingsBtn = document.getElementById('btn-settings-toggle');
     toggleSettingsBtn?.addEventListener('click', (e) => {
@@ -530,8 +569,7 @@ export class GameApp {
       if (currentPhase === MatchPhase.STOPPED) {
         return;
       }
-      this.teamSelect.toggle();
-      this.uiStateMachine.toggleModal('teamSelect', Boolean(this.localPlayer.isHost || this.mode === 'host'), currentPhase);
+      this.uiStateMachine.toggleModal('teamSelect');
       this.updateAdminControlsUI();
       this.updateTeamLists();
     };
@@ -553,32 +591,7 @@ export class GameApp {
         return;
       }
 
-      // Escape o atajo de menú
-      if (e.key === 'Escape' || this.inputManager.isActionKey('menu', e.code)) {
-        // Si el chat está enfocado, primero desenfocar el chat y NO cerrar/abrir el menú
-        if (this.chat.isFocused()) {
-          e.preventDefault();
-          this.chat.blur();
-          return;
-        }
-
-        // Si el modal de teclas está abierto, cerrarlo
-        const settingsModal = document.getElementById('settingsModal');
-        if (settingsModal && settingsModal.style.display !== 'none' && !settingsModal.classList.contains('ui-screen-hidden') && !settingsModal.classList.contains('u-hidden')) {
-          settingsModal.style.display = 'none';
-          settingsModal.classList.add('u-hidden');
-          return;
-        }
-
-        // Si el partido está en STOPPED, el menú está forzado y no se debe alternar ni mutar
-        if (this.getAuthoritativeMatchState() === MatchPhase.STOPPED) {
-          e.preventDefault();
-          return;
-        }
-
-        toggleMenu();
-        return;
-      }
+      // Escape y tecla de menú gestionados centralizadamente por InputManager.ts
 
       // Tecla Enter para enfocar el chat sin movimiento residual
       if (e.code === 'Enter') {
@@ -857,6 +870,7 @@ export class GameApp {
       this.engine.setStadium(this.roomConfig.stadiumId);
     }
     this.canvasRenderer.setStadium(this.engine.stadium);
+    this.canvasRenderer.setGoalNets(this.engine.world.goalNets);
     this.setupEngineCallbacks(this.engine);
     this.engine.addPlayer(this.localPlayer);
     this.engine.startMatch();
@@ -889,6 +903,7 @@ export class GameApp {
       this.engine.setStadium(this.roomConfig.stadiumId);
     }
     this.canvasRenderer.setStadium(this.engine.stadium);
+    this.canvasRenderer.setGoalNets(this.engine.world.goalNets);
     this.setupEngineCallbacks(this.engine);
     this.engine.addPlayer(this.localPlayer);
 
@@ -916,6 +931,7 @@ export class GameApp {
 
   public async startAsClient(nickname: string, roomId: string, password?: string): Promise<void> {
     this.mode = 'client';
+    this.canvasRenderer.setGoalNets(null);
     this.localPlayer.id = this.signaling.peerId;
     this.localPlayer.name = nickname;
     this.localPlayer.avatar = nickname.substring(0, 2).toUpperCase();
@@ -1313,6 +1329,7 @@ export class GameApp {
           if (snap.matchPhase !== undefined) {
             const prevPhase = this.currentMatchState;
             this.currentMatchState = snap.matchPhase;
+            $matchPhase.set(snap.matchPhase);
             if (prevPhase !== snap.matchPhase) {
               const isLocalHost = Boolean(this.mode === 'host' || this.localPlayer.isHost);
               this.teamSelect.updateMatchState(snap.matchPhase, undefined, this.localPlayer.isAdmin, isLocalHost);
@@ -1383,10 +1400,12 @@ export class GameApp {
           // Apply match state
           if (msg.matchState) {
             const ms: MatchStatePayload = msg.matchState;
-            this.currentMatchState = ms.state;
-            this.jitterBuffer.setMatchState(ms.state);
+            const phase = toMatchPhase(ms.state);
+            this.currentMatchState = phase;
+            $matchPhase.set(phase);
+            this.jitterBuffer.setMatchState(phase);
             this.hud.update(ms.redScore, ms.blueScore, ms.timeRemaining);
-            this.teamSelect.updateMatchState(ms.state, undefined, this.localPlayer.isAdmin, isLocalHost);
+            this.teamSelect.updateMatchState(phase, undefined, this.localPlayer.isAdmin, isLocalHost);
           }
 
           if (msg.gameplayConfig) {
@@ -1901,7 +1920,7 @@ export class GameApp {
     }
     if (this.canvasRenderer && this.engine) {
       this.canvasRenderer.setStadium(this.engine.stadium);
-      this.canvasRenderer.setGoalNets(this.engine.world.goalNets);
+      this.canvasRenderer.setGoalNets(this.mode === 'client' ? null : this.engine.world.goalNets);
     }
     this.teamSelect.setStadium(stadiumId);
     if (this.selectStadiumSize) {
@@ -1972,7 +1991,7 @@ export class GameApp {
 
     const isAuthorized = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost || this.mode === 'host');
     if (!isAuthorized) return;
-    const currentPhase = this.engine ? this.engine.fsm.currentState : (typeof this.currentMatchState === 'number' ? this.currentMatchState : toMatchPhase(this.currentMatchState));
+    const currentPhase = this.matchPhase;
     const action = currentPhase === MatchPhase.STOPPED ? 'START' : 'STOP';
 
     if (action === 'STOP') {
@@ -2678,5 +2697,14 @@ export class GameApp {
       cancelAnimationFrame(this.renderLoopId);
       this.renderLoopId = null;
     }
+  }
+
+  public destroy(): void {
+    this.stopRenderLoop();
+    this.physicsTicker.stop();
+    for (const unsub of this.unsubs) {
+      unsub();
+    }
+    this.unsubs = [];
   }
 }

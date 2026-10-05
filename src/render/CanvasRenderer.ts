@@ -281,7 +281,8 @@ export class CanvasRenderer {
       this.scratchBall.vel.y = ball.vy || 0;
       this.scratchBall.radius = ball.radius || 5.8;
       for (let i = 0; i < this.localGoalNets.length; i++) {
-        this.localGoalNets[i].step(this.scratchBall);
+        this.localGoalNets[i].step(1 / 60);
+        this.localGoalNets[i].checkBallCollision(this.scratchBall);
       }
     }
     for (let i = 0; i < activeNets.length; i++) {

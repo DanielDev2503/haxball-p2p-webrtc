@@ -222,7 +222,11 @@ export class PhysicsWorld {
         }
       }
       for (let i = 0; i < this.goalNets.length; i++) {
-        this.goalNets[i].step(ball, dt);
+        const net = this.goalNets[i];
+        net.step(dt);
+        if (ball) {
+          net.checkBallCollision(ball);
+        }
       }
     }
   }
