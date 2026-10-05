@@ -8,8 +8,8 @@ export interface GoalNetOptions {
   bottomCornerY?: number; // default 65
   rearLimitX?: number; // default -640 or 640
   nodeCount?: number; // default 11 (particles in rope)
-  damping?: number; // default 0.10
-  kShape?: number; // default 0.18
+  damping?: number; // default 0.20
+  kShape?: number; // default 0
   kSpring?: number; // compatibility alias
   color?: string; // default '#717F98'
   cols?: number;  // Compatibility
@@ -17,23 +17,19 @@ export interface GoalNetOptions {
 }
 
 /**
- * GoalNet: Portería de Cuerda Elástica Holgada (Haxball Slack Trapezoid Rope).
+ * GoalNet: Portería de Cuerda Viscoelástica Holgada con Memoria Plástica (Viscoelastic Plastic Retaining Rope).
  * 
- * Modela la red como una cuerda elástica 1D continua suspendida exclusivamente entre los dos postes:
  * - Anclaje Fijo 1 (Poste Superior): P_0 = (±600, -85) con invMass = 0.
  * - Anclaje Fijo 2 (Poste Inferior): P_{N-1} = (±600, 85) con invMass = 0.
- * - Frente de Portería: Abierto entre P_0 y P_{N-1}.
- * - Geometría en Reposo: Trapecio holgado con esquinas redondeadas (N = 11 partículas):
- *     * Esquina superior redondeada: curva suave desde (±600, -85) hasta (±635, -65).
- *     * Fondo de la red: segmento vertical en X = ±635 entre Y = -65 e Y = 65.
- *     * Esquina inferior redondeada: curva suave desde (±635, 65) hasta (±600, 85).
- * - Integración Verlet a 60 Hz con masa m = 0.4 (w_i = 2.5) y damping ~ 0.10.
- * - Fuerza de memoria de forma: F_restore = -k_shape * (p_i - restPos_i) con k_shape ~ 0.18.
+ * - Geometría en Reposo: Trapecio holgado con esquinas redondeadas (N = 11 partículas).
+ * - Integración Verlet a 60 Hz con masa m = 0.4 (w_i = 2.5) y damping viscoso ~ 0.20.
+ * - Eliminación del resorte continuo de retorno (kShape = 0 en juego activo): la red absorbe el impacto y
+ *   retiene su deformación plástica transitoria envolviendo el balón sin intentar regresar de forma autónoma.
+ * - Absorción viscoelástica instantánea: v_ball <- v_ball * 0.35 y arrastre de deformación en los nodos.
  * - Restricciones de distancia: 3 iteraciones Gauss-Seidel entre nodos consecutivos.
- * - Interacción Balón vs Cuerda: Disipación cinética (v_ball <- v_ball * 0.65) y deformación elástica.
- * - Tope elástico posterior en X = ±640 para retener el balón dentro sin rebotes violentos.
+ * - Ciclo de restauración: resetShape(smooth: boolean) (instantáneo o relajación suave a 0.08 por tick en COUNTDOWN).
  * - Permeabilidad absoluta para jugadores: cMask estricto a ['ball'], disc.isBall === false ignorado al 100%.
- * - Invariante Hard Rule: Cero alocaciones en bucle caliente (Zero-GC Float32Array).
+ * - Invariante Hard Rule: Cero alocaciones en bucles calientes (Zero-GC Float32Array).
  */
 export class GoalNet {
   public side: 'left' | 'right';
@@ -61,6 +57,7 @@ export class GoalNet {
   public kSpring: number;
   public relaxationIterations: number = 3;
   public color: string;
+  public isRelaxing: boolean = false;
 
   public mouthX: number;
   public backX: number;
@@ -90,8 +87,8 @@ export class GoalNet {
       this.rearLimitX = this.backX + signX * 12;
     }
 
-    this.damping = options.damping ?? 0.10;
-    this.kShape = options.kShape ?? options.kSpring ?? 0.18;
+    this.damping = options.damping ?? 0.20;
+    this.kShape = options.kShape ?? options.kSpring ?? 0;
     this.kSpring = this.kShape;
     this.color = options.color ?? '#717F98';
 
@@ -211,15 +208,23 @@ export class GoalNet {
     const damping = this.damping;
     const kShape = this.kShape;
 
-    // 1. Integración Temporal Verlet con Damping y Fuerza de Memoria de Forma
-    // v_x = (x_t - x_{t-1}) * (1 - damping)
-    // x_{t+1} = x_t + v_x - k_shape * (x_t - restX[i])
+    // 1. Integración Temporal Verlet con Damping y Modo de Relajación Suave (Kickoff)
+    // Durante juego activo: kShape = 0 (memoria plástica transitoria, sin resorte continuo).
+    // Si isRelaxing es true (COUNTDOWN): aplica interpolación suave p_i <- p_i + (restPos_i - p_i) * 0.08
     for (let i = 1; i < N - 1; i++) {
+      let restoreX = 0;
+      let restoreY = 0;
+
+      if (this.isRelaxing) {
+        restoreX = (this.restPosX[i] - this.posX[i]) * 0.08;
+        restoreY = (this.restPosY[i] - this.posY[i]) * 0.08;
+      } else if (kShape > 0) {
+        restoreX = -kShape * (this.posX[i] - this.restPosX[i]);
+        restoreY = -kShape * (this.posY[i] - this.restPosY[i]);
+      }
+
       const vx = (this.posX[i] - this.oldPosX[i]) * (1 - damping);
       const vy = (this.posY[i] - this.oldPosY[i]) * (1 - damping);
-
-      const restoreX = -kShape * (this.posX[i] - this.restPosX[i]);
-      const restoreY = -kShape * (this.posY[i] - this.restPosY[i]);
 
       const nextX = this.posX[i] + vx + restoreX;
       const nextY = this.posY[i] + vy + restoreY;
@@ -228,6 +233,20 @@ export class GoalNet {
       this.oldPosY[i] = this.posY[i];
       this.posX[i] = nextX;
       this.posY[i] = nextY;
+    }
+
+    // Comprobación de convergencia para el modo de relajación suave
+    if (this.isRelaxing) {
+      let maxDev = 0;
+      for (let i = 1; i < N - 1; i++) {
+        const dx = Math.abs(this.posX[i] - this.restPosX[i]);
+        const dy = Math.abs(this.posY[i] - this.restPosY[i]);
+        if (dx > maxDev) maxDev = dx;
+        if (dy > maxDev) maxDev = dy;
+      }
+      if (maxDev < 0.05) {
+        this.resetShape(false);
+      }
     }
 
     // 2. Relajación de Restricciones de Distancia (3 iteraciones Gauss-Seidel)
@@ -283,7 +302,7 @@ export class GoalNet {
   }
 
   /**
-   * Cálculo determinista de Colisión Balón-Segmento (Cuerda Elástica).
+   * Cálculo determinista de Colisión Balón-Segmento (Cuerda Elástica Viscoelástica).
    * Permeabilidad absoluta para jugadores (ignora disc si !isBall).
    */
   public checkBallCollision(
@@ -330,28 +349,29 @@ export class GoalNet {
         let nx = d > 1e-4 ? dx / d : (this.side === 'left' ? 1 : -1);
         let ny = d > 1e-4 ? dy / d : 0;
 
-        // Deformación de la cuerda: desplazar nodos i e i+1 en dirección del avance hacia el fondo
-        const pushX = -nx * pen;
-        const pushY = -ny * pen;
+        // Arrastre de deformación: desplaza los nodos i e i+1 en dirección del vector de velocidad del balón v_ball
+        // y la penetración normal estirando la cuerda hacia la profundidad del arco
+        const dragX = ball.vel.x * 0.06 - nx * pen;
+        const dragY = ball.vel.y * 0.06 - ny * pen;
 
         if (this.invMass[i] > 0) {
-          this.posX[i] += pushX * (1 - t);
-          this.posY[i] += pushY * (1 - t);
+          this.posX[i] += dragX * (1 - t);
+          this.posY[i] += dragY * (1 - t);
           if (this.side === 'left' && this.posX[i] < this.rearLimitX) this.posX[i] = this.rearLimitX;
           if (this.side === 'right' && this.posX[i] > this.rearLimitX) this.posX[i] = this.rearLimitX;
         }
         if (this.invMass[i + 1] > 0) {
-          this.posX[i + 1] += pushX * t;
-          this.posY[i + 1] += pushY * t;
+          this.posX[i + 1] += dragX * t;
+          this.posY[i + 1] += dragY * t;
           if (this.side === 'left' && this.posX[i + 1] < this.rearLimitX) this.posX[i + 1] = this.rearLimitX;
           if (this.side === 'right' && this.posX[i + 1] > this.rearLimitX) this.posX[i + 1] = this.rearLimitX;
         }
 
-        // Amortiguación real: absorbe energía cinética y disipa la velocidad
-        // v_ball <- v_ball * 0.65
+        // Disipación viscosa instantánea: el balón pierde casi toda su energía cinética en el contacto:
+        // v_ball <- v_ball * 0.35
         if (!ballDamped) {
-          ball.vel.x *= 0.65;
-          ball.vel.y *= 0.65;
+          ball.vel.x *= 0.35;
+          ball.vel.y *= 0.35;
           ballDamped = true;
         }
 
@@ -362,7 +382,7 @@ export class GoalNet {
     }
 
     // Límite de contención: Si la cuerda alcanza su elongación máxima (X = X_back ± 12 px),
-    // aplica una fuerza de restitución normal que frena por completo el balón dentro de la portería
+    // aplica una fuerza de restitución normal que retiene firmemente el balón dentro de la portería
     if (this.side === 'left') {
       if (ball.pos.x - rBall < this.rearLimitX) {
         ball.pos.x = this.rearLimitX + rBall;
@@ -420,14 +440,28 @@ export class GoalNet {
   }
 
   /**
-   * Restablece todos los nodos a su geometría de reposo.
+   * Ciclo de Restauración de la Red (Kickoff Reset):
+   * - smooth === false: Reasigna instantáneamente p_i = restPos_i y resetea velocidades a cero.
+   * - smooth === true: Activa modo de relajación durante COUNTDOWN (p_i <- p_i + (restPos_i - p_i) * 0.08 por tick).
+   */
+  public resetShape(smooth: boolean = false): void {
+    if (!smooth) {
+      this.isRelaxing = false;
+      for (let i = 0; i < this.nodeCount; i++) {
+        this.posX[i] = this.restPosX[i];
+        this.posY[i] = this.restPosY[i];
+        this.oldPosX[i] = this.restPosX[i];
+        this.oldPosY[i] = this.restPosY[i];
+      }
+    } else {
+      this.isRelaxing = true;
+    }
+  }
+
+  /**
+   * Restablece todos los nodos a su geometría de reposo (alias de resetShape(false)).
    */
   public reset(): void {
-    for (let i = 0; i < this.nodeCount; i++) {
-      this.posX[i] = this.restPosX[i];
-      this.posY[i] = this.restPosY[i];
-      this.oldPosX[i] = this.restPosX[i];
-      this.oldPosY[i] = this.restPosY[i];
-    }
+    this.resetShape(false);
   }
 }

@@ -184,7 +184,14 @@ export class ScoreboardHUD {
     }
   }
 
-  public update(redScore: number, blueScore: number, timerSeconds: number, isGoldenGoal?: boolean): void {
+  public update(
+    redScore: number,
+    blueScore: number,
+    timerSeconds: number,
+    isGoldenGoal?: boolean,
+    matchPhase?: MatchPhase,
+    targetTeam?: number
+  ): void {
     const mins = Math.floor(timerSeconds / 60);
     const secs = timerSeconds % 60;
     const prefix = isGoldenGoal ? '+' : '';
@@ -200,7 +207,15 @@ export class ScoreboardHUD {
     if (this.timerEl) this.timerEl.textContent = timeStr;
 
     if (this.goldenGoalBadgeEl) {
-      if (isGoldenGoal) {
+      if (matchPhase === MatchPhase.VICTORY_CELEBRATION || matchPhase === MatchPhase.MATCH_ENDED) {
+        const winText = isGoldenGoal
+          ? 'GOL DE ORO'
+          : (targetTeam === 1 ? 'VICTORIA ROJO' : (targetTeam === 2 ? 'VICTORIA AZUL' : 'VICTORIA'));
+        this.goldenGoalBadgeEl.textContent = winText;
+        this.goldenGoalBadgeEl.classList.remove('u-hidden', 'ui-screen-hidden');
+        this.goldenGoalBadgeEl.style.display = 'inline-flex';
+      } else if (isGoldenGoal) {
+        this.goldenGoalBadgeEl.textContent = 'GOL DE ORO';
         this.goldenGoalBadgeEl.classList.remove('u-hidden', 'ui-screen-hidden');
         this.goldenGoalBadgeEl.style.display = 'inline-flex';
       } else {

@@ -45,12 +45,12 @@ describe('Match Conclusion Flow and Menu Synchronization', () => {
       (engine as any).redScore = 1;
       (engine as any).checkMatchConclusion();
 
-      expect(engine.fsm.currentState).toBe(MatchState.MATCH_ENDED);
-      expect(finalState).toBe(MatchState.MATCH_ENDED);
+      expect(engine.fsm.currentState).toBe(MatchState.VICTORY_CELEBRATION);
+      expect(finalState).toBe(MatchState.VICTORY_CELEBRATION);
       expect(winnerResult).toBeNull();
 
-      // Advance 180 ticks (3.0 seconds at 60 Hz)
-      for (let i = 0; i < 180; i++) {
+      // Advance 300 ticks (5.0 seconds at 60 Hz)
+      for (let i = 0; i < 300; i++) {
         engine.tick(new Map());
       }
 

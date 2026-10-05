@@ -88,14 +88,19 @@ describe('Golden Goal (Sudden Death) Overtime Mechanics', () => {
     engine.tick(new Map());
 
     expect(engine.blueScore).toBe(1);
-    // Instant conclusion: directly to MATCH_ENDED, skipping regular celebration reset
-    expect(engine.fsm.currentState).toBe(MatchPhase.MATCH_ENDED);
+    // Instant conclusion: directly to VICTORY_CELEBRATION, skipping regular celebration reset
+    expect(engine.fsm.currentState).toBe(MatchPhase.VICTORY_CELEBRATION);
     expect(engine.fsm.winningTeam).toBe('blue');
 
-    // Advance 180 ticks of MATCH_ENDED victory banner
-    for (let i = 0; i < 180; i++) {
+    // Advance 298 ticks of VICTORY_CELEBRATION (tick 1 was when goal scored and checkMatchConclusion triggered)
+    for (let i = 0; i < 298; i++) {
       engine.tick(new Map());
+      expect(engine.fsm.currentState).toBe(MatchPhase.VICTORY_CELEBRATION);
+      expect(matchEndWinner).toBeUndefined();
     }
+
+    // 300th tick transitions cleanly to STOPPED and invokes onMatchEnd
+    engine.tick(new Map());
 
     expect(engine.fsm.currentState).toBe(MatchPhase.STOPPED);
     expect(matchEndWinner).toBe('blue');
@@ -113,9 +118,9 @@ describe('Golden Goal (Sudden Death) Overtime Mechanics', () => {
 
     for (let i = 0; i < 60; i++) engine.tick(new Map());
 
-    // Match ended with Red winner
+    // Match entered 5-second victory celebration with Red winner
     expect(engine.isGoldenGoal).toBe(false);
-    expect(engine.fsm.currentState).toBe(MatchPhase.MATCH_ENDED);
+    expect(engine.fsm.currentState).toBe(MatchPhase.VICTORY_CELEBRATION);
     expect(engine.fsm.winningTeam).toBe('red');
   });
 

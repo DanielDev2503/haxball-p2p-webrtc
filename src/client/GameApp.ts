@@ -1076,7 +1076,7 @@ export class GameApp {
         this.audioManager.playCountdown(false);
       } else if (state === MatchPhase.PLAYING) {
         this.audioManager.playCountdown(true);
-      } else if (state === MatchPhase.MATCH_ENDED) {
+      } else if (state === MatchPhase.VICTORY_CELEBRATION || state === MatchPhase.MATCH_ENDED) {
         this.audioManager.playGoalWhistle();
       }
       this.broadcastMatchStateSync();
@@ -2153,7 +2153,8 @@ export class GameApp {
    */
   private stepClientPrediction(mask: number, _curve?: { x: number; y: number }, isTurbo?: boolean, triggerDash?: boolean): void {
     const isSimulationActive = this.currentMatchState === MatchPhase.PLAYING ||
-                               this.currentMatchState === MatchPhase.GOAL_CELEBRATION;
+                               this.currentMatchState === MatchPhase.GOAL_CELEBRATION ||
+                               this.currentMatchState === MatchPhase.VICTORY_CELEBRATION;
     if (!isSimulationActive || !this.hasPredictedPos || this.localPlayer.team === 'spec') {
       return;
     }
@@ -2395,7 +2396,8 @@ export class GameApp {
     if (!authDisc) return;
 
     const isSimulationActive = snap.matchPhase === MatchPhase.PLAYING ||
-                               snap.matchPhase === MatchPhase.GOAL_CELEBRATION;
+                               snap.matchPhase === MatchPhase.GOAL_CELEBRATION ||
+                               snap.matchPhase === MatchPhase.VICTORY_CELEBRATION;
 
     // Si aún no se ha inicializado o la física no está activa (PAUSED, STOPPED, COUNTDOWN):
     // Apagar la integración cinemática y sincronizar directamente la posición autoritativa
@@ -2582,7 +2584,8 @@ export class GameApp {
                 ? activeSnapshot.matchPhase
                 : toMatchPhase(activeSnapshot.matchState);
               const isSimulationActive = currentPhase === MatchPhase.PLAYING ||
-                                         currentPhase === MatchPhase.GOAL_CELEBRATION;
+                                         currentPhase === MatchPhase.GOAL_CELEBRATION ||
+                                         currentPhase === MatchPhase.VICTORY_CELEBRATION;
 
               if (isSimulationActive) {
                 // Decaimiento exponencial del offset visual hacia cero (60 Hz)
@@ -2611,7 +2614,9 @@ export class GameApp {
             activeSnapshot.scoreRed ?? activeSnapshot.redScore,
             activeSnapshot.scoreBlue ?? activeSnapshot.blueScore,
             activeSnapshot.timerSeconds ?? activeSnapshot.matchTimerSeconds,
-            activeSnapshot.isGoldenGoal
+            activeSnapshot.isGoldenGoal,
+            activeSnapshot.matchPhase,
+            activeSnapshot.targetTeam
           );
 
           // Sincronización reactiva autoritativa de fases en cliente
@@ -2631,7 +2636,7 @@ export class GameApp {
                 this.audioManager.playCountdown(false);
               } else if (currentPhase === MatchPhase.PLAYING) {
                 this.audioManager.playCountdown(true);
-              } else if (currentPhase === MatchPhase.MATCH_ENDED) {
+              } else if (currentPhase === MatchPhase.VICTORY_CELEBRATION || currentPhase === MatchPhase.MATCH_ENDED) {
                 this.audioManager.playGoalWhistle();
               }
 

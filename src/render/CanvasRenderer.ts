@@ -32,6 +32,8 @@ export class CanvasRenderer {
   // Transformación de cámara y sacudón elástico con GSAP
   public cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
   private lastCelebrationPhase: MatchPhase | null = null;
+  private lastMirrorPhase: MatchPhase | null = null;
+  private confettiTickCount: number = 0;
 
   constructor(canvas: HTMLCanvasElement, stadium: Stadium) {
     this.canvas = canvas;
@@ -272,9 +274,24 @@ export class CanvasRenderer {
     ctx.translate(-this.camera.x, -this.camera.y);
     this.pitchRenderer.renderPitch(ctx, this.stadium);
 
-    // Redes de portería deformables (Cloth / Mass-Spring)
+    // Redes de portería viscoelásticas (viscoelastic plastic retaining rope)
     const activeNets = this.goalNets ?? this.localGoalNets;
     if (!this.goalNets && ball) {
+      const currentPhase: MatchPhase = snapshot.matchPhase !== undefined
+        ? snapshot.matchPhase
+        : toMatchPhase(snapshot.matchState);
+
+      if (currentPhase === MatchPhase.COUNTDOWN && this.lastMirrorPhase !== MatchPhase.COUNTDOWN) {
+        for (let i = 0; i < this.localGoalNets.length; i++) {
+          this.localGoalNets[i].resetShape(true);
+        }
+      } else if (currentPhase === MatchPhase.STOPPED && this.lastMirrorPhase !== MatchPhase.STOPPED) {
+        for (let i = 0; i < this.localGoalNets.length; i++) {
+          this.localGoalNets[i].resetShape(false);
+        }
+      }
+      this.lastMirrorPhase = currentPhase;
+
       this.scratchBall.pos.x = ball.x;
       this.scratchBall.pos.y = ball.y;
       this.scratchBall.vel.x = ball.vx || 0;
@@ -331,14 +348,22 @@ export class CanvasRenderer {
     const winningTeam = targetTeam === 1 ? 'EQUIPO ROJO' : (targetTeam === 2 ? 'EQUIPO AZUL' : '');
     const winningTeamColor = targetTeam === 1 ? '#FF0055' : (targetTeam === 2 ? '#00E5FF' : '#00E599');
 
-    // Detección de transición para disparo de confeti
-    if (currentPhase === MatchPhase.GOAL_CELEBRATION || currentPhase === MatchPhase.MATCH_ENDED) {
+    // Detección de transición y emisión continua de confeti físico durante los 5 segundos completos
+    if (currentPhase === MatchPhase.VICTORY_CELEBRATION || currentPhase === MatchPhase.MATCH_ENDED) {
+      this.confettiTickCount = (this.confettiTickCount || 0) + 1;
+      if (this.lastCelebrationPhase !== currentPhase || this.confettiTickCount % 45 === 0) {
+        this.triggerCelebrationConfetti(targetTeam);
+      }
+      this.lastCelebrationPhase = currentPhase;
+    } else if (currentPhase === MatchPhase.GOAL_CELEBRATION) {
       if (this.lastCelebrationPhase !== currentPhase) {
         this.lastCelebrationPhase = currentPhase;
         this.triggerCelebrationConfetti(targetTeam);
       }
+      this.confettiTickCount = 0;
     } else {
       this.lastCelebrationPhase = null;
+      this.confettiTickCount = 0;
     }
 
     ctx.save();
@@ -356,6 +381,7 @@ export class CanvasRenderer {
       case MatchPhase.PAUSED:
         this.drawPauseOverlay(ctx);
         break;
+      case MatchPhase.VICTORY_CELEBRATION:
       case MatchPhase.MATCH_ENDED: {
         let title = winningTeam ? `¡VICTORIA ${winningTeam}!` : '¡EMPATE!';
         let bannerColor = winningTeamColor;

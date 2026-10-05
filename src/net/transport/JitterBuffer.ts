@@ -126,8 +126,10 @@ export class JitterBuffer {
       ? this.currentMatchState
       : (this.currentMatchState ? toMatchPhase(this.currentMatchState) : (latestSnapshot.matchPhase ?? toMatchPhase(latestSnapshot.matchState)));
 
-    // Físicas activas en PLAYING y GOAL_CELEBRATION
-    const isSimulationActive = effectivePhase === MatchPhase.PLAYING || effectivePhase === MatchPhase.GOAL_CELEBRATION;
+    // Físicas activas en PLAYING, GOAL_CELEBRATION y VICTORY_CELEBRATION
+    const isSimulationActive = effectivePhase === MatchPhase.PLAYING ||
+                               effectivePhase === MatchPhase.GOAL_CELEBRATION ||
+                               effectivePhase === MatchPhase.VICTORY_CELEBRATION;
 
     if (!isSimulationActive) {
       const frozenDiscs: DiscSnapshot[] = latestSnapshot.discs.map(d => ({

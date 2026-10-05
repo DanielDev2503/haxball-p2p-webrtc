@@ -4,7 +4,8 @@ export enum MatchPhase {
   PAUSED = 2,
   COUNTDOWN = 3,
   GOAL_CELEBRATION = 4,
-  MATCH_ENDED = 5
+  MATCH_ENDED = 5,
+  VICTORY_CELEBRATION = 6
 }
 
 export type MatchState = MatchPhase;
@@ -19,6 +20,7 @@ export function toMatchPhase(val: MatchPhase | string | number): MatchPhase {
     case 'PAUSED': return MatchPhase.PAUSED;
     case 'COUNTDOWN': return MatchPhase.COUNTDOWN;
     case 'GOAL_CELEBRATION': return MatchPhase.GOAL_CELEBRATION;
+    case 'VICTORY_CELEBRATION': return MatchPhase.VICTORY_CELEBRATION;
     case 'MATCH_ENDED': return MatchPhase.MATCH_ENDED;
     case 'STOPPED':
     default:
@@ -97,17 +99,29 @@ export class GameFSM {
     if (this.onStateChange) this.onStateChange(this.currentState);
   }
 
+  public isVictoryCelebration(): boolean {
+    return this.currentState === MatchPhase.VICTORY_CELEBRATION;
+  }
+
+  public isMatchEnded(): boolean {
+    return this.currentState === MatchPhase.MATCH_ENDED || this.currentState === MatchPhase.STOPPED;
+  }
+
   public startGoalCelebration(durationTicks: number = 180): void {
     this.currentState = MatchPhase.GOAL_CELEBRATION;
     this.stateTicksRemaining = durationTicks;
     if (this.onStateChange) this.onStateChange(this.currentState);
   }
 
-  public startMatchEnded(winner: 'red' | 'blue' | null, durationTicks: number = 180): void {
-    this.currentState = MatchPhase.MATCH_ENDED;
+  public startVictoryCelebration(winner: 'red' | 'blue' | null, durationTicks: number = 300): void {
+    this.currentState = MatchPhase.VICTORY_CELEBRATION;
     this.winningTeam = winner;
     this.stateTicksRemaining = durationTicks;
     if (this.onStateChange) this.onStateChange(this.currentState);
+  }
+
+  public startMatchEnded(winner: 'red' | 'blue' | null, durationTicks: number = 300): void {
+    this.startVictoryCelebration(winner, durationTicks);
   }
 
   public endMatch(winner: 'red' | 'blue' | null): void {
@@ -143,7 +157,10 @@ export class GameFSM {
         this.startResumeCountdown();
         return true;
       }
-    } else if (this.currentState === MatchPhase.MATCH_ENDED && this.stateTicksRemaining > 0) {
+    } else if (
+      (this.currentState === MatchPhase.VICTORY_CELEBRATION || this.currentState === MatchPhase.MATCH_ENDED) &&
+      this.stateTicksRemaining > 0
+    ) {
       this.stateTicksRemaining--;
       if (this.stateTicksRemaining === 0) {
         this.endMatch(this.winningTeam);

@@ -126,9 +126,9 @@ describe('Universal Slack Rope Net Physics & Goal Boundary Purge', () => {
       const initialSpeed = Math.abs(ball.vel.x);
       net.step(ball, 1 / 60);
 
-      // Kinetic damping: speed dissipated by 0.65 factor
+      // Kinetic damping: speed dissipated by 0.35 factor
       expect(Math.abs(ball.vel.x)).toBeLessThan(initialSpeed);
-      expect(ball.vel.x).toBeCloseTo(-30 * 0.65, 1);
+      expect(ball.vel.x).toBeCloseTo(-30 * 0.35, 1);
 
       // Sustained steps to rear limit
       for (let i = 0; i < 40; i++) {

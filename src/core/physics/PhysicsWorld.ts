@@ -230,4 +230,24 @@ export class PhysicsWorld {
       }
     }
   }
+
+  /**
+   * Resetea la forma de todas las redes de portería activas.
+   * smooth === false: restauración instantánea.
+   * smooth === true: relajación suave a 0.08 por tick durante COUNTDOWN.
+   */
+  public resetNets(smooth: boolean = false): void {
+    for (let i = 0; i < this.goalNets.length; i++) {
+      this.goalNets[i].resetShape(smooth);
+    }
+  }
+
+  /**
+   * Avanza la integración de las redes de forma aislada (p. ej. relajación durante COUNTDOWN).
+   */
+  public stepNets(dt: number = 1 / 60): void {
+    for (let i = 0; i < this.goalNets.length; i++) {
+      this.goalNets[i].step(dt);
+    }
+  }
 }

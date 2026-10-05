@@ -108,7 +108,7 @@ describe('Slack Trapezoid Rope Net, Player Permeability & Non-Host Modal Toggle'
       expect(netLeft.restPosX[6]).toBe(-635);
     });
 
-    it('dissipates high-velocity ball shot into the net elastically (v_ball * 0.65) without NaN or overflow', () => {
+    it('dissipates high-velocity ball shot into the net viscoelastically (v_ball * 0.35), retains plastic deformation and restores after kickoff reset', () => {
       const net = new GoalNet({
         side: 'left',
         mouthX: -600,
@@ -131,10 +131,11 @@ describe('Slack Trapezoid Rope Net, Player Permeability & Non-Host Modal Toggle'
       // Step simulation
       net.step(fastBall, 1 / 60);
 
-      // Velocity must be dissipated by factor of 0.65
+      // Velocity must be dissipated by factor of 0.35
       const postSpeed = Math.hypot(fastBall.vel.x, fastBall.vel.y);
       expect(postSpeed).toBeLessThan(initialSpeed);
-      expect(fastBall.vel.x).toBeCloseTo(-35 * 0.65, 1);
+      expect(fastBall.vel.x).toBeCloseTo(-35 * 0.35, 1);
+      expect(fastBall.vel.y).toBeCloseTo(5 * 0.35, 1);
 
       // Nodes must not have NaN
       for (let i = 0; i < net.nodeCount; i++) {
@@ -144,19 +145,39 @@ describe('Slack Trapezoid Rope Net, Player Permeability & Non-Host Modal Toggle'
         expect(Number.isFinite(net.posY[i])).toBe(true);
       }
 
-      // Multiple ticks of intense impact simulation
+      // Ball comes to rest inside net over several ticks
       for (let tick = 0; tick < 60; tick++) {
         net.step(fastBall, 1 / 60);
       }
 
-      expect(Number.isNaN(fastBall.pos.x)).toBe(false);
-      expect(Number.isNaN(fastBall.pos.y)).toBe(false);
-      expect(Number.isNaN(fastBall.vel.x)).toBe(false);
-      expect(Number.isNaN(fastBall.vel.y)).toBe(false);
-
       // Ball is retained within goal and does not violently bounce out
       expect(fastBall.pos.x).toBeLessThan(-600);
       expect(fastBall.pos.x).toBeGreaterThanOrEqual(-640);
+
+      // Memoria plástica transitoria: los nodos permanecen deformados envolviendo el balón (kShape = 0, sin resorte de retorno)
+      const deformedMiddleX = net.posX[5];
+      expect(deformedMiddleX).not.toBeCloseTo(net.restPosX[5], 0.5);
+
+      // Ticks adicionales con el balón en reposo: la red NO intenta regresar a reposo
+      for (let tick = 0; tick < 30; tick++) {
+        net.step(fastBall, 1 / 60);
+      }
+      expect(net.posX[5]).toBeCloseTo(deformedMiddleX, 0.5);
+
+      // Restauración suave (COUNTDOWN Kickoff Reset: resetShape(true))
+      net.resetShape(true);
+      expect(net.isRelaxing).toBe(true);
+      for (let tick = 0; tick < 60; tick++) {
+        net.step(1 / 60);
+      }
+      // Nodos relajados suavemente hacia reposo
+      expect(Math.abs(net.posX[5] - net.restPosX[5])).toBeLessThan(0.5);
+
+      // Restauración instantánea (resetShape(false))
+      net.posX[5] = -639;
+      net.resetShape(false);
+      expect(net.posX[5]).toBe(net.restPosX[5]);
+      expect(net.isRelaxing).toBe(false);
     });
   });
 

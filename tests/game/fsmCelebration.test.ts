@@ -70,7 +70,7 @@ describe('Goal Celebration and Match Ended Lifecycle (FSM & Engine)', () => {
     expect(engine.fsm.currentState).toBe(MatchState.PLAYING);
   });
 
-  it('manages 180-tick match ended victory phase before transitioning to STOPPED', () => {
+  it('manages 300-tick victory celebration: active physics, movement and score lock before transitioning to STOPPED', () => {
     const engine = new GameEngine({ scoreLimit: 1, timeLimitSeconds: 180 });
     const p1 = new Player({ id: 'p1', name: 'PlayerRed', team: 'red' });
     engine.addPlayer(p1);
@@ -92,19 +92,37 @@ describe('Goal Celebration and Match Ended Lifecycle (FSM & Engine)', () => {
     engine.tick(emptyInputs);
 
     expect(engine.redScore).toBe(1);
-    expect(engine.fsm.currentState).toBe(MatchState.MATCH_ENDED);
+    expect(engine.fsm.currentState).toBe(MatchState.VICTORY_CELEBRATION);
+    expect(engine.fsm.isVictoryCelebration()).toBe(true);
     expect(matchEndedWinner).toBeUndefined(); // onMatchEnd is NOT called yet!
 
-    // Advance 179 ticks of MATCH_ENDED
-    for (let i = 0; i < 179; i++) {
-      // During MATCH_ENDED, kick input must not apply impulse to the ball
+    // During 300 ticks of VICTORY_CELEBRATION:
+    // 1. Players retain 100% motor control and movement
+    const moveInputs = new Map<string, number>();
+    moveInputs.set('p1', 1); // UP key mask
+    const prevY = engine.playerDiscs.get('p1')!.pos.y;
+    engine.tick(moveInputs);
+    const newY = engine.playerDiscs.get('p1')!.pos.y;
+    expect(newY).not.toBe(prevY); // Player moved during victory celebration!
+
+    // 2. Score Lock: ball pushed into goal does NOT increase score or emit new goal events
+    let extraGoalFired = false;
+    engine.onGoal = () => { extraGoalFired = true; };
+    engine.ball.pos.set(engine.stadium.halfWidth + 30, 0);
+    engine.tick(emptyInputs);
+    expect(engine.redScore).toBe(1); // Score locked!
+    expect(extraGoalFired).toBe(false);
+
+    // Advance 296 remaining ticks (we ticked 3 above [tick 1 on goal, tick 2 on move, tick 3 on score lock], so 296 + 3 = 299 ticks in victory celebration)
+    for (let i = 0; i < 296; i++) {
       const kickInput = new Map<string, number>();
       kickInput.set('p1', 16); // Kick mask = 16
       engine.tick(kickInput);
-      expect(engine.fsm.currentState).toBe(MatchState.MATCH_ENDED);
+      expect(engine.fsm.currentState).toBe(MatchState.VICTORY_CELEBRATION);
+      expect(matchEndedWinner).toBeUndefined();
     }
 
-    // 180th tick transitions to STOPPED and invokes onMatchEnd
+    // 300th tick transitions cleanly to STOPPED and invokes onMatchEnd
     engine.tick(emptyInputs);
     expect(engine.fsm.currentState).toBe(MatchState.STOPPED);
     expect(matchEndedWinner).toBe('red');

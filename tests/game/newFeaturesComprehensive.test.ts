@@ -357,9 +357,9 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
       // Node displaced backward (leftward for left goal)
       expect(net.posX[5]).not.toBe(initialNodePosX);
 
-      // Ball velocity dissipated
+      // Ball velocity dissipated with viscoelastic 0.35 factor
       expect(Math.abs(ball.vel.x)).toBeLessThan(Math.abs(initialVelX));
-      expect(ball.vel.x).toBeCloseTo(initialVelX * 0.65, 1);
+      expect(ball.vel.x).toBeCloseTo(initialVelX * 0.35, 1);
 
       // Rope nodes displaced without NaN
       expect(Number.isNaN(net.posX[5])).toBe(false);
