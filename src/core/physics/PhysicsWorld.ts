@@ -103,23 +103,26 @@ export class PhysicsWorld {
       this.addDisc(post);
     }
 
-    // 5. Instanciar GoalNet adaptativa para cada arco (N = 17 partículas)
+    // 5. Instanciar GoalNet de caja (Stadium Box Net Model, N = 13 partículas, profundidad ≈ 36 px)
+    const depth = 36;
     const leftNet = new GoalNet({
       side: 'left',
       mouthX: leftXPost,
-      backX: leftXPost - 38,
+      backX: leftXPost - depth,
+      depth,
       topY: -leftYPost,
       bottomY: leftYPost,
-      nodeCount: 17
+      nodeCount: 13
     });
 
     const rightNet = new GoalNet({
       side: 'right',
       mouthX: rightXPost,
-      backX: rightXPost + 38,
+      backX: rightXPost + depth,
+      depth,
       topY: -rightYPost,
       bottomY: rightYPost,
-      nodeCount: 17
+      nodeCount: 13
     });
 
     this.goalNets = [leftNet, rightNet];

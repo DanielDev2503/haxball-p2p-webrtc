@@ -65,63 +65,73 @@ describe('Slack Trapezoid Rope Net, Player Permeability & Non-Host Modal Toggle'
     });
   });
 
-  describe('2. Slack Trapezoid Rope Geometry & Dynamics', () => {
-    it('initializes slack trapezoid contour with rounded corners and vertical back wall (17 nodes)', () => {
+  describe('2. Stadium Box Net (4-Anchor, N=13 Back Curtain) Geometry & Dynamics', () => {
+    it('initializes 4-anchor box net with rigid side nets, vertical back curtain and anti-loop bending constraints (13 nodes)', () => {
       const netLeft = new GoalNet({
         side: 'left',
         mouthX: -600,
-        backX: -635,
+        backX: -636,
+        depth: 36,
         topY: -85,
         bottomY: 85,
-        topCornerY: -65,
-        bottomCornerY: 65,
-        nodeCount: 17
+        nodeCount: 13
       });
 
-      expect(netLeft.nodeCount).toBe(17);
-      // Fixed anchors at posts
-      expect(netLeft.restPosX[0]).toBe(-600);
+      expect(netLeft.nodeCount).toBe(13);
+      // 4 Anclajes Rígidos
+      expect(netLeft.pTopX).toBe(-600);
+      expect(netLeft.pTopY).toBe(-85);
+      expect(netLeft.pBottomX).toBe(-600);
+      expect(netLeft.pBottomY).toBe(85);
+      expect(netLeft.sTopX).toBe(-636);
+      expect(netLeft.sTopY).toBe(-85);
+      expect(netLeft.sBottomX).toBe(-636);
+      expect(netLeft.sBottomY).toBe(85);
+
+      // Cortina de fondo: Anclajes fijos en S_top y S_bottom
+      expect(netLeft.restPosX[0]).toBe(-636);
       expect(netLeft.restPosY[0]).toBe(-85);
       expect(netLeft.invMass[0]).toBe(0);
 
-      expect(netLeft.restPosX[16]).toBe(-600);
-      expect(netLeft.restPosY[16]).toBe(85);
-      expect(netLeft.invMass[16]).toBe(0);
+      expect(netLeft.restPosX[12]).toBe(-636);
+      expect(netLeft.restPosY[12]).toBe(85);
+      expect(netLeft.invMass[12]).toBe(0);
 
       // Mobile nodes have mass m = 0.35 => invMass ≈ 2.857
-      for (let i = 1; i <= 15; i++) {
+      for (let i = 1; i <= 11; i++) {
         expect(netLeft.invMass[i]).toBeCloseTo(1 / 0.35, 2);
       }
 
-      // Center back node (i = 8) is at X = -635 and Y = 0
-      expect(netLeft.restPosX[8]).toBe(-635);
-      expect(netLeft.restPosY[8]).toBeCloseTo(0, 1);
+      // Center back node (i = 6) cuelga con suave concavidad hacia atrás (X <= -636) y Y = 0
+      expect(netLeft.restPosX[6]).toBeLessThanOrEqual(-636);
+      expect(netLeft.restPosY[6]).toBeCloseTo(0, 1);
 
-      // Top corner rounded nodes (i = 1..4) curve smoothly towards X = -635
-      expect(netLeft.restPosX[1]).toBeLessThan(-600);
-      expect(netLeft.restPosX[1]).toBeGreaterThan(-635);
-      expect(netLeft.restPosY[1]).toBeGreaterThan(-85);
-      expect(netLeft.restPosY[1]).toBeLessThan(-65);
+      // Orden monótono en Y garantizado
+      for (let i = 0; i < 12; i++) {
+        expect(netLeft.restPosY[i + 1]).toBeGreaterThan(netLeft.restPosY[i]);
+      }
 
-      // Vertical back wall nodes are at X = -635 (indices 5..11)
-      for (let i = 5; i <= 11; i++) {
-        expect(netLeft.restPosX[i]).toBe(-635);
+      // Restricciones de flexión segundo vecino inicializadas
+      expect(netLeft.restLenBend.length).toBe(11);
+      for (let i = 0; i < 11; i++) {
+        expect(netLeft.restLenBend[i]).toBeGreaterThan(0);
       }
     });
 
-    it('deforms with dynamic stretching, transfers momentum, channels ball into pocket funnel and retains plastic shape', () => {
+    it('deforms with dynamic stretching, transfers momentum, deflects off side nets, and retains plastic shape', () => {
       const net = new GoalNet({
         side: 'left',
         mouthX: -600,
-        backX: -635,
+        backX: -636,
+        depth: 36,
         topY: -85,
         bottomY: 85,
         rearLimitX: -652,
-        nodeCount: 17
+        nodeCount: 13
       });
 
       const fastBall = {
-        pos: { x: -634, y: 0 },
+        pos: { x: -635, y: 0 },
         vel: { x: -35, y: 5 }, // High velocity shot
         radius: 5.8,
         isBall: true
@@ -151,14 +161,14 @@ describe('Slack Trapezoid Rope Net, Player Permeability & Non-Host Modal Toggle'
       expect(Math.hypot(fastBall.vel.x, fastBall.vel.y)).toBeLessThan(initialSpeed);
 
       // Memoria plástica transitoria: los nodos permanecen deformados envolviendo el balón (kShape = 0, sin resorte de retorno)
-      const deformedMiddleX = net.posX[8];
-      expect(deformedMiddleX).not.toBeCloseTo(net.restPosX[8], 0.5);
+      const deformedMiddleX = net.posX[6];
+      expect(deformedMiddleX).not.toBeCloseTo(net.restPosX[6], 0.5);
 
       // Ticks adicionales con el balón en reposo: la red NO intenta regresar a reposo
       for (let tick = 0; tick < 30; tick++) {
         net.step(fastBall, 1 / 60);
       }
-      expect(net.posX[8]).toBeCloseTo(deformedMiddleX, 0.5);
+      expect(net.posX[6]).toBeCloseTo(deformedMiddleX, 0.5);
 
       // Restauración suave (COUNTDOWN Kickoff Reset: resetShape(true))
       net.resetShape(true);
@@ -167,12 +177,12 @@ describe('Slack Trapezoid Rope Net, Player Permeability & Non-Host Modal Toggle'
         net.step(1 / 60);
       }
       // Nodos relajados suavemente hacia reposo
-      expect(Math.abs(net.posX[8] - net.restPosX[8])).toBeLessThan(0.5);
+      expect(Math.abs(net.posX[6] - net.restPosX[6])).toBeLessThan(0.5);
 
       // Restauración instantánea (resetShape(false))
-      net.posX[8] = -639;
+      net.posX[6] = -639;
       net.resetShape(false);
-      expect(net.posX[8]).toBe(net.restPosX[8]);
+      expect(net.posX[6]).toBe(net.restPosX[6]);
       expect(net.isRelaxing).toBe(false);
     });
   });

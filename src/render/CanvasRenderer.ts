@@ -91,22 +91,25 @@ export class CanvasRenderer {
       rightYPost = Math.max(Math.abs(gBlue.p0.y), Math.abs(gBlue.p1.y));
     }
 
+    const depth = 36;
     this.localGoalNets = [
       new GoalNet({
         side: 'left',
         mouthX: leftXPost,
-        backX: leftXPost - 38,
+        backX: leftXPost - depth,
+        depth,
         topY: -leftYPost,
         bottomY: leftYPost,
-        nodeCount: 17
+        nodeCount: 13
       }),
       new GoalNet({
         side: 'right',
         mouthX: rightXPost,
-        backX: rightXPost + 38,
+        backX: rightXPost + depth,
+        depth,
         topY: -rightYPost,
         bottomY: rightYPost,
-        nodeCount: 17
+        nodeCount: 13
       })
     ];
   }
