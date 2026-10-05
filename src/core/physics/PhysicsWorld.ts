@@ -103,14 +103,14 @@ export class PhysicsWorld {
       this.addDisc(post);
     }
 
-    // 5. Instanciar GoalNet adaptativa para cada arco
+    // 5. Instanciar GoalNet adaptativa para cada arco (N = 17 partículas)
     const leftNet = new GoalNet({
       side: 'left',
       mouthX: leftXPost,
       backX: leftXPost - 38,
       topY: -leftYPost,
       bottomY: leftYPost,
-      nodeCount: 11
+      nodeCount: 17
     });
 
     const rightNet = new GoalNet({
@@ -119,7 +119,7 @@ export class PhysicsWorld {
       backX: rightXPost + 38,
       topY: -rightYPost,
       bottomY: rightYPost,
-      nodeCount: 11
+      nodeCount: 17
     });
 
     this.goalNets = [leftNet, rightNet];

@@ -54,8 +54,8 @@ describe('Universal Slack Rope Net Physics & Goal Boundary Purge', () => {
         expect(netLeft.side).toBe('left');
         expect(netRight.side).toBe('right');
 
-        expect(netLeft.nodeCount).toBe(11);
-        expect(netRight.nodeCount).toBe(11);
+        expect(netLeft.nodeCount).toBe(17);
+        expect(netRight.nodeCount).toBe(17);
 
         // Find reference goal post positions
         const redGoal = stadium.goals.find(g => g.team === 'red') || stadium.goals[0];
@@ -74,38 +74,38 @@ describe('Universal Slack Rope Net Physics & Goal Boundary Purge', () => {
     });
   });
 
-  describe('2. Slack Trapezoid 11-Node Geometry and Kinetic Damping', () => {
-    it('anchors post nodes (0 and 10) firmly while intermediate nodes have invMass = 2.5', () => {
+  describe('2. Slack Trapezoid 17-Node Geometry and Kinetic Damping', () => {
+    it('anchors post nodes (0 and 16) firmly while intermediate nodes have invMass = 1 / 0.35 ≈ 2.857', () => {
       const net = new GoalNet({
         side: 'left',
         mouthX: -400,
         backX: -438,
         topY: -75,
         bottomY: 75,
-        nodeCount: 11
+        nodeCount: 17
       });
 
       expect(net.invMass[0]).toBe(0); // Top post anchor
-      expect(net.invMass[10]).toBe(0); // Bottom post anchor
+      expect(net.invMass[16]).toBe(0); // Bottom post anchor
 
-      for (let i = 1; i <= 9; i++) {
-        expect(net.invMass[i]).toBe(2.5); // Mobile nodes
+      for (let i = 1; i <= 15; i++) {
+        expect(net.invMass[i]).toBeCloseTo(1 / 0.35, 2); // Mobile nodes
       }
 
       // Rest positions check
       expect(net.restPosX[0]).toBe(-400);
       expect(net.restPosY[0]).toBe(-75);
 
-      expect(net.restPosX[10]).toBe(-400);
-      expect(net.restPosY[10]).toBe(75);
+      expect(net.restPosX[16]).toBe(-400);
+      expect(net.restPosY[16]).toBe(75);
 
-      // Back wall nodes 4..6 at X = -438
-      expect(net.restPosX[4]).toBe(-438);
-      expect(net.restPosX[5]).toBe(-438);
-      expect(net.restPosX[6]).toBe(-438);
+      // Back wall nodes 5..11 at X = -438
+      for (let i = 5; i <= 11; i++) {
+        expect(net.restPosX[i]).toBe(-438);
+      }
     });
 
-    it('absorbs ball kinetic energy and holds it at the rear containment limit (Xback ± 12)', () => {
+    it('absorbs ball kinetic energy through progressive tension and pocket funneling', () => {
       const net = new GoalNet({
         side: 'left',
         mouthX: -400,
@@ -113,7 +113,7 @@ describe('Universal Slack Rope Net Physics & Goal Boundary Purge', () => {
         rearLimitX: -450, // -438 - 12
         topY: -75,
         bottomY: 75,
-        nodeCount: 11
+        nodeCount: 17
       });
 
       const ball = {
@@ -124,19 +124,19 @@ describe('Universal Slack Rope Net Physics & Goal Boundary Purge', () => {
       };
 
       const initialSpeed = Math.abs(ball.vel.x);
+      // First step: progressive momentum transfer pushes middle node backward
       net.step(ball, 1 / 60);
 
-      // Kinetic damping: speed dissipated by 0.35 factor
-      expect(Math.abs(ball.vel.x)).toBeLessThan(initialSpeed);
-      expect(ball.vel.x).toBeCloseTo(-30 * 0.35, 1);
+      expect(net.posX[8]).not.toBe(net.restPosX[8]);
 
-      // Sustained steps to rear limit
+      // Sustained steps to rear limit with pocket funneling
       for (let i = 0; i < 40; i++) {
         ball.pos.x += ball.vel.x * (1 / 60);
         net.step(ball, 1 / 60);
       }
 
-      // Ball contained within goal without blowing past rear limit
+      // Ball contained within goal pocket and decelerated
+      expect(Math.abs(ball.vel.x)).toBeLessThan(initialSpeed);
       expect(ball.pos.x).toBeGreaterThanOrEqual(-450);
       expect(ball.pos.x).toBeLessThan(-400);
     });

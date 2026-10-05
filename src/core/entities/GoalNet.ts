@@ -1,13 +1,13 @@
 export interface GoalNetOptions {
   side: 'left' | 'right' | 'red' | 'blue';
   mouthX: number; // Front line of the goal (e.g. -600 or 600)
-  backX: number;  // Back of the net (e.g. -635 or 635)
+  backX?: number;  // Back of the net (e.g. -635 or 635)
   topY: number;   // Top post (e.g. -85)
   bottomY: number;// Bottom post (e.g. 85)
   topCornerY?: number; // default -65
   bottomCornerY?: number; // default 65
-  rearLimitX?: number; // default -640 or 640
-  nodeCount?: number; // default 11 (particles in rope)
+  rearLimitX?: number; // default -652 or 652
+  nodeCount?: number; // default 17 (particles in rope)
   damping?: number; // default 0.20
   kShape?: number; // default 0
   kSpring?: number; // compatibility alias
@@ -17,17 +17,29 @@ export interface GoalNetOptions {
 }
 
 /**
- * GoalNet: Portería de Cuerda Viscoelástica Holgada con Memoria Plástica (Viscoelastic Plastic Retaining Rope).
+ * GoalNet: Portería de Cuerda Hiperelástica Viscoelástica con Memoria Plástica y Efecto Embudo (Pocket Funneling).
  * 
- * - Anclaje Fijo 1 (Poste Superior): P_0 = (±600, -85) con invMass = 0.
- * - Anclaje Fijo 2 (Poste Inferior): P_{N-1} = (±600, 85) con invMass = 0.
- * - Geometría en Reposo: Trapecio holgado con esquinas redondeadas (N = 11 partículas).
- * - Integración Verlet a 60 Hz con masa m = 0.4 (w_i = 2.5) y damping viscoso ~ 0.20.
- * - Eliminación del resorte continuo de retorno (kShape = 0 en juego activo): la red absorbe el impacto y
- *   retiene su deformación plástica transitoria envolviendo el balón sin intentar regresar de forma autónoma.
- * - Absorción viscoelástica instantánea: v_ball <- v_ball * 0.35 y arrastre de deformación en los nodos.
- * - Restricciones de distancia: 3 iteraciones Gauss-Seidel entre nodos consecutivos.
- * - Ciclo de restauración: resetShape(smooth: boolean) (instantáneo o relajación suave a 0.08 por tick en COUNTDOWN).
+ * - Resolución de Nodos (N = 17 partículas):
+ *   - Nodo 0: Anclaje rígido en poste superior P_top = (x_post, -y_post) (invMass = 0).
+ *   - Nodo N-1: Anclaje rígido en poste inferior P_bottom = (x_post, y_post) (invMass = 0).
+ *   - Nodos 1 ... N-2: Partículas móviles con masa m = 0.35 (w_i = 1 / 0.35 ≈ 2.857).
+ * - Geometría en Reposo: Trapecio holgado de 17 nodos con curvaturas Bezier en esquinas y pared trasera.
+ * - Integración Verlet a 60 Hz con damping viscoso ~ 0.20.
+ * - Eliminación del frenado instantáneo en seco: prohibido multiplicar v_ball en seco en el primer frame.
+ * - Transferencia progresiva de momento: al colisionar con un segmento, el balón transfiere aceleración:
+ *     v_node,x <- v_node,x + v_ball,x * 0.45
+ *     v_node,y <- v_node,y + v_ball,y * 0.45
+ * - Restricción de distancia con elongación dinámica (Stretching Tolerance):
+ *     L_max = L_0 * 1.30 (tolerancia del 30% antes de bloquear separación).
+ * - Fuerza de frenado por tensión:
+ *     F_retencion = k_tension * ((L_actual - L_0) / L_0)  (k_tension ≈ 0.85)
+ *     v_ball <- v_ball - (v_ball · n) * n * F_retencion
+ * - Algoritmo de Embolsado y Canalización al Vértice (Pocket Funneling):
+ *     Determina el nodo de máxima deformación k_deepest.
+ *     Para contactos con las paredes de la concavidad, aplica deslizamiento tangencial guiado:
+ *     v_ball <- v_ball + t * (||v_ball|| * 0.15)
+ * - Memoria plástica transitoria: kShape = 0 en juego activo y celebración. La red permanece inflada en reposo.
+ * - Ciclo de restauración: resetShape(smooth: true) ejecuta lerp con factor 0.06 durante COUNTDOWN.
  * - Permeabilidad absoluta para jugadores: cMask estricto a ['ball'], disc.isBall === false ignorado al 100%.
  * - Invariante Hard Rule: Cero alocaciones en bucles calientes (Zero-GC Float32Array).
  */
@@ -80,11 +92,11 @@ export class GoalNet {
     this.topCornerY = options.topCornerY ?? -yCorner;
     this.bottomCornerY = options.bottomCornerY ?? yCorner;
 
-    // Límite de elongación máxima en X = X_back ± 12 px
+    // Límite de elongación máxima en el fondo (permite deformación profunda hasta X ≈ ±645-650 px)
     if (options.rearLimitX !== undefined) {
       this.rearLimitX = options.rearLimitX;
     } else {
-      this.rearLimitX = this.backX + signX * 12;
+      this.rearLimitX = this.backX + signX * 14;
     }
 
     this.damping = options.damping ?? 0.20;
@@ -92,9 +104,9 @@ export class GoalNet {
     this.kSpring = this.kShape;
     this.color = options.color ?? '#717F98';
 
-    // Discretización en N = 11 partículas
-    this.nodeCount = options.nodeCount ?? 11;
-    if (this.nodeCount < 5) this.nodeCount = 11;
+    // Discretización por defecto en N = 17 partículas
+    this.nodeCount = options.nodeCount ?? 17;
+    if (this.nodeCount < 5) this.nodeCount = 17;
 
     // Prealocación Zero-GC en arreglos tipados
     this.posX = new Float32Array(this.nodeCount);
@@ -106,7 +118,7 @@ export class GoalNet {
     this.invMass = new Float32Array(this.nodeCount);
     this.restLen = new Float32Array(this.nodeCount - 1);
 
-    // Aliases para compatibilidad con código existente
+    // Aliases para compatibilidad
     this.prevX = this.oldPosX;
     this.prevY = this.oldPosY;
     this.restX = this.restPosX;
@@ -117,8 +129,8 @@ export class GoalNet {
   }
 
   /**
-   * Inicializa la geometría en reposo del trapecio holgado con esquinas redondeadas.
-   * Adaptable a cualquier tamaño de arco y coordenadas de postes.
+   * Inicializa la geometría en reposo del trapecio holgado con curvaturas suaves.
+   * Totalmente simétrico y adaptable a cualquier cantidad de nodos N >= 5 (por defecto N = 17).
    */
   private initGeometry(): void {
     const N = this.nodeCount;
@@ -126,6 +138,9 @@ export class GoalNet {
     const yPost = Math.max(Math.abs(this.topY), Math.abs(this.bottomY));
     const xBack = this.backX;
     const yCorner = yPost * 0.75;
+
+    const nCorner = Math.max(1, Math.round((N - 1) * 0.25));
+    const nBack = (N - 1) - 2 * nCorner;
 
     for (let i = 0; i < N; i++) {
       let x = xPost;
@@ -135,28 +150,26 @@ export class GoalNet {
         // Poste Superior (Anclaje fijo)
         x = xPost;
         y = -yPost;
-      } else if (i >= 1 && i <= 3) {
-        // Nodos 1 a 3: Esquina redondeada superior que curva suavemente desde P_top hacia (X_back, -y_post * 0.75)
-        const t = i / 3.5;
+      } else if (i <= nCorner) {
+        // Esquina redondeada superior (Curva Bezier cuadrática)
+        const t = i / (nCorner + 1.0);
         const oneMinusT = 1 - t;
-        // Curva Bezier cuadrática con punto de control (xBack, -yPost)
         x = oneMinusT * oneMinusT * xPost + 2 * oneMinusT * t * xBack + t * t * xBack;
         y = oneMinusT * oneMinusT * (-yPost) + 2 * oneMinusT * t * (-yPost) + t * t * (-yCorner);
-      } else if (i >= 4 && i <= 6) {
-        // Nodos 4 a 6: Fondo holgado de la red en X = X_back entre -y_post * 0.75 y y_post * 0.75
-        const t = (i - 3.5) / 3.0; // t varia simétricamente alrededor de 0.5 (nodo 5 en y = 0)
+      } else if (i < N - 1 - nCorner) {
+        // Pared trasera holgada en X = xBack
+        const t = (i - nCorner) / nBack;
         x = xBack;
         y = -yCorner + t * (2 * yCorner);
-      } else if (i >= 7 && i <= 9) {
-        // Nodos 7 a 9: Esquina redondeada inferior que curva suavemente desde (X_back, y_post * 0.75) hacia P_bottom
-        const k = i - 6; // 1, 2, 3
-        const t = k / 3.5;
+      } else if (i < N - 1) {
+        // Esquina redondeada inferior (Curva Bezier cuadrática)
+        const k = i - (N - 1 - nCorner);
+        const t = (k + 1.0) / (nCorner + 1.0);
         const oneMinusT = 1 - t;
-        // Curva Bezier cuadrática desde (xBack, yCorner) a (xPost, yPost) con control (xBack, yPost)
         x = oneMinusT * oneMinusT * xBack + 2 * oneMinusT * t * xBack + t * t * xPost;
         y = oneMinusT * oneMinusT * yCorner + 2 * oneMinusT * t * yPost + t * t * yPost;
       } else {
-        // Nodo 10 (N - 1): Poste Inferior (Anclaje fijo)
+        // Poste Inferior (Anclaje fijo)
         x = xPost;
         y = yPost;
       }
@@ -169,11 +182,11 @@ export class GoalNet {
       this.oldPosY[i] = y;
 
       // Anclajes fijos en postes: invMass = 0 (w = 0)
-      // Nodos intermedios móviles: masa m = 0.4 => invMass = 1 / 0.4 = 2.5 (w_i = 2.5)
+      // Nodos intermedios móviles: masa m = 0.35 => invMass = 1 / 0.35 ≈ 2.857
       if (i === 0 || i === N - 1) {
         this.invMass[i] = 0;
       } else {
-        this.invMass[i] = 2.5;
+        this.invMass[i] = 1 / 0.35;
       }
     }
 
@@ -186,8 +199,7 @@ export class GoalNet {
   }
 
   /**
-   * Paso determinista de simulación de cuerda elástica holgada a 60 Hz (Zero-GC).
-   * Soporta tanto llamada unificada step(ball, dt) como paso desacoplado step(dt).
+   * Paso determinista de simulación de cuerda hiperelástica a 60 Hz (Zero-GC).
    */
   public step(
     ballOrDt?: { pos: { x: number; y: number }; vel: { x: number; y: number }; radius?: number; isBall?: boolean } | number | null,
@@ -208,16 +220,16 @@ export class GoalNet {
     const damping = this.damping;
     const kShape = this.kShape;
 
-    // 1. Integración Temporal Verlet con Damping y Modo de Relajación Suave (Kickoff)
-    // Durante juego activo: kShape = 0 (memoria plástica transitoria, sin resorte continuo).
-    // Si isRelaxing es true (COUNTDOWN): aplica interpolación suave p_i <- p_i + (restPos_i - p_i) * 0.08
+    // 1. Integración Temporal Verlet con Damping y Modo de Relajación Suave (Kickoff Reset)
+    // Durante juego activo: kShape = 0 (memoria plástica transitoria sin resorte continuo de retorno).
+    // Si isRelaxing es true (COUNTDOWN): aplica interpolación suave p_i <- p_i + (restPos_i - p_i) * 0.06
     for (let i = 1; i < N - 1; i++) {
       let restoreX = 0;
       let restoreY = 0;
 
       if (this.isRelaxing) {
-        restoreX = (this.restPosX[i] - this.posX[i]) * 0.08;
-        restoreY = (this.restPosY[i] - this.posY[i]) * 0.08;
+        restoreX = (this.restPosX[i] - this.posX[i]) * 0.06;
+        restoreY = (this.restPosY[i] - this.posY[i]) * 0.06;
       } else if (kShape > 0) {
         restoreX = -kShape * (this.posX[i] - this.restPosX[i]);
         restoreY = -kShape * (this.posY[i] - this.restPosY[i]);
@@ -249,7 +261,7 @@ export class GoalNet {
       }
     }
 
-    // 2. Relajación de Restricciones de Distancia (3 iteraciones Gauss-Seidel)
+    // 2. Relajación de Restricciones de Distancia con Elongación Dinámica (Stretching Tolerance: L_max = L_0 * 1.30)
     for (let iter = 0; iter < this.relaxationIterations; iter++) {
       for (let i = 0; i < N - 1; i++) {
         const dx = this.posX[i + 1] - this.posX[i];
@@ -257,18 +269,21 @@ export class GoalNet {
         const d = Math.hypot(dx, dy);
 
         if (d > 1e-6) {
-          const diff = (d - this.restLen[i]) / d;
-          const w1 = this.invMass[i];
-          const w2 = this.invMass[i + 1];
-          const wSum = w1 + w2;
+          const lMax = this.restLen[i] * 1.30;
+          if (d > lMax) {
+            const diff = (d - lMax) / d;
+            const w1 = this.invMass[i];
+            const w2 = this.invMass[i + 1];
+            const wSum = w1 + w2;
 
-          if (wSum > 0) {
-            const corrX = dx * diff;
-            const corrY = dy * diff;
-            this.posX[i] += corrX * (w1 / wSum);
-            this.posY[i] += corrY * (w1 / wSum);
-            this.posX[i + 1] -= corrX * (w2 / wSum);
-            this.posY[i + 1] -= corrY * (w2 / wSum);
+            if (wSum > 0) {
+              const corrX = dx * diff;
+              const corrY = dy * diff;
+              this.posX[i] += corrX * (w1 / wSum);
+              this.posY[i] += corrY * (w1 / wSum);
+              this.posX[i + 1] -= corrX * (w2 / wSum);
+              this.posY[i + 1] -= corrY * (w2 / wSum);
+            }
           }
         }
       }
@@ -280,7 +295,7 @@ export class GoalNet {
       this.posY[N - 1] = this.restPosY[N - 1];
     }
 
-    // 3. Tope posterior de tensión máxima (X = X_back ± 12 px)
+    // 3. Tope posterior de contención máxima
     if (this.side === 'left') {
       for (let i = 1; i < N - 1; i++) {
         if (this.posX[i] < this.rearLimitX) {
@@ -302,7 +317,8 @@ export class GoalNet {
   }
 
   /**
-   * Cálculo determinista de Colisión Balón-Segmento (Cuerda Elástica Viscoelástica).
+   * Cálculo determinista de Colisión Balón-Segmento con Transferencia Progresiva de Momento,
+   * Tensión Elástica y Efecto Embudo (Pocket Funneling).
    * Permeabilidad absoluta para jugadores (ignora disc si !isBall).
    */
   public checkBallCollision(
@@ -314,18 +330,34 @@ export class GoalNet {
     const by = ball.pos.y;
     const rBall = ball.radius ?? 5.8;
 
-    const minX = Math.min(this.mouthX, this.rearLimitX) - rBall - 10;
-    const maxX = Math.max(this.mouthX, this.rearLimitX) + rBall + 10;
-    const minY = Math.min(this.topY, this.bottomY) - rBall - 10;
-    const maxY = Math.max(this.topY, this.bottomY) + rBall + 10;
+    const minX = Math.min(this.mouthX, this.rearLimitX) - rBall - 15;
+    const maxX = Math.max(this.mouthX, this.rearLimitX) + rBall + 15;
+    const minY = Math.min(this.topY, this.bottomY) - rBall - 15;
+    const maxY = Math.max(this.topY, this.bottomY) + rBall + 15;
 
-    // Guarda AABB rápida para evitar cálculos innecesarios fuera del arco
+    // Guarda AABB rápida para descartar cálculos fuera del perímetro del arco
     if (bx < minX || bx > maxX || by < minY || by > maxY) {
       return;
     }
 
-    let ballDamped = false;
     const N = this.nodeCount;
+
+    // 1. Determinar el nodo de máxima deformación k_deepest (el punto más alejado hacia el fondo del arco)
+    let kDeepest = 1;
+    let maxDepth = this.side === 'left' ? Infinity : -Infinity;
+    for (let k = 1; k < N - 1; k++) {
+      if (this.side === 'left') {
+        if (this.posX[k] < maxDepth) {
+          maxDepth = this.posX[k];
+          kDeepest = k;
+        }
+      } else {
+        if (this.posX[k] > maxDepth) {
+          maxDepth = this.posX[k];
+          kDeepest = k;
+        }
+      }
+    }
 
     for (let i = 0; i < N - 1; i++) {
       const x0 = this.posX[i];
@@ -336,7 +368,7 @@ export class GoalNet {
 
       if (sLenSq < 1e-6) continue;
 
-      // Proyección del centro del balón sobre el segmento de cuerda
+      const sLen = Math.hypot(sx, sy);
       const t = Math.max(0, Math.min(1, ((bx - x0) * sx + (by - y0) * sy) / sLenSq));
       const qx = x0 + t * sx;
       const qy = y0 + t * sy;
@@ -346,54 +378,94 @@ export class GoalNet {
 
       if (d < rBall) {
         const pen = rBall - d;
-        let nx = d > 1e-4 ? dx / d : (this.side === 'left' ? 1 : -1);
-        let ny = d > 1e-4 ? dy / d : 0;
+        const nx = d > 1e-4 ? dx / d : (this.side === 'left' ? 1 : -1);
+        const ny = d > 1e-4 ? dy / d : 0;
 
-        // Arrastre de deformación: desplaza los nodos i e i+1 en dirección del vector de velocidad del balón v_ball
-        // y la penetración normal estirando la cuerda hacia la profundidad del arco
-        const dragX = ball.vel.x * 0.06 - nx * pen;
-        const dragY = ball.vel.y * 0.06 - ny * pen;
+        // A. Transferencia Progresiva de Momento:
+        // v_node,x <- v_node,x + v_ball,x * 0.45
+        // v_node,y <- v_node,y + v_ball,y * 0.45
+        // En Verlet, el momento se inyecta en (pos - oldPos) desplazando oldPos y aplicando arrastre físico
+        const momX = ball.vel.x * 0.45;
+        const momY = ball.vel.y * 0.45;
+        const dragX = ball.vel.x * 0.05 - nx * pen;
+        const dragY = ball.vel.y * 0.05 - ny * pen;
 
         if (this.invMass[i] > 0) {
+          this.oldPosX[i] -= momX * (1 - t);
+          this.oldPosY[i] -= momY * (1 - t);
           this.posX[i] += dragX * (1 - t);
           this.posY[i] += dragY * (1 - t);
           if (this.side === 'left' && this.posX[i] < this.rearLimitX) this.posX[i] = this.rearLimitX;
           if (this.side === 'right' && this.posX[i] > this.rearLimitX) this.posX[i] = this.rearLimitX;
         }
+
         if (this.invMass[i + 1] > 0) {
+          this.oldPosX[i + 1] -= momX * t;
+          this.oldPosY[i + 1] -= momY * t;
           this.posX[i + 1] += dragX * t;
           this.posY[i + 1] += dragY * t;
           if (this.side === 'left' && this.posX[i + 1] < this.rearLimitX) this.posX[i + 1] = this.rearLimitX;
           if (this.side === 'right' && this.posX[i + 1] > this.rearLimitX) this.posX[i + 1] = this.rearLimitX;
         }
 
-        // Disipación viscosa instantánea: el balón pierde casi toda su energía cinética en el contacto:
-        // v_ball <- v_ball * 0.35
-        if (!ballDamped) {
-          ball.vel.x *= 0.35;
-          ball.vel.y *= 0.35;
-          ballDamped = true;
+        // B. Fuerza de Frenado por Tensión Proporcional a la Elongación Acumulada:
+        // F_retencion = k_tension * ((L_actual - L_0) / L_0)  (k_tension ≈ 0.85)
+        // v_ball <- v_ball - (v_ball · n) * n * F_retencion
+        const l0 = this.restLen[i];
+        if (sLen > l0) {
+          const stretch = (sLen - l0) / l0;
+          const fRetention = Math.min(0.95, Math.max(0, 0.85 * stretch));
+          const vDotN = ball.vel.x * nx + ball.vel.y * ny;
+          ball.vel.x -= vDotN * nx * fRetention;
+          ball.vel.y -= vDotN * ny * fRetention;
         }
 
-        // Retención elástica suave dentro de la portería
+        // C. Algoritmo de Embolsado y Canalización al Vértice (Pocket Funneling):
+        // Para cualquier contacto con las paredes de la concavidad, calcula vector tangente t hacia k_deepest
+        // v_ball <- v_ball + t * (||v_ball|| * 0.15)
+        if (sLen > 1e-4) {
+          const ux = sx / sLen;
+          const uy = sy / sLen;
+          let tx = 0;
+          let ty = 0;
+          if (i < kDeepest) {
+            tx = ux;
+            ty = uy;
+          } else if (i >= kDeepest) {
+            tx = -ux;
+            ty = -uy;
+          }
+
+          const speed = Math.hypot(ball.vel.x, ball.vel.y);
+          if (speed > 1e-4) {
+            ball.vel.x += tx * (speed * 0.15);
+            ball.vel.y += ty * (speed * 0.15);
+            const curSpeed = Math.hypot(ball.vel.x, ball.vel.y);
+            if (curSpeed > speed) {
+              ball.vel.x *= speed / curSpeed;
+              ball.vel.y *= speed / curSpeed;
+            }
+          }
+        }
+
+        // D. Retención y contención normal suave
         ball.pos.x += nx * (pen * 0.4);
         ball.pos.y += ny * (pen * 0.4);
       }
     }
 
-    // Límite de contención: Si la cuerda alcanza su elongación máxima (X = X_back ± 12 px),
-    // aplica una fuerza de restitución normal que retiene firmemente el balón dentro de la portería
+    // Límite de contención en el fondo absoluto
     if (this.side === 'left') {
       if (ball.pos.x - rBall < this.rearLimitX) {
         ball.pos.x = this.rearLimitX + rBall;
-        ball.vel.x = 0;
-        ball.vel.y *= 0.5;
+        if (ball.vel.x < 0) ball.vel.x = 0;
+        ball.vel.y *= 0.7;
       }
     } else {
       if (ball.pos.x + rBall > this.rearLimitX) {
         ball.pos.x = this.rearLimitX - rBall;
-        ball.vel.x = 0;
-        ball.vel.y *= 0.5;
+        if (ball.vel.x > 0) ball.vel.x = 0;
+        ball.vel.y *= 0.7;
       }
     }
   }
@@ -442,7 +514,7 @@ export class GoalNet {
   /**
    * Ciclo de Restauración de la Red (Kickoff Reset):
    * - smooth === false: Reasigna instantáneamente p_i = restPos_i y resetea velocidades a cero.
-   * - smooth === true: Activa modo de relajación durante COUNTDOWN (p_i <- p_i + (restPos_i - p_i) * 0.08 por tick).
+   * - smooth === true: Activa modo de relajación durante COUNTDOWN (p_i <- p_i + (restPos_i - p_i) * 0.06 por tick).
    */
   public resetShape(smooth: boolean = false): void {
     if (!smooth) {

@@ -304,17 +304,17 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
   });
 
   describe('Goal Rope Net (1D Elastic Model)', () => {
-    it('initializes rope with fixed post anchors (invMass = 0) and dynamic nodes (invMass = 2.0)', () => {
+    it('initializes rope with fixed post anchors (invMass = 0) and dynamic nodes (invMass ≈ 2.857)', () => {
       const net = new GoalNet({
         side: 'left',
         mouthX: -600,
         backX: -635,
         topY: -85,
         bottomY: 85,
-        nodeCount: 11
+        nodeCount: 17
       });
 
-      expect(net.nodeCount).toBe(11);
+      expect(net.nodeCount).toBe(17);
       expect(net.posX).toBeInstanceOf(Float32Array);
       expect(net.posY).toBeInstanceOf(Float32Array);
       expect(net.prevX).toBeInstanceOf(Float32Array);
@@ -326,20 +326,20 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
       expect(net.invMass[0]).toBe(0);
       expect(net.invMass[net.nodeCount - 1]).toBe(0);
 
-      // Dynamic nodes: invMass = 2.5 (m = 0.4, w_i = 2.5)
-      expect(net.invMass[1]).toBe(2.5);
-      expect(net.invMass[5]).toBe(2.5);
-      expect(net.invMass[net.nodeCount - 2]).toBe(2.5);
+      // Dynamic nodes: invMass = 1 / 0.35 ≈ 2.857 (m = 0.35)
+      expect(net.invMass[1]).toBeCloseTo(1 / 0.35, 2);
+      expect(net.invMass[8]).toBeCloseTo(1 / 0.35, 2);
+      expect(net.invMass[net.nodeCount - 2]).toBeCloseTo(1 / 0.35, 2);
     });
 
-    it('dissipates ball energy (v_ball * 0.65) and pushes rope nodes backward upon impact without NaN', () => {
+    it('transfers momentum to rope nodes, creates deep pocket and dissipates ball energy smoothly without NaN', () => {
       const net = new GoalNet({
         side: 'left',
         mouthX: -600,
         backX: -635,
         topY: -85,
         bottomY: 85,
-        nodeCount: 11
+        nodeCount: 17
       });
 
       const ball = {
@@ -349,26 +349,25 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
       };
 
       const initialVelX = ball.vel.x;
-      const initialNodePosX = net.posX[5]; // Middle node at back of net
+      const initialNodePosX = net.posX[8]; // Middle node at back of net (i = 8)
 
       // Step simulation
       net.step(ball, 1 / 60);
 
-      // Node displaced backward (leftward for left goal)
-      expect(net.posX[5]).not.toBe(initialNodePosX);
-
-      // Ball velocity dissipated with viscoelastic 0.35 factor
-      expect(Math.abs(ball.vel.x)).toBeLessThan(Math.abs(initialVelX));
-      expect(ball.vel.x).toBeCloseTo(initialVelX * 0.35, 1);
+      // Node displaced backward (leftward for left goal) via momentum transfer
+      expect(net.posX[8]).not.toBe(initialNodePosX);
 
       // Rope nodes displaced without NaN
-      expect(Number.isNaN(net.posX[5])).toBe(false);
-      expect(Number.isNaN(net.posY[5])).toBe(false);
+      expect(Number.isNaN(net.posX[8])).toBe(false);
+      expect(Number.isNaN(net.posY[8])).toBe(false);
 
-      // Multiple ticks dissipate smoothly
+      // Multiple ticks dissipate smoothly via progressive tension and pocket cradle
       for (let i = 0; i < 30; i++) {
+        ball.pos.x += ball.vel.x * (1 / 60);
+        ball.pos.y += ball.vel.y * (1 / 60);
         net.step(ball, 1 / 60);
       }
+      expect(Math.abs(ball.vel.x)).toBeLessThan(Math.abs(initialVelX));
       expect(Number.isNaN(ball.pos.x)).toBe(false);
       expect(Number.isNaN(ball.vel.x)).toBe(false);
 

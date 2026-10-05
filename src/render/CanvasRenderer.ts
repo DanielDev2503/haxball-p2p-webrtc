@@ -98,7 +98,7 @@ export class CanvasRenderer {
         backX: leftXPost - 38,
         topY: -leftYPost,
         bottomY: leftYPost,
-        nodeCount: 11
+        nodeCount: 17
       }),
       new GoalNet({
         side: 'right',
@@ -106,7 +106,7 @@ export class CanvasRenderer {
         backX: rightXPost + 38,
         topY: -rightYPost,
         bottomY: rightYPost,
-        nodeCount: 11
+        nodeCount: 17
       })
     ];
   }
