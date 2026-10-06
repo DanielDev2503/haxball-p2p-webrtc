@@ -12,7 +12,7 @@ import { RoomLobby, LobbyRoomConfig } from '../ui/components/RoomLobby';
 import { NicknameGatekeeper } from '../ui/components/NicknameGatekeeper';
 import { StatsMonitor } from '../ui/components/StatsMonitor';
 import { SignalingClient, SignalingMessage } from '../net/signaling/SignalingClient';
-import { PeerConnection } from '../net/transport/PeerConnection';
+import { PeerConnection, setDynamicIceServers } from '../net/transport/PeerConnection';
 import { InputPacket, InputData } from '../net/protocol/InputPacket';
 import { SnapshotPacket } from '../net/protocol/SnapshotPacket';
 import { SOUND_POST_HIT, SOUND_KICK } from '../net/protocol/BinaryProtocol';
@@ -726,6 +726,13 @@ export class GameApp {
 
     this.signaling.onMessage = (msg: SignalingMessage) => {
       switch (msg.type) {
+        case 'ice_config': {
+          if (msg.iceServers && Array.isArray(msg.iceServers)) {
+            setDynamicIceServers(msg.iceServers);
+          }
+          break;
+        }
+
         case 'room_created': {
           this.currentRoomId = msg.roomId || '';
           this.teamSelect.setRoomId(this.currentRoomId);

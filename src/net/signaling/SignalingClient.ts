@@ -1,3 +1,5 @@
+import { setDynamicIceServers } from '../transport/PeerConnection';
+
 export interface SignalingMessage {
   type: string;
   peerId?: string;
@@ -13,6 +15,7 @@ export interface SignalingMessage {
   config?: any;
   password?: string;
   reason?: string;
+  iceServers?: RTCIceServer[];
 }
 
 export class SignalingClient {
@@ -71,6 +74,9 @@ export class SignalingClient {
             }
             if (data.type === 'pong') {
               return;
+            }
+            if (data.type === 'ice_config' && data.iceServers) {
+              setDynamicIceServers(data.iceServers);
             }
             if (this.onMessage) {
               this.onMessage(data);

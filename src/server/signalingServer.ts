@@ -28,6 +28,35 @@ interface AliveWebSocket extends WebSocket {
   peerId?: string | undefined;
 }
 
+export interface RTCIceServer {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
+export function getRuntimeIceServers(): RTCIceServer[] {
+  const stunRaw = process.env.VITE_STUN_URLS || process.env.STUN_URLS;
+  const stunUrls = stunRaw
+    ? stunRaw.split(',').map(s => s.trim()).filter(Boolean)
+    : ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'];
+
+  const servers: RTCIceServer[] = [{ urls: stunUrls }];
+
+  const turnUrl = process.env.VITE_TURN_URL || process.env.TURN_URL;
+  const turnUser = process.env.VITE_TURN_USERNAME || process.env.TURN_USERNAME;
+  const turnPass = process.env.VITE_TURN_CREDENTIAL || process.env.TURN_CREDENTIAL;
+
+  if (turnUrl && turnUser && turnPass) {
+    servers.push({
+      urls: turnUrl.split(',').map(s => s.trim()).filter(Boolean),
+      username: turnUser.trim(),
+      credential: turnPass.trim()
+    });
+  }
+
+  return servers;
+}
+
 export function setupSignalingServer(wss: WebSocketServer) {
   const rooms = new Map<string, Room>();
   const peerToRoom = new Map<string, string>();
@@ -175,6 +204,9 @@ export function setupSignalingServer(wss: WebSocketServer) {
     ws.isAlive = true;
     let currentPeerId = '';
 
+    // Enviar configuración de servidores ICE (STUN + TURN) inmediatamente al conectar
+    send(ws, { type: 'ice_config', iceServers: getRuntimeIceServers() });
+
     ws.on('pong', () => {
       ws.isAlive = true;
     });
@@ -191,6 +223,12 @@ export function setupSignalingServer(wss: WebSocketServer) {
         }
 
         switch (type) {
+          case 'get_ice_config':
+          case 'request_ice_config': {
+            send(ws, { type: 'ice_config', iceServers: getRuntimeIceServers() });
+            break;
+          }
+
           case 'heartbeat':
           case 'ping': {
             ws.isAlive = true;

@@ -1,9 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PeerConnection, getIceServers } from '../../src/net/transport/PeerConnection';
+import {
+  PeerConnection,
+  getIceServers,
+  setDynamicIceServers,
+  parseIceUrls,
+  DEFAULT_STUN_SERVERS
+} from '../../src/net/transport/PeerConnection';
 import { SignalingClient } from '../../src/net/signaling/SignalingClient';
+import { getRuntimeIceServers } from '../../src/server/signalingServer';
 
 describe('ICE Servers Configuration & ExpressTURN', () => {
   it('returns default Google STUN servers when no env vars are defined', () => {
+    setDynamicIceServers(null);
     const servers = getIceServers({});
     expect(servers).toHaveLength(1);
     expect(servers[0].urls).toEqual([
@@ -13,6 +21,7 @@ describe('ICE Servers Configuration & ExpressTURN', () => {
   });
 
   it('correctly constructs STUN and TURN server configuration with credentials', () => {
+    setDynamicIceServers(null);
     const servers = getIceServers({
       VITE_STUN_URLS: 'stun:stun.custom.com:3478, stun:stun.fallback.com:3478',
       VITE_TURN_URL: 'turn:relay.expressturn.com:3478',
@@ -28,6 +37,48 @@ describe('ICE Servers Configuration & ExpressTURN', () => {
     expect(servers[1].urls).toEqual(['turn:relay.expressturn.com:3478']);
     expect(servers[1].username).toBe('000000002106610545');
     expect(servers[1].credential).toBe('ETT5qfFtieoY5iTpdrs0Ak02YUU=');
+  });
+
+  it('parses comma-separated ICE URLs with trim and empty filtering', () => {
+    expect(parseIceUrls(' stun:a.com , , stun:b.com ', DEFAULT_STUN_SERVERS)).toEqual([
+      'stun:a.com',
+      'stun:b.com'
+    ]);
+    expect(parseIceUrls('', DEFAULT_STUN_SERVERS)).toEqual(DEFAULT_STUN_SERVERS);
+    expect(parseIceUrls(undefined, DEFAULT_STUN_SERVERS)).toEqual(DEFAULT_STUN_SERVERS);
+  });
+
+  it('prioritizes dynamic ICE servers from signaling over build-time env', () => {
+    const customDynamic: RTCIceServer[] = [
+      { urls: ['stun:dynamic.org:3478'] },
+      { urls: ['turn:dynamic-relay.org:3478'], username: 'dyn-user', credential: 'dyn-pass' }
+    ];
+    setDynamicIceServers(customDynamic);
+    expect(getIceServers()).toEqual(customDynamic);
+
+    // Resetting dynamic servers returns to default config
+    setDynamicIceServers(null);
+    expect(getIceServers({})[0].urls).toEqual(DEFAULT_STUN_SERVERS);
+  });
+
+  it('getRuntimeIceServers reads environment variables with fallback', () => {
+    const originalTurn = process.env.VITE_TURN_URL;
+    const originalUser = process.env.VITE_TURN_USERNAME;
+    const originalCred = process.env.VITE_TURN_CREDENTIAL;
+
+    process.env.VITE_TURN_URL = 'turn:relay.test.com:3478';
+    process.env.VITE_TURN_USERNAME = 'test-user';
+    process.env.VITE_TURN_CREDENTIAL = 'test-pass';
+
+    const runtimeServers = getRuntimeIceServers();
+    expect(runtimeServers.length).toBeGreaterThanOrEqual(2);
+    expect(runtimeServers[1].urls).toEqual(['turn:relay.test.com:3478']);
+    expect(runtimeServers[1].username).toBe('test-user');
+    expect(runtimeServers[1].credential).toBe('test-pass');
+
+    process.env.VITE_TURN_URL = originalTurn;
+    process.env.VITE_TURN_USERNAME = originalUser;
+    process.env.VITE_TURN_CREDENTIAL = originalCred;
   });
 });
 

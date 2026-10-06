@@ -24,11 +24,19 @@ export const RELIABLE_CHANNEL_LABEL = 'reliable';
 /** Canal sin orden ni retransmisión: InputPacket / SnapshotPacket a 60 Hz. */
 export const UNRELIABLE_CHANNEL_LABEL = 'game';
 
-/** Servidores TURN entregados en runtime por el servidor de señalización (mensaje `ice_config`). */
-let runtimeIceServers: RTCIceServer[] = [];
+export const DEFAULT_STUN_SERVERS = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun1.l.google.com:19302'
+];
 
-export function setRuntimeIceServers(servers: RTCIceServer[] | undefined | null): void {
-  runtimeIceServers = Array.isArray(servers) ? servers.filter(isValidIceServer) : [];
+export function parseIceUrls(raw: string | undefined, defaultUrls: string[]): string[] {
+  if (!raw || typeof raw !== 'string' || !raw.trim()) {
+    return defaultUrls;
+  }
+  return raw
+    .split(',')
+    .map((url) => url.trim())
+    .filter((url) => url.length > 0);
 }
 
 function isValidIceServer(server: unknown): server is RTCIceServer {
@@ -36,6 +44,20 @@ function isValidIceServer(server: unknown): server is RTCIceServer {
   const urls = (server as RTCIceServer).urls;
   return typeof urls === 'string' || (Array.isArray(urls) && urls.every((u) => typeof u === 'string'));
 }
+
+/** Servidores ICE entregados dinámicamente por la señalización en runtime (mensaje `ice_config`). */
+let dynamicIceServers: RTCIceServer[] | null = null;
+
+export function setDynamicIceServers(servers: RTCIceServer[] | null | undefined): void {
+  if (Array.isArray(servers) && servers.length > 0) {
+    dynamicIceServers = servers.filter(isValidIceServer);
+    console.log('[WebRTC] Servidores ICE actualizados dinámicamente desde señalización:', dynamicIceServers);
+  } else {
+    dynamicIceServers = null;
+  }
+}
+
+export const setRuntimeIceServers = setDynamicIceServers;
 
 /**
  * Lee servidores TURN definidos en build-time:
@@ -82,11 +104,14 @@ function getViteEnv(): Partial<ImportMetaEnv> | undefined {
  * (STUN y TURN / ExpressTURN) y servidores adicionales de runtime.
  */
 export function getIceServers(customEnv?: Record<string, string | undefined>): RTCIceServer[] {
+  if (!customEnv && dynamicIceServers && dynamicIceServers.length > 0) {
+    return dynamicIceServers;
+  }
   const env = customEnv ?? (typeof import.meta !== 'undefined' ? import.meta.env : undefined);
-  const stunRaw = env?.VITE_STUN_URLS;
-  const stunUrls = stunRaw 
-    ? String(stunRaw).split(',').map((u: string) => u.trim()).filter(Boolean) 
-    : ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'];
+  const stunUrls = parseIceUrls(
+    env?.VITE_STUN_URLS,
+    DEFAULT_STUN_SERVERS
+  );
 
   const servers: RTCIceServer[] = [{ urls: stunUrls }];
 
@@ -95,16 +120,17 @@ export function getIceServers(customEnv?: Record<string, string | undefined>): R
   const turnCredential = env?.VITE_TURN_CREDENTIAL;
 
   if (turnUrl && turnUsername && turnCredential) {
-    servers.push({
-      urls: String(turnUrl).split(',').map((u: string) => u.trim()).filter(Boolean),
-      username: String(turnUsername).trim(),
-      credential: String(turnCredential).trim()
-    });
+    const turnUrls = parseIceUrls(String(turnUrl), []);
+    if (turnUrls.length > 0) {
+      servers.push({
+        urls: turnUrls,
+        username: String(turnUsername).trim(),
+        credential: String(turnCredential).trim()
+      });
+    }
   }
 
-  if (runtimeIceServers.length > 0) {
-    servers.push(...runtimeIceServers);
-  }
+
 
   return servers;
 }
@@ -197,9 +223,9 @@ export class PeerConnection {
     };
     this.pc = new RTCPeerConnection(rtcConfig);
 
-    console.log(`[WebRTC] Servidores ICE configurados para ${this.peerId}:`, servers.map(s => {
-      const urls = Array.isArray(s.urls) ? s.urls.join(', ') : s.urls;
-      return s.username ? `${urls} (Auth: ${s.username})` : urls;
+    console.log(`[WebRTC] Servidores ICE configurados para ${this.peerId}:`, servers.flatMap(s => {
+      const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+      return urls.map(u => s.username ? `${u} (Auth: ${s.username})` : u);
     }));
 
     const hasTurn = servers.some(s => {
