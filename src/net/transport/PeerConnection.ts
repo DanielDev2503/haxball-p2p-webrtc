@@ -1,4 +1,5 @@
 import { OP_KEEPALIVE } from '../protocol/BinaryProtocol';
+import type { SignalingClient } from '../signaling/SignalingClient';
 
 /**
  * Estado lógico del enlace P2P (más estable que los estados crudos de RTCPeerConnection).
@@ -15,17 +16,13 @@ export interface PeerConnectionConfig {
   iceServers?: RTCIceServer[] | undefined;
   /** 'relay' fuerza el uso exclusivo de TURN (útil para diagnosticar NAT simétrico). */
   iceTransportPolicy?: RTCIceTransportPolicy | undefined;
+  signalingClient?: SignalingClient | null | undefined;
 }
 
 /** Canal ordenado/confiable: eventos de partida, chat, handshake, gameConfig. */
 export const RELIABLE_CHANNEL_LABEL = 'reliable';
 /** Canal sin orden ni retransmisión: InputPacket / SnapshotPacket a 60 Hz. */
 export const UNRELIABLE_CHANNEL_LABEL = 'game';
-
-const DEFAULT_STUN_SERVERS: RTCIceServer[] = [
-  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-  { urls: 'stun:stun.cloudflare.com:3478' }
-];
 
 /** Servidores TURN entregados en runtime por el servidor de señalización (mensaje `ice_config`). */
 let runtimeIceServers: RTCIceServer[] = [];
@@ -80,10 +77,40 @@ function getViteEnv(): Partial<ImportMetaEnv> | undefined {
   }
 }
 
-/** Lista balanceada STUN + TURN (runtime del servidor primero, luego build-time). */
-export function getDefaultIceServers(): RTCIceServer[] {
-  return [...DEFAULT_STUN_SERVERS, ...runtimeIceServers, ...readEnvTurnServers()];
+/**
+ * Construye la lista de servidores ICE a partir de las variables de entorno de Vite
+ * (STUN y TURN / ExpressTURN) y servidores adicionales de runtime.
+ */
+export function getIceServers(customEnv?: Record<string, string | undefined>): RTCIceServer[] {
+  const env = customEnv ?? (typeof import.meta !== 'undefined' ? import.meta.env : undefined);
+  const stunRaw = env?.VITE_STUN_URLS;
+  const stunUrls = stunRaw 
+    ? String(stunRaw).split(',').map((u: string) => u.trim()).filter(Boolean) 
+    : ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'];
+
+  const servers: RTCIceServer[] = [{ urls: stunUrls }];
+
+  const turnUrl = env?.VITE_TURN_URL;
+  const turnUsername = env?.VITE_TURN_USERNAME;
+  const turnCredential = env?.VITE_TURN_CREDENTIAL;
+
+  if (turnUrl && turnUsername && turnCredential) {
+    servers.push({
+      urls: String(turnUrl).split(',').map((u: string) => u.trim()).filter(Boolean),
+      username: String(turnUsername).trim(),
+      credential: String(turnCredential).trim()
+    });
+  }
+
+  if (runtimeIceServers.length > 0) {
+    servers.push(...runtimeIceServers);
+  }
+
+  return servers;
 }
+
+/** Lista balanceada STUN + TURN (alias para compatibilidad con código existente). */
+export const getDefaultIceServers = getIceServers;
 
 export class PeerConnection {
   public pc: RTCPeerConnection;
@@ -129,8 +156,10 @@ export class PeerConnection {
   private applyingRemoteDescription: boolean = false;
 
   // ICE restart con backoff exponencial
-  private restartAttempts: number = 0;
-  private recoveryTimerId: ReturnType<typeof setTimeout> | null = null;
+  public signalingClient: SignalingClient | null = null;
+  private recoveryAttempts: number = 0;
+  private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  private isRecovering: boolean = false;
   private isClosed: boolean = false;
   private disconnectNotified: boolean = false;
   private channelsOpenNotified: boolean = false;
@@ -141,7 +170,7 @@ export class PeerConnection {
   private currentRtt: number = 0;
 
   public static readonly MAX_ICE_RESTARTS = 3;
-  public static readonly RESTART_BASE_DELAY_MS = 1000;
+  public static readonly RESTART_BASE_DELAY_MS = 2000;
   public static readonly RESTART_WINDOW_MS = 4000;
   public static readonly DISCONNECT_GRACE_MS = 2000;
   /** Si el buffer de envío supera este umbral se descartan snapshots: enviar datos viejos solo añade latencia. */
@@ -153,14 +182,13 @@ export class PeerConnection {
   constructor(remotePeerId: string, isInitiator: boolean, config: PeerConnectionConfig = {}) {
     this.remotePeerId = remotePeerId;
     this.isInitiator = isInitiator;
+    this.signalingClient = config.signalingClient ?? null;
 
     const rtcConfig: RTCConfiguration = {
-      iceServers: config.iceServers ?? getDefaultIceServers(),
-      iceCandidatePoolSize: 10
+      iceServers: config.iceServers ?? getIceServers(),
+      iceTransportPolicy: config.iceTransportPolicy ?? 'all',
+      iceCandidatePoolSize: 2
     };
-    if (config.iceTransportPolicy) {
-      rtcConfig.iceTransportPolicy = config.iceTransportPolicy;
-    }
     this.pc = new RTCPeerConnection(rtcConfig);
 
     this.pc.onicecandidate = (event) => {
@@ -260,7 +288,8 @@ export class PeerConnection {
       case 'completed':
         if (!this.isTransportHealthy()) return; // ICE ok pero DTLS aún no
         this.clearRecoveryTimer();
-        this.restartAttempts = 0;
+        this.isRecovering = false;
+        this.recoveryAttempts = 0;
         if (this.linkState !== 'connected') {
           this.setLinkState('connected');
           if (this.onConnected) this.onConnected();
@@ -271,50 +300,90 @@ export class PeerConnection {
         if (this.linkState === 'new') this.setLinkState('connecting');
         break;
       case 'disconnected':
-        // 'disconnected' suele recuperarse solo: esperar un margen antes del primer ICE restart.
-        this.scheduleRecovery(PeerConnection.DISCONNECT_GRACE_MS);
+        // 'disconnected' suele recuperarse solo: aplicar margen de gracia de 2000 ms.
+        if (this.isRecovering) return;
+        if (this.recoveryTimer !== null) return;
+        this.scheduleRecovery(true);
         break;
       case 'failed':
-        this.scheduleRecovery(this.backoffDelay());
+        // Pasa a recuperación; si ya se está ejecutando el ciclo, se mantiene sin cascada
+        if (this.isRecovering) return;
+        this.scheduleRecovery(false);
         break;
       default:
         break;
     }
   }
 
-  private backoffDelay(): number {
-    return PeerConnection.RESTART_BASE_DELAY_MS * Math.pow(2, this.restartAttempts);
-  }
+  private scheduleRecovery(isGracePeriod: boolean = false): void {
+    if (this.isClosed || this.disconnectNotified) return;
 
-  private scheduleRecovery(delayMs: number): void {
-    if (this.recoveryTimerId !== null || this.isClosed || this.disconnectNotified) return;
-    if (this.restartAttempts >= PeerConnection.MAX_ICE_RESTARTS) {
+    if (this.recoveryTimer !== null) {
+      clearTimeout(this.recoveryTimer);
+      this.recoveryTimer = null;
+    }
+
+    if (isGracePeriod) {
+      this.recoveryTimer = setTimeout(() => {
+        this.recoveryTimer = null;
+        if (this.isClosed || this.disconnectNotified || this.isTransportHealthy()) {
+          this.isRecovering = false;
+          return;
+        }
+        // Persiste 'disconnected' tras el periodo de gracia
+        this.scheduleRecovery(false);
+      }, PeerConnection.DISCONNECT_GRACE_MS);
+      return;
+    }
+
+    if (this.recoveryAttempts >= PeerConnection.MAX_ICE_RESTARTS) {
       this.finalizeDisconnect();
       return;
     }
+
+    this.isRecovering = true;
     this.setLinkState('reconnecting');
-    this.recoveryTimerId = setTimeout(() => {
-      this.recoveryTimerId = null;
-      if (this.isClosed || this.isTransportHealthy()) return;
-      this.restartAttempts++;
-      console.warn(`[PeerConnection] ICE restart ${this.restartAttempts}/${PeerConnection.MAX_ICE_RESTARTS} con ${this.remotePeerId}`);
-      void this.performIceRestart();
-      // Ventana de recuperación: si no vuelve a 'connected', siguiente intento con backoff.
-      this.recoveryTimerId = setTimeout(() => {
-        this.recoveryTimerId = null;
-        if (this.isClosed || this.isTransportHealthy()) return;
-        if (this.restartAttempts >= PeerConnection.MAX_ICE_RESTARTS) {
+    this.recoveryAttempts++;
+    const delay = Math.min(2000 * Math.pow(2, this.recoveryAttempts - 1), 6000);
+
+    console.warn(`[PeerConnection] ICE restart ${this.recoveryAttempts}/${PeerConnection.MAX_ICE_RESTARTS} programado en ${delay}ms con ${this.remotePeerId}`);
+
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = null;
+      if (this.isClosed || this.disconnectNotified || this.isTransportHealthy()) {
+        this.isRecovering = false;
+        return;
+      }
+      void this.executeIceRestart();
+
+      // Ventana de renegociación antes del siguiente intento si no vuelve a conectarse
+      this.recoveryTimer = setTimeout(() => {
+        this.recoveryTimer = null;
+        if (this.isClosed || this.disconnectNotified || this.isTransportHealthy()) {
+          this.isRecovering = false;
+          return;
+        }
+        if (this.recoveryAttempts >= PeerConnection.MAX_ICE_RESTARTS) {
           this.finalizeDisconnect();
         } else {
-          this.scheduleRecovery(this.backoffDelay());
+          this.scheduleRecovery(false);
         }
       }, PeerConnection.RESTART_WINDOW_MS);
-    }, delayMs);
+    }, delay);
   }
 
-  /** Solo el initiator (Host) genera la oferta de ICE restart; el invitado responde vía handleOffer(). */
-  private async performIceRestart(): Promise<void> {
+  /** Solo el initiator (Host) genera la oferta de ICE restart; verifica precondición de señalización. */
+  public async executeIceRestart(): Promise<void> {
+    if (this.isClosed || this.disconnectNotified) return;
+
+    if (!this.signalingClient || !this.signalingClient.isOpen()) {
+      console.warn(`[PeerConnection] No se puede ejecutar ICE restart: Señalización no disponible.`);
+      this.signalingClient?.reconnect();
+      return;
+    }
+
     if (!this.isInitiator || this.pc.signalingState === 'closed') return;
+
     try {
       if (typeof this.pc.restartIce === 'function') {
         this.pc.restartIce();
@@ -329,9 +398,14 @@ export class PeerConnection {
     }
   }
 
+  public async performIceRestart(): Promise<void> {
+    return this.executeIceRestart();
+  }
+
   private finalizeDisconnect(): void {
     if (this.disconnectNotified || this.isClosed) return;
     this.disconnectNotified = true;
+    this.isRecovering = false;
     this.clearRecoveryTimer();
     this.stopKeepAlive();
     this.setLinkState('failed');
@@ -339,10 +413,18 @@ export class PeerConnection {
   }
 
   private clearRecoveryTimer(): void {
-    if (this.recoveryTimerId !== null) {
-      clearTimeout(this.recoveryTimerId);
-      this.recoveryTimerId = null;
+    if (this.recoveryTimer !== null) {
+      clearTimeout(this.recoveryTimer);
+      this.recoveryTimer = null;
     }
+  }
+
+  public get isRecoveryActive(): boolean {
+    return this.isRecovering;
+  }
+
+  public get currentRecoveryAttempts(): number {
+    return this.recoveryAttempts;
   }
 
   // --- Cola de Candidatos ICE (Trickle ICE a prueba de carreras) ---
@@ -478,6 +560,7 @@ export class PeerConnection {
   public close(): void {
     if (this.isClosed) return;
     this.isClosed = true;
+    this.isRecovering = false;
     this.clearRecoveryTimer();
     this.stopKeepAlive();
 

@@ -137,6 +137,26 @@ export class SignalingClient {
     }, delay);
   }
 
+  // --- Status & Reconnect ---
+
+  public isOpen(): boolean {
+    return this.isConnected && this.ws !== null && this.ws.readyState === (typeof WebSocket !== 'undefined' ? WebSocket.OPEN : 1);
+  }
+
+  public reconnect(): Promise<void> {
+    if (this.ws && (this.ws.readyState === (typeof WebSocket !== 'undefined' ? WebSocket.OPEN : 1) || this.ws.readyState === (typeof WebSocket !== 'undefined' ? WebSocket.CONNECTING : 0))) {
+      return Promise.resolve();
+    }
+    if (this.reconnectTimeoutId !== null) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
+    this.intentionalClose = false;
+    return this.connect().catch((err) => {
+      console.warn('[SignalingClient] Reconnect failed:', err);
+    });
+  }
+
   // --- Send ---
 
   public send(data: object): void {

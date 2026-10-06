@@ -37,7 +37,8 @@ export type ControlMessageType =
   | 'ROOM_SETTINGS_SYNC'
   | 'GAME_CONFIG_SYNC'
   | 'MAP_CHANGE_REQUEST'
-  | 'MAP_CHANGE_SYNC';
+  | 'MAP_CHANGE_SYNC'
+  | 'PEER_DISCONNECT';
 
 export interface RoomConfig {
   name: string;
@@ -225,5 +226,10 @@ export interface AdminStartMatchMessage {
 
 export interface AdminStopMatchMessage {
   type: 'ADMIN_STOP_MATCH';
+}
+
+export interface PeerDisconnectMessage {
+  type: 'PEER_DISCONNECT';
+  reason?: string | undefined;
 }
 

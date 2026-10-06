@@ -55,12 +55,32 @@ export class GameApp {
     return this.mode === 'host' || Boolean(this.localPlayer?.isHost);
   }
 
-  public get network(): { sendReliable: (msg: any) => void } {
+  public closeAllPeers(): void {
+    for (const peer of this.peers.values()) {
+      peer.close();
+    }
+    this.peers.clear();
+
+    if (this.hostPeer) {
+      this.hostPeer.close();
+      this.hostPeer = null;
+    }
+  }
+
+  public get network(): { sendReliable: (msg: any) => void; closeAllPeers: () => void } {
     return {
       sendReliable: (msg: any) => {
+        const str = typeof msg === 'string' ? msg : JSON.stringify(msg);
         if (this.hostPeer) {
-          this.hostPeer.sendReliable(typeof msg === 'string' ? msg : JSON.stringify(msg));
+          this.hostPeer.sendReliable(str);
+        } else if (this.peers.size > 0) {
+          for (const peer of this.peers.values()) {
+            peer.sendReliable(str);
+          }
         }
+      },
+      closeAllPeers: () => {
+        this.closeAllPeers();
       }
     };
   }
@@ -374,6 +394,18 @@ export class GameApp {
     };
     this.handleUIStateChange(initialUIState, initialUIState);
     this.setupSignaling();
+
+    // Notificación inmediata de desconexión ante cierre de ventana / recarga de pestaña
+    const notifyDisconnection = () => {
+      if (this.network && this.currentRoomId) {
+        this.network.sendReliable({ type: 'PEER_DISCONNECT', reason: 'PAGE_UNLOAD' });
+        this.network.closeAllPeers();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', notifyDisconnection);
+      window.addEventListener('pagehide', notifyDisconnection);
+    }
   }
 
   private handleUIStateChange(newState: UIState, _prevState: UIState): void {
@@ -1086,7 +1118,7 @@ export class GameApp {
   }
 
   private async handlePeerJoinedAsHost(peerId: string, initialNick?: string): Promise<void> {
-    const peer = new PeerConnection(peerId, true);
+    const peer = new PeerConnection(peerId, true, { signalingClient: this.signaling });
     this.peers.set(peerId, peer);
 
     peer.onIceCandidate = (candidate) => {
@@ -1133,7 +1165,10 @@ export class GameApp {
     peer.onReliableMessage = (data: string) => {
       try {
         const msg = JSON.parse(data);
-        if (msg.type === 'client_ready' || msg.type === 'CLIENT_READY') {
+        if (msg.type === 'PEER_DISCONNECT') {
+          console.log(`[Host] Peer ${peerId} cerró sesión voluntariamente (${msg.reason || 'PAGE_UNLOAD'})`);
+          this.handlePeerLeft(peerId);
+        } else if (msg.type === 'client_ready' || msg.type === 'CLIENT_READY') {
           peer.isReady = true;
           console.log(`[Host] Peer ${peerId} está listo para simulación (CLIENT_READY recibido)`);
         } else if (msg.type === 'chat') {
@@ -1299,7 +1334,7 @@ export class GameApp {
       return;
     }
 
-    const peer = new PeerConnection(senderId, false);
+    const peer = new PeerConnection(senderId, false, { signalingClient: this.signaling });
     this.hostPeer = peer;
 
     peer.onIceCandidate = (candidate) => {
@@ -1359,7 +1394,11 @@ export class GameApp {
     peer.onReliableMessage = (data: string) => {
       try {
         const msg = JSON.parse(data);
-        if (msg.type === 'chat') {
+        if (msg.type === 'PEER_DISCONNECT') {
+          console.log(`[Client] Host cerró la sala (${msg.reason || 'PAGE_UNLOAD'})`);
+          this.chat.addMessage({ author: 'Sistema', text: 'El Host ha cerrado la sala.', team: 'sys' });
+          this.leaveCurrentRoom();
+        } else if (msg.type === 'chat') {
           if (msg.team === 'sys') {
             this.chat.addSystemMessage(msg.text);
           } else {
