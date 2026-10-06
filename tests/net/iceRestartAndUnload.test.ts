@@ -104,8 +104,23 @@ describe('PeerConnection ICE Restart Debounce & Exponential Backoff', () => {
     vi.useRealTimers();
   });
 
+  it('suppresses scheduleRecovery and ICE restarts if connection has never opened (hasEverConnected = false)', () => {
+    const peer = new PeerConnection('peer_test', true, { signalingClient: mockSignaling });
+    expect(peer.hasEverConnected).toBe(false);
+
+    mockPc.iceConnectionState = 'failed';
+    mockPc.connectionState = 'failed';
+    mockPc.oniceconnectionstatechange();
+
+    expect(peer.isRecoveryActive).toBe(false);
+    expect(peer.currentRecoveryAttempts).toBe(0);
+    expect(mockPc.restartIce).not.toHaveBeenCalled();
+  });
+
   it('applies 2000ms grace period on disconnected and aborts recovery if reconnected', () => {
     const peer = new PeerConnection('peer_test', true, { signalingClient: mockSignaling });
+    (peer.reliableChannel as any)?.onopen?.();
+    expect(peer.hasEverConnected).toBe(true);
 
     // Connection starts connected
     mockPc.iceConnectionState = 'connected';
@@ -135,6 +150,7 @@ describe('PeerConnection ICE Restart Debounce & Exponential Backoff', () => {
 
   it('debounces rapid cascading events and executes ICE restart with backoff', async () => {
     const peer = new PeerConnection('peer_test', true, { signalingClient: mockSignaling });
+    (peer.reliableChannel as any)?.onopen?.();
 
     // Network fails
     mockPc.iceConnectionState = 'failed';
@@ -186,6 +202,7 @@ describe('PeerConnection ICE Restart Debounce & Exponential Backoff', () => {
   it('checks signaling client readiness before executing ICE restart', async () => {
     mockSignaling.isOpen.mockReturnValue(false);
     const peer = new PeerConnection('peer_test', true, { signalingClient: mockSignaling });
+    (peer.reliableChannel as any)?.onopen?.();
 
     mockPc.iceConnectionState = 'failed';
     mockPc.connectionState = 'failed';

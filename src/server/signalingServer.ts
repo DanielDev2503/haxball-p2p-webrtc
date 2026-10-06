@@ -280,8 +280,9 @@ export function setupSignalingServer(wss: WebSocketServer) {
             break;
           }
 
+          case 'accept_peer':
           case 'join_accepted': {
-            // Confirmación explícita del Host (JOIN_ACCEPTED)
+            // Confirmación explícita del Host (accept_peer / join_accepted)
             const activeRoomId = peerToRoom.get(peerId);
             if (!activeRoomId) return;
             const room = rooms.get(activeRoomId);
@@ -296,12 +297,21 @@ export function setupSignalingServer(wss: WebSocketServer) {
 
               console.log(`[SignalingServer] Host ${peerId} aceptó a ${targetId} en sala ${activeRoomId}`);
 
+              // UNICAST ESTRICTO: Enviar exclusivamente al socket del invitado (targetPeerWs).
+              // Queda PROHIBIDO emitir peer_accepted hacia la sala completa o hacia el Host
+              // para evitar que el Host instancie un segundo PeerConnection sobre el mismo peerId.
               send(targetPeerWs, {
                 type: 'room_joined',
                 roomId: room.id,
                 roomName: room.config.name,
                 hostId: room.hostId,
                 config: room.config
+              });
+              send(targetPeerWs, {
+                type: 'peer_accepted',
+                roomId: room.id,
+                hostId: room.hostId,
+                targetId
               });
               broadcastRoomList();
             }

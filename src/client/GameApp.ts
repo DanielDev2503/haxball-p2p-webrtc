@@ -135,9 +135,10 @@ export class GameApp {
   private clientIsTurbo: boolean = false;
   private lastKnownPlayerCount: number = 0;
 
-  // Handshake timeout: cancel if initial_state is received within 10s
+  // Handshake timeout: cancel if data channel opens within 15s
   private joinTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  private static readonly JOIN_TIMEOUT_MS = 10000;
+  private joinResolver: ((success: boolean) => void) | null = null;
+  private static readonly JOIN_TIMEOUT_MS = 15000;
 
   // Room & Admin state
   public roomConfig: RoomConfig = {
@@ -310,6 +311,7 @@ export class GameApp {
         this.uiStateMachine.transitionTo('STATE_NICKNAME');
       },
       onCancelConnecting: () => {
+        this.leaveRoom();
         this.lobby.hideConnecting();
       }
     });
@@ -961,7 +963,7 @@ export class GameApp {
     this.updateTeamLists();
   }
 
-  public async startAsClient(nickname: string, roomId: string, password?: string): Promise<void> {
+  public async startAsClient(nickname: string, roomId: string, password?: string): Promise<boolean> {
     this.mode = 'client';
     this.canvasRenderer.setGoalNets(null);
     this.localPlayer.id = this.signaling.peerId;
@@ -979,6 +981,7 @@ export class GameApp {
     // Leave button is inside ingame-menu only
     this.updateAdminPanelVisibility();
 
+    this.lobby.showConnecting('Conectando (P2P / Relay)...');
     this.lobby.setConnectingStep(1, 'Conectando con servidor de señalización...');
 
     if (!this.signaling.isConnected) {
@@ -989,34 +992,34 @@ export class GameApp {
         this.lobby.hideConnecting();
         console.error('[Signaling] Failed to connect:', err);
         this.lobby.showToast('No se pudo conectar al servidor de señalización.', 'error');
-        return;
+        return false;
       }
     }
 
     this.lobby.setConnectingStep(1, 'Solicitando unirse a la sala...');
 
-    // Start the 10-second join timeout — if handshake doesn't complete, abort
+    // Iniciar temporizador de unión resiliente (15 segundos)
     this.clearJoinTimeout();
-    this.joinTimeoutId = setTimeout(() => {
-      this.joinTimeoutId = null;
-      console.warn('[Client] Join handshake timed out after 10 seconds');
-      if (this.hostPeer) {
-        this.hostPeer.close();
-        this.hostPeer = null;
-      }
-      this.currentRoomId = '';
-      this.mode = 'practice';
-      this.lobby?.hideConnecting();
-      this.uiStateMachine?.transitionTo('STATE_LOBBY');
-      this.signaling.requestRoomList();
-      this.lobby?.showToast(
-        'No se pudo establecer conexión directa con el Host. Posible restricción de red/NAT. Intenta crear una sala o unirte a otra.',
-        'error',
-        7000
-      );
-    }, GameApp.JOIN_TIMEOUT_MS);
+    return new Promise<boolean>((resolve) => {
+      this.joinResolver = resolve;
+      this.joinTimeoutId = setTimeout(() => {
+        this.joinTimeoutId = null;
+        console.warn('[Client] Join handshake timed out after 15 seconds');
+        this.leaveRoom();
+        this.lobby?.showToast('Tiempo de espera agotado al conectar con el anfitrión.', 'error', 7000);
+        if (this.joinResolver) {
+          const res = this.joinResolver;
+          this.joinResolver = null;
+          res(false);
+        }
+      }, GameApp.JOIN_TIMEOUT_MS);
 
-    this.signaling.joinRoom(roomId, password, this.localPlayer.name);
+      this.signaling.joinRoom(roomId, password, this.localPlayer.name);
+    });
+  }
+
+  public leaveRoom(): void {
+    this.leaveCurrentRoom();
   }
 
   private clearJoinTimeout(): void {
@@ -1027,8 +1030,13 @@ export class GameApp {
   }
 
   public leaveCurrentRoom(): void {
-    // Cancel any pending join timeout
+    // Cancelar cualquier temporizador de unión pendiente y resolver con false si aplicaba
     this.clearJoinTimeout();
+    if (this.joinResolver) {
+      const res = this.joinResolver;
+      this.joinResolver = null;
+      res(false);
+    }
 
     // Notificar al signaling server que abandonamos la sala
     if (this.currentRoomId) {
@@ -1118,6 +1126,10 @@ export class GameApp {
   }
 
   private async handlePeerJoinedAsHost(peerId: string, initialNick?: string): Promise<void> {
+    if (this.peers.has(peerId)) {
+      console.warn(`[Host] Peer ${peerId} ya posee una conexión activa. Ignorando.`);
+      return;
+    }
     const peer = new PeerConnection(peerId, true, { signalingClient: this.signaling });
     this.peers.set(peerId, peer);
 
@@ -1342,6 +1354,13 @@ export class GameApp {
     };
 
     peer.onDataChannelOpen = () => {
+      // Limpiar temporizador de unión y resolver promesa satisfactoriamente
+      this.clearJoinTimeout();
+      if (this.joinResolver) {
+        const res = this.joinResolver;
+        this.joinResolver = null;
+        res(true);
+      }
       this.lobby?.setConnectingStep(3, 'Sincronizando estado de la sala...');
       // Send CLIENT_HELLO — the host will respond with INITIAL_STATE
       peer.sendReliable(JSON.stringify({
@@ -2089,7 +2108,7 @@ export class GameApp {
     }
   }
 
-  public async joinRoom(roomId: string, password?: string): Promise<void> {
+  public async joinRoom(roomId: string, password?: string): Promise<boolean> {
     const nick = this.localPlayer.name || NicknameGatekeeper.getSavedNickname() || 'Player';
     return this.startAsClient(nick, roomId, password);
   }

@@ -14,7 +14,7 @@ export interface LobbyRoomConfig {
 
 export interface LobbyEvents {
   onCreateRoom: (nickname: string, config: LobbyRoomConfig) => void;
-  onJoinRoom: (nickname: string, roomId: string, password?: string) => void;
+  onJoinRoom: (nickname: string, roomId: string, password?: string) => void | Promise<boolean>;
   onSinglePlayer: (nickname: string) => void;
   onRefreshRooms: () => void;
   onEditNickname?: () => void;
@@ -145,6 +145,7 @@ export class RoomLobby {
       const nick = this.getNickname();
       const roomId = this.roomIdInput?.value.trim().toUpperCase() || '';
       if (roomId) {
+        this.showConnecting('Conectando (P2P / Relay)...');
         this.events.onJoinRoom(nick, roomId);
       } else {
         alert('Por favor introduce el ID de la sala');
@@ -216,7 +217,7 @@ export class RoomLobby {
         msg = '1/3 Conectando con servidor de señalización...';
         break;
       case 2:
-        msg = '2/3 Negociando enlace P2P (ICE Traversal)...';
+        msg = '2/3 Conectando (P2P / Relay)...';
         break;
       case 3:
         msg = '3/3 Sincronizando sala...';
@@ -228,7 +229,7 @@ export class RoomLobby {
     this.showConnecting(msg);
   }
 
-  public showConnecting(message: string = 'Conectando P2P...'): void {
+  public showConnecting(message: string = 'Conectando (P2P / Relay)...'): void {
     if (this.loadingTextEl) {
       this.loadingTextEl.textContent = message;
     }
@@ -375,6 +376,7 @@ export class RoomLobby {
           if (passPrompt === null) return;
           password = passPrompt.trim();
         }
+        this.showConnecting('Conectando (P2P / Relay)...');
         this.events.onJoinRoom(this.getNickname(), r.id, password);
       });
 

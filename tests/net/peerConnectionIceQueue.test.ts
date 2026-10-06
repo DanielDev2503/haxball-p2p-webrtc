@@ -22,7 +22,20 @@ describe('PeerConnection ICE Candidate Queue and DataChannel', () => {
       localDescription: null,
       iceConnectionState: 'new',
       connectionState: 'new',
-      createDataChannel: vi.fn(() => mockDataChannel),
+      createDataChannel: vi.fn((label: string) => {
+        const dc = {
+          label,
+          readyState: 'open',
+          binaryType: '',
+          send: vi.fn(),
+          close: vi.fn(),
+          onopen: null,
+          onclose: null,
+          onmessage: null
+        };
+        if (label === 'game') mockDataChannel = dc;
+        return dc;
+      }),
       createOffer: vi.fn(async () => ({ type: 'offer', sdp: 'dummy-offer-sdp' })),
       createAnswer: vi.fn(async () => ({ type: 'answer', sdp: 'dummy-answer-sdp' })),
       setLocalDescription: vi.fn(async (desc) => { mockPc.localDescription = desc; }),
@@ -109,5 +122,32 @@ describe('PeerConnection ICE Candidate Queue and DataChannel', () => {
     const buffer = new Uint8Array([1, 2, 3, 4]).buffer;
     mockDataChannel.onmessage({ data: buffer });
     expect(unreliableSpy).toHaveBeenCalledWith(buffer);
+  });
+
+  it('flushes pending candidates upon receiving answer in handleAnswer', async () => {
+    const peer = new PeerConnection('peer_guest', true);
+    mockPc.signalingState = 'have-local-offer';
+
+    const candidate = { candidate: 'candidate:answer-cand', sdpMid: '0', sdpMLineIndex: 0 };
+    await peer.handleCandidate(candidate);
+
+    expect(mockPc.addIceCandidate).not.toHaveBeenCalled();
+
+    await peer.handleAnswer({ type: 'answer', sdp: 'dummy-answer-sdp' });
+
+    expect(mockPc.addIceCandidate).toHaveBeenCalledWith(candidate);
+  });
+
+  it('marks hasEverConnected true strictly when reliableChannel emits onopen', () => {
+    const peer = new PeerConnection('peer_guest', true);
+    expect(peer.hasEverConnected).toBe(false);
+
+    // Opening unreliable game channel does not set hasEverConnected
+    (peer.unreliableChannel as any)?.onopen?.();
+    expect(peer.hasEverConnected).toBe(false);
+
+    // Opening reliable channel sets hasEverConnected to true
+    (peer.reliableChannel as any)?.onopen?.();
+    expect(peer.hasEverConnected).toBe(true);
   });
 });

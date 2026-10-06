@@ -127,6 +127,10 @@ export class PeerConnection {
    */
   public isReady: boolean = false;
 
+  public get peerId(): string {
+    return this.remotePeerId;
+  }
+
   public get peerConnection(): RTCPeerConnection {
     return this.pc;
   }
@@ -157,6 +161,7 @@ export class PeerConnection {
 
   // ICE restart con backoff exponencial
   public signalingClient: SignalingClient | null = null;
+  private hasConnectedOnce: boolean = false;
   private recoveryAttempts: number = 0;
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
   private isRecovering: boolean = false;
@@ -184,12 +189,26 @@ export class PeerConnection {
     this.isInitiator = isInitiator;
     this.signalingClient = config.signalingClient ?? null;
 
+    const servers = config.iceServers ?? getIceServers();
     const rtcConfig: RTCConfiguration = {
-      iceServers: config.iceServers ?? getIceServers(),
+      iceServers: servers,
       iceTransportPolicy: config.iceTransportPolicy ?? 'all',
       iceCandidatePoolSize: 2
     };
     this.pc = new RTCPeerConnection(rtcConfig);
+
+    console.log(`[WebRTC] Servidores ICE configurados para ${this.peerId}:`, servers.map(s => {
+      const urls = Array.isArray(s.urls) ? s.urls.join(', ') : s.urls;
+      return s.username ? `${urls} (Auth: ${s.username})` : urls;
+    }));
+
+    const hasTurn = servers.some(s => {
+      const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+      return urls.some(u => typeof u === 'string' && (u.startsWith('turn:') || u.startsWith('turns:')));
+    });
+    if (!hasTurn) {
+      console.warn('[WebRTC] ATENCIÓN: No hay servidor TURN configurado. Las conexiones bajo NAT simétrico fallarán.');
+    }
 
     this.pc.onicecandidate = (event) => {
       if (event.candidate && this.onIceCandidate) {
@@ -223,6 +242,9 @@ export class PeerConnection {
     channel.binaryType = 'arraybuffer';
 
     channel.onopen = () => {
+      if (channel === this.reliableDataChannel) {
+        this.hasConnectedOnce = true;
+      }
       if (this.dataChannel?.readyState === 'open') {
         this.startKeepAlive();
       }
@@ -300,15 +322,23 @@ export class PeerConnection {
         if (this.linkState === 'new') this.setLinkState('connecting');
         break;
       case 'disconnected':
-        // 'disconnected' suele recuperarse solo: aplicar margen de gracia de 2000 ms.
-        if (this.isRecovering) return;
-        if (this.recoveryTimer !== null) return;
-        this.scheduleRecovery(true);
-        break;
       case 'failed':
-        // Pasa a recuperación; si ya se está ejecutando el ciclo, se mantiene sin cascada
-        if (this.isRecovering) return;
-        this.scheduleRecovery(false);
+        // PROHIBIDO disparar ICE restart si la conexión nunca llegó a abrirse
+        if (!this.hasConnectedOnce) {
+          console.log(`[PeerConnection] Estado de transporte inicial con ${this.peerId}: ${state} (handshake en curso)`);
+          return;
+        }
+
+        if (state === 'disconnected') {
+          // 'disconnected' suele recuperarse solo: aplicar margen de gracia de 2000 ms.
+          if (this.isRecovering) return;
+          if (this.recoveryTimer !== null) return;
+          this.scheduleRecovery(true);
+        } else {
+          // Pasa a recuperación; si ya se está ejecutando el ciclo, se mantiene sin cascada
+          if (this.isRecovering) return;
+          this.scheduleRecovery(false);
+        }
         break;
       default:
         break;
@@ -427,15 +457,22 @@ export class PeerConnection {
     return this.recoveryAttempts;
   }
 
+  public get hasEverConnected(): boolean {
+    return this.hasConnectedOnce;
+  }
+
   // --- Cola de Candidatos ICE (Trickle ICE a prueba de carreras) ---
 
   private async flushPendingCandidates(): Promise<void> {
-    while (this.pendingCandidates.length > 0) {
-      const candidate = this.pendingCandidates.shift()!;
-      try {
-        await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.warn('[PeerConnection] Error adding queued ICE candidate:', err);
+    if (this.pendingCandidates.length > 0) {
+      const candidatesToFlush = [...this.pendingCandidates];
+      this.pendingCandidates = [];
+      for (const cand of candidatesToFlush) {
+        try {
+          await this.pc.addIceCandidate(new RTCIceCandidate(cand));
+        } catch (err) {
+          console.warn('[PeerConnection] Error aplicando candidato pendiente:', err);
+        }
       }
     }
   }
@@ -457,6 +494,10 @@ export class PeerConnection {
   }
 
   public async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+    return this.handleRemoteCandidate(candidate);
+  }
+
+  public async handleCandidate(candidate: RTCIceCandidateInit): Promise<void> {
     return this.handleRemoteCandidate(candidate);
   }
 
