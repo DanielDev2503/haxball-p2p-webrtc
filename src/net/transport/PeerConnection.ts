@@ -52,6 +52,13 @@ export function setDynamicIceServers(servers: RTCIceServer[] | null | undefined)
   if (Array.isArray(servers) && servers.length > 0) {
     dynamicIceServers = servers.filter(isValidIceServer);
     console.log('[WebRTC] Servidores ICE actualizados dinámicamente desde señalización:', dynamicIceServers);
+    const hasMetered = dynamicIceServers.some((server) => {
+      const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+      return urls.some((u) => typeof u === 'string' && u.includes('relay.metered.ca'));
+    });
+    if (hasMetered) {
+      console.log('[WebRTC] Credenciales TURN activadas desde Metered.ca API.');
+    }
   } else {
     dynamicIceServers = null;
   }
@@ -104,7 +111,7 @@ function getViteEnv(): Partial<ImportMetaEnv> | undefined {
  * (STUN y TURN / ExpressTURN) y servidores adicionales de runtime.
  */
 export function getIceServers(customEnv?: Record<string, string | undefined>): RTCIceServer[] {
-  if (!customEnv && dynamicIceServers && dynamicIceServers.length > 0) {
+  if (dynamicIceServers && dynamicIceServers.length > 0) {
     return dynamicIceServers;
   }
   const env = customEnv ?? (typeof import.meta !== 'undefined' ? import.meta.env : undefined);
@@ -227,6 +234,14 @@ export class PeerConnection {
       const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
       return urls.map(u => s.username ? `${u} (Auth: ${s.username})` : u);
     }));
+
+    const hasMetered = servers.some(s => {
+      const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+      return urls.some(u => typeof u === 'string' && u.includes('relay.metered.ca'));
+    });
+    if (hasMetered && (!dynamicIceServers || config.iceServers)) {
+      console.log('[WebRTC] Credenciales TURN activadas desde Metered.ca API.');
+    }
 
     const hasTurn = servers.some(s => {
       const urls = Array.isArray(s.urls) ? s.urls : [s.urls];

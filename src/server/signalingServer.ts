@@ -57,6 +57,46 @@ export function getRuntimeIceServers(): RTCIceServer[] {
   return servers;
 }
 
+let cachedIceServers: RTCIceServer[] | null = null;
+let cacheExpiryTime: number = 0;
+
+export async function fetchMeteredIceServers(): Promise<RTCIceServer[]> {
+  if (cachedIceServers && Date.now() < cacheExpiryTime) {
+    return cachedIceServers;
+  }
+
+  const domain = process.env.METERED_DOMAIN?.trim();
+  const apiKey = process.env.METERED_API_KEY?.trim();
+
+  if (domain && apiKey) {
+    try {
+      const url = `https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          cachedIceServers = data as RTCIceServer[];
+          cacheExpiryTime = Date.now() + 12 * 60 * 60 * 1000;
+          return cachedIceServers;
+        } else {
+          console.warn('[SignalingServer] Metered API devolvió un arreglo vacío o formato inválido:', data);
+        }
+      } else {
+        console.warn(`[SignalingServer] Error HTTP al consultar Metered API (${response.status}): ${response.statusText}`);
+      }
+    } catch (err) {
+      console.warn('[SignalingServer] Error al consultar API REST de Metered.ca:', err);
+    }
+  }
+
+  return getRuntimeIceServers();
+}
+
+export function resetCachedIceServers(): void {
+  cachedIceServers = null;
+  cacheExpiryTime = 0;
+}
+
 export function setupSignalingServer(wss: WebSocketServer) {
   const rooms = new Map<string, Room>();
   const peerToRoom = new Map<string, string>();
@@ -199,19 +239,35 @@ export function setupSignalingServer(wss: WebSocketServer) {
     clearInterval(heartbeatInterval);
   });
 
-  wss.on('connection', (rawWs: WebSocket) => {
-    const ws = rawWs as AliveWebSocket;
+  wss.on('connection', async (socket: WebSocket) => {
+    const ws = socket as AliveWebSocket;
     ws.isAlive = true;
     let currentPeerId = '';
 
-    // Enviar configuración de servidores ICE (STUN + TURN) inmediatamente al conectar
-    send(ws, { type: 'ice_config', iceServers: getRuntimeIceServers() });
+    // Enviar configuración de servidores ICE (Metered dinámico o STUN fallback) inmediatamente al conectar
+    try {
+      const iceServers = await fetchMeteredIceServers();
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'ice_config',
+          iceServers
+        }));
+      }
+    } catch (err) {
+      console.warn('[SignalingServer] Error enviando ice_config inicial:', err);
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'ice_config',
+          iceServers: getRuntimeIceServers()
+        }));
+      }
+    }
 
     ws.on('pong', () => {
       ws.isAlive = true;
     });
 
-    ws.on('message', (raw: string) => {
+    ws.on('message', async (raw: string) => {
       try {
         ws.isAlive = true;
         const msg = JSON.parse(raw.toString());
@@ -225,7 +281,8 @@ export function setupSignalingServer(wss: WebSocketServer) {
         switch (type) {
           case 'get_ice_config':
           case 'request_ice_config': {
-            send(ws, { type: 'ice_config', iceServers: getRuntimeIceServers() });
+            const iceServers = await fetchMeteredIceServers();
+            send(ws, { type: 'ice_config', iceServers });
             break;
           }
 

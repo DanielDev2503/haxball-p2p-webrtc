@@ -75,8 +75,11 @@ export class SignalingClient {
             if (data.type === 'pong') {
               return;
             }
-            if (data.type === 'ice_config' && data.iceServers) {
-              setDynamicIceServers(data.iceServers);
+            if (data.type === 'ice_config') {
+              const servers = data.iceServers || (data.payload && data.payload.iceServers) || (Array.isArray(data.payload) ? data.payload : undefined);
+              if (servers) {
+                setDynamicIceServers(servers);
+              }
             }
             if (this.onMessage) {
               this.onMessage(data);
