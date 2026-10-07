@@ -20,6 +20,9 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
     setDynamicIceServers(null);
     delete process.env.METERED_DOMAIN;
     delete process.env.METERED_API_KEY;
+    delete process.env.VITE_TURN_URL;
+    delete process.env.VITE_TURN_USERNAME;
+    delete process.env.VITE_TURN_CREDENTIAL;
     vi.restoreAllMocks();
   });
 
@@ -39,8 +42,9 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       expect(urls).toContain('stun:stun.l.google.com:19302');
     });
 
-    it('fetches credentials from Metered.ca REST API when env vars are configured', async () => {
-      process.env.METERED_DOMAIN = 'ballhax.metered.ca';
+    it('fetches credentials from Metered.ca REST API and sanitizes domain', async () => {
+      // Probar que sanitiza prefijo https:// y barra diagonal final
+      process.env.METERED_DOMAIN = 'https://ballhax.metered.ca/';
       process.env.METERED_API_KEY = 'secret-api-key-123';
 
       const mockMeteredResponse = [
@@ -55,10 +59,14 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       });
       globalThis.fetch = fetchMock;
 
+      const logSpy = vi.spyOn(console, 'log');
+
       const servers = await fetchMeteredIceServers();
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(fetchMock).toHaveBeenCalledWith('https://ballhax.metered.ca/api/v1/turn/credentials?apiKey=secret-api-key-123');
+      expect(logSpy).toHaveBeenCalledWith('[SignalingServer] Solicitando credenciales ICE a Metered.ca...');
+      expect(logSpy).toHaveBeenCalledWith('[SignalingServer] 3 servidores ICE recibidos de Metered.ca.');
       expect(servers).toEqual(mockMeteredResponse);
     });
 
@@ -133,20 +141,21 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       process.env.METERED_DOMAIN = 'ballhax.metered.ca';
       process.env.METERED_API_KEY = 'invalid-key';
 
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network connection refused'));
 
       const servers = await fetchMeteredIceServers();
       expect(servers).toBeDefined();
       const urls = Array.isArray(servers[0].urls) ? servers[0].urls : [servers[0].urls];
       expect(urls).toContain('stun:stun.l.google.com:19302');
-      expect(warnSpy).toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalled();
     });
 
     it('falls back to public STUN servers when API returns non-200 HTTP status', async () => {
       process.env.METERED_DOMAIN = 'ballhax.metered.ca';
       process.env.METERED_API_KEY = 'invalid-key';
 
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 401,
@@ -157,12 +166,14 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       expect(servers).toBeDefined();
       const urls = Array.isArray(servers[0].urls) ? servers[0].urls : [servers[0].urls];
       expect(urls).toContain('stun:stun.l.google.com:19302');
+      expect(errorSpy).toHaveBeenCalled();
     });
 
     it('falls back to public STUN servers when API returns invalid format', async () => {
       process.env.METERED_DOMAIN = 'ballhax.metered.ca';
       process.env.METERED_API_KEY = 'key';
 
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ error: 'Invalid plan' }) // no es array
@@ -172,6 +183,7 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       expect(servers).toBeDefined();
       const urls = Array.isArray(servers[0].urls) ? servers[0].urls : [servers[0].urls];
       expect(urls).toContain('stun:stun.l.google.com:19302');
+      expect(errorSpy).toHaveBeenCalled();
     });
   });
 
@@ -221,6 +233,7 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
     it('SignalingClient invokes setDynamicIceServers on ice_config message with data.iceServers', async () => {
       let mockSocketInstance: any = null;
       class MockWebSocket {
+        static OPEN = 1;
         public onmessage: ((event: any) => void) | null = null;
         public onopen: (() => void) | null = null;
         public onclose: (() => void) | null = null;
@@ -255,9 +268,10 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       expect(consoleSpy).toHaveBeenCalledWith('[WebRTC] Credenciales TURN activadas desde Metered.ca API.');
     });
 
-    it('SignalingClient invokes setDynamicIceServers on ice_config message with payload.iceServers', async () => {
+    it('SignalingClient whenIceReady resolves upon receiving ice_config and unblocks createRoom/joinRoom', async () => {
       let mockSocketInstance: any = null;
       class MockWebSocket {
+        static OPEN = 1;
         public onmessage: ((event: any) => void) | null = null;
         public onopen: (() => void) | null = null;
         public onclose: (() => void) | null = null;
@@ -276,38 +290,38 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       mockSocketInstance.onopen();
       await connectPromise;
 
-      const testServers = [
-        { urls: 'turn:relay.metered.ca:443', username: 'payload_user', credential: 'payload_pass' }
-      ];
+      let isReadyFired = false;
+      client.whenIceReady.then(() => {
+        isReadyFired = true;
+      });
 
-      const consoleSpy = vi.spyOn(console, 'log');
+      expect(isReadyFired).toBe(false);
+
+      // Emitir ice_config
       mockSocketInstance.onmessage({
         data: JSON.stringify({
           type: 'ice_config',
-          payload: {
-            iceServers: testServers
-          }
+          iceServers: [{ urls: 'turn:relay.metered.ca:80', username: 'u', credential: 'p' }]
         })
       });
 
-      expect(getIceServers()).toEqual(testServers);
-      expect(consoleSpy).toHaveBeenCalledWith('[WebRTC] Credenciales TURN activadas desde Metered.ca API.');
+      await client.whenIceReady;
+      expect(isReadyFired).toBe(true);
+      expect(client.isIceReady).toBe(true);
+
+      // createRoom y joinRoom envían mensajes después de que whenIceReady está resuelto
+      await client.createRoom('Mi Sala');
+      expect(mockSocketInstance.send).toHaveBeenCalled();
     });
 
-    it('PeerConnection prioritizes dynamicIceServers over build-time configuration', () => {
-      const dynamicServers = [
-        { urls: 'turn:relay.metered.ca:80', username: 'dyn_u', credential: 'dyn_p' }
-      ];
-      setDynamicIceServers(dynamicServers);
-
-      // getIceServers con customEnv no debe sobreescribir las credenciales dinámicas
-      const servers = getIceServers({
-        VITE_TURN_URL: 'turn:stale-build-time.com:3478',
-        VITE_TURN_USERNAME: 'stale',
-        VITE_TURN_CREDENTIAL: 'stale'
-      });
-
-      expect(servers).toEqual(dynamicServers);
+    it('getIceServers strictly returns default STUN when dynamicIceServers is null, ignoring static TURN env', () => {
+      setDynamicIceServers(null);
+      const servers = getIceServers();
+      expect(servers).toHaveLength(1);
+      expect(servers[0].urls).toEqual([
+        'stun:stun.l.google.com:19302',
+        'stun:stun1.l.google.com:19302'
+      ]);
     });
 
     it('setDynamicIceServers does not print Metered log if URLs do not contain relay.metered.ca', () => {

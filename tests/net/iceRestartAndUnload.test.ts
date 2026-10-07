@@ -20,23 +20,14 @@ describe('ICE Servers Configuration & ExpressTURN', () => {
     ]);
   });
 
-  it('correctly constructs STUN and TURN server configuration with credentials', () => {
+  it('returns default Google STUN servers and ignores static TURN env vars', () => {
     setDynamicIceServers(null);
-    const servers = getIceServers({
-      VITE_STUN_URLS: 'stun:stun.custom.com:3478, stun:stun.fallback.com:3478',
-      VITE_TURN_URL: 'turn:relay.expressturn.com:3478',
-      VITE_TURN_USERNAME: '000000002106610545',
-      VITE_TURN_CREDENTIAL: 'ETT5qfFtieoY5iTpdrs0Ak02YUU='
-    });
-
-    expect(servers).toHaveLength(2);
+    const servers = getIceServers();
+    expect(servers).toHaveLength(1);
     expect(servers[0].urls).toEqual([
-      'stun:stun.custom.com:3478',
-      'stun:stun.fallback.com:3478'
+      'stun:stun.l.google.com:19302',
+      'stun:stun1.l.google.com:19302'
     ]);
-    expect(servers[1].urls).toEqual(['turn:relay.expressturn.com:3478']);
-    expect(servers[1].username).toBe('000000002106610545');
-    expect(servers[1].credential).toBe('ETT5qfFtieoY5iTpdrs0Ak02YUU=');
   });
 
   it('parses comma-separated ICE URLs with trim and empty filtering', () => {
@@ -58,7 +49,7 @@ describe('ICE Servers Configuration & ExpressTURN', () => {
 
     // Resetting dynamic servers returns to default config
     setDynamicIceServers(null);
-    expect(getIceServers({})[0].urls).toEqual(DEFAULT_STUN_SERVERS);
+    expect(getIceServers()[0].urls).toEqual(DEFAULT_STUN_SERVERS);
   });
 
   it('getRuntimeIceServers reads environment variables with fallback', () => {

@@ -966,6 +966,7 @@ export class GameApp {
       }
     }
 
+    await this.signaling.whenIceReady;
     this.signaling.createRoom(this.roomConfig, undefined, this.localPlayer.name);
     this.updateTeamLists();
   }
@@ -1003,6 +1004,7 @@ export class GameApp {
       }
     }
 
+    await this.signaling.whenIceReady;
     this.lobby.setConnectingStep(1, 'Solicitando unirse a la sala...');
 
     // Iniciar temporizador de unión resiliente (15 segundos)
@@ -1137,6 +1139,7 @@ export class GameApp {
       console.warn(`[Host] Peer ${peerId} ya posee una conexión activa. Ignorando.`);
       return;
     }
+    await this.signaling.whenIceReady;
     const peer = new PeerConnection(peerId, true, { signalingClient: this.signaling });
     this.peers.set(peerId, peer);
 
@@ -1353,6 +1356,7 @@ export class GameApp {
       return;
     }
 
+    await this.signaling.whenIceReady;
     const peer = new PeerConnection(senderId, false, { signalingClient: this.signaling });
     this.hostPeer = peer;
 
@@ -2116,6 +2120,7 @@ export class GameApp {
   }
 
   public async joinRoom(roomId: string, password?: string): Promise<boolean> {
+    await this.signaling.whenIceReady;
     const nick = this.localPlayer.name || NicknameGatekeeper.getSavedNickname() || 'Player';
     return this.startAsClient(nick, roomId, password);
   }

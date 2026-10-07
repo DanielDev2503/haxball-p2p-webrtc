@@ -65,27 +65,29 @@ export async function fetchMeteredIceServers(): Promise<RTCIceServer[]> {
     return cachedIceServers;
   }
 
-  const domain = process.env.METERED_DOMAIN?.trim();
+  const cleanDomain = (process.env.METERED_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
   const apiKey = process.env.METERED_API_KEY?.trim();
 
-  if (domain && apiKey) {
+  if (cleanDomain && apiKey) {
     try {
-      const url = `https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`;
+      console.log('[SignalingServer] Solicitando credenciales ICE a Metered.ca...');
+      const url = `https://${cleanDomain}/api/v1/turn/credentials?apiKey=${apiKey}`;
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
           cachedIceServers = data as RTCIceServer[];
           cacheExpiryTime = Date.now() + 12 * 60 * 60 * 1000;
+          console.log(`[SignalingServer] ${cachedIceServers.length} servidores ICE recibidos de Metered.ca.`);
           return cachedIceServers;
         } else {
-          console.warn('[SignalingServer] Metered API devolvió un arreglo vacío o formato inválido:', data);
+          console.error('[SignalingServer] Error obteniendo credenciales de Metered: respuesta inválida o arreglo vacío');
         }
       } else {
-        console.warn(`[SignalingServer] Error HTTP al consultar Metered API (${response.status}): ${response.statusText}`);
+        console.error(`[SignalingServer] Error obteniendo credenciales de Metered: HTTP ${response.status} ${response.statusText}`);
       }
-    } catch (err) {
-      console.warn('[SignalingServer] Error al consultar API REST de Metered.ca:', err);
+    } catch (error) {
+      console.error('[SignalingServer] Error obteniendo credenciales de Metered:', error);
     }
   }
 
@@ -98,6 +100,11 @@ export function resetCachedIceServers(): void {
 }
 
 export function setupSignalingServer(wss: WebSocketServer) {
+  // Pre-calentar caché de credenciales Metered.ca
+  fetchMeteredIceServers().catch((error) => {
+    console.error('[SignalingServer] Error obteniendo credenciales de Metered:', error);
+  });
+
   const rooms = new Map<string, Room>();
   const peerToRoom = new Map<string, string>();
   const pendingPeerToRoom = new Map<string, string>();
@@ -244,7 +251,7 @@ export function setupSignalingServer(wss: WebSocketServer) {
     ws.isAlive = true;
     let currentPeerId = '';
 
-    // Enviar configuración de servidores ICE (Metered dinámico o STUN fallback) inmediatamente al conectar
+    // Enviar inmediatamente ice_config como el primer mensaje hacia el cliente
     try {
       const iceServers = await fetchMeteredIceServers();
       if (socket.readyState === WebSocket.OPEN) {
@@ -254,7 +261,7 @@ export function setupSignalingServer(wss: WebSocketServer) {
         }));
       }
     } catch (err) {
-      console.warn('[SignalingServer] Error enviando ice_config inicial:', err);
+      console.error('[SignalingServer] Error obteniendo credenciales de Metered:', err);
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
           type: 'ice_config',

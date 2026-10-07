@@ -107,39 +107,15 @@ function getViteEnv(): Partial<ImportMetaEnv> | undefined {
 }
 
 /**
- * Construye la lista de servidores ICE a partir de las variables de entorno de Vite
- * (STUN y TURN / ExpressTURN) y servidores adicionales de runtime.
+ * Construye la lista de servidores ICE:
+ * Utiliza prioritariamente las credenciales dinámicas de Metered.ca (ice_config).
+ * Si no están presentes, recurre exclusivamente a los servidores STUN públicos por defecto.
  */
-export function getIceServers(customEnv?: Record<string, string | undefined>): RTCIceServer[] {
+export function getIceServers(_customEnv?: Record<string, string | undefined>): RTCIceServer[] {
   if (dynamicIceServers && dynamicIceServers.length > 0) {
     return dynamicIceServers;
   }
-  const env = customEnv ?? (typeof import.meta !== 'undefined' ? import.meta.env : undefined);
-  const stunUrls = parseIceUrls(
-    env?.VITE_STUN_URLS,
-    DEFAULT_STUN_SERVERS
-  );
-
-  const servers: RTCIceServer[] = [{ urls: stunUrls }];
-
-  const turnUrl = env?.VITE_TURN_URL;
-  const turnUsername = env?.VITE_TURN_USERNAME;
-  const turnCredential = env?.VITE_TURN_CREDENTIAL;
-
-  if (turnUrl && turnUsername && turnCredential) {
-    const turnUrls = parseIceUrls(String(turnUrl), []);
-    if (turnUrls.length > 0) {
-      servers.push({
-        urls: turnUrls,
-        username: String(turnUsername).trim(),
-        credential: String(turnCredential).trim()
-      });
-    }
-  }
-
-
-
-  return servers;
+  return [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
 }
 
 /** Lista balanceada STUN + TURN (alias para compatibilidad con código existente). */
