@@ -75,13 +75,17 @@ export function readEnvTurnServers(env: Partial<ImportMetaEnv> | undefined = get
   if (!env) return [];
   const servers: RTCIceServer[] = [];
 
-  const turnUrl = env.VITE_TURN_URL ? String(env.VITE_TURN_URL).trim() : '';
-  if (turnUrl) {
-    const urls = turnUrl.split(',').map((u: string) => u.trim()).filter(Boolean);
-    const server: RTCIceServer = { urls: urls.length === 1 ? urls[0] : urls };
-    if (env.VITE_TURN_USERNAME) server.username = String(env.VITE_TURN_USERNAME);
-    if (env.VITE_TURN_CREDENTIAL) server.credential = String(env.VITE_TURN_CREDENTIAL);
-    servers.push(server);
+  const turnUser = env.VITE_TURN_USERNAME || (env as any).TURN_USERNAME;
+  const turnPass = env.VITE_TURN_CREDENTIAL || (env as any).TURN_CREDENTIAL;
+  const turnUrl = env.VITE_TURN_URL || (env as any).TURN_URL || (turnUser && turnPass ? 'turn:relay.metered.ca:80,turn:relay.metered.ca:443,turn:relay.metered.ca:443?transport=tcp' : '');
+
+  if (turnUrl && turnUser && turnPass) {
+    const urls = String(turnUrl).split(',').map((u: string) => u.trim()).filter(Boolean);
+    servers.push({
+      urls: urls.length === 1 ? urls[0] : urls,
+      username: String(turnUser).trim(),
+      credential: String(turnPass).trim()
+    });
   }
 
   const legacyJson = env.VITE_TURN_SERVERS?.trim();

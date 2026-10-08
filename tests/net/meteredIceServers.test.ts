@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   fetchMeteredIceServers,
   resetCachedIceServers,
+  getRuntimeIceServers,
   setupSignalingServer
 } from '../../src/server/signalingServer';
 import {
@@ -64,9 +65,9 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       const servers = await fetchMeteredIceServers();
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(fetchMock).toHaveBeenCalledWith('https://ballhax.metered.ca/api/v1/turn/credentials?apiKey=secret-api-key-123');
-      expect(logSpy).toHaveBeenCalledWith('[SignalingServer] Solicitando credenciales ICE a Metered.ca...');
-      expect(logSpy).toHaveBeenCalledWith('[SignalingServer] 3 servidores ICE recibidos de Metered.ca.');
+      expect(fetchMock).toHaveBeenCalledWith('https://ballhax.metered.ca/api/v1/turn/credentials?apiKey=secret-api-key-123', expect.any(Object));
+      expect(logSpy).toHaveBeenCalledWith('[Metered] Solicitando credenciales ICE a Metered.ca...');
+      expect(logSpy).toHaveBeenCalledWith('[Metered] 3 servidores ICE recibidos de Metered.ca.');
       expect(servers).toEqual(mockMeteredResponse);
     });
 
@@ -137,6 +138,13 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    it('warns and verifies contingency static credentials when domain or apiKey is missing', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const servers = await fetchMeteredIceServers();
+      expect(warnSpy).toHaveBeenCalledWith('[Metered] Variables de API no encontradas. Verificando credenciales estáticas de contingencia...');
+      expect(servers).toBeDefined();
+    });
+
     it('falls back to public STUN servers when fetch fails with network error', async () => {
       process.env.METERED_DOMAIN = 'ballhax.metered.ca';
       process.env.METERED_API_KEY = 'invalid-key';
@@ -159,14 +167,15 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 401,
-        statusText: 'Unauthorized'
+        statusText: 'Unauthorized',
+        text: async () => 'Invalid credentials'
       });
 
       const servers = await fetchMeteredIceServers();
       expect(servers).toBeDefined();
       const urls = Array.isArray(servers[0].urls) ? servers[0].urls : [servers[0].urls];
       expect(urls).toContain('stun:stun.l.google.com:19302');
-      expect(errorSpy).toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith('[Metered] Error de API: Status 401 - Invalid credentials');
     });
 
     it('falls back to public STUN servers when API returns invalid format', async () => {
@@ -268,7 +277,7 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       expect(consoleSpy).toHaveBeenCalledWith('[WebRTC] Credenciales TURN activadas desde Metered.ca API.');
     });
 
-    it('SignalingClient whenIceReady resolves upon receiving ice_config and unblocks createRoom/joinRoom', async () => {
+    it('SignalingClient iceConfigReady resolves upon receiving ice_config and unblocks createRoom/joinRoom', async () => {
       let mockSocketInstance: any = null;
       class MockWebSocket {
         static OPEN = 1;
@@ -291,7 +300,7 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
       await connectPromise;
 
       let isReadyFired = false;
-      client.whenIceReady.then(() => {
+      client.iceConfigReady.then(() => {
         isReadyFired = true;
       });
 
@@ -305,11 +314,11 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
         })
       });
 
-      await client.whenIceReady;
+      await client.iceConfigReady;
       expect(isReadyFired).toBe(true);
       expect(client.isIceReady).toBe(true);
 
-      // createRoom y joinRoom envían mensajes después de que whenIceReady está resuelto
+      // createRoom y joinRoom envían mensajes después de que iceConfigReady está resuelto
       await client.createRoom('Mi Sala');
       expect(mockSocketInstance.send).toHaveBeenCalled();
     });
@@ -322,6 +331,20 @@ describe('Metered.ca REST API Integration & Dynamic ICE Caching', () => {
         'stun:stun.l.google.com:19302',
         'stun:stun1.l.google.com:19302'
       ]);
+    });
+
+    it('getRuntimeIceServers includes static contingency TURN servers when credentials exist', () => {
+      process.env.VITE_TURN_USERNAME = 'contingency_user';
+      process.env.VITE_TURN_CREDENTIAL = 'contingency_pass';
+
+      const servers = getRuntimeIceServers();
+      expect(servers).toHaveLength(2);
+      expect(servers[0].urls).toEqual([
+        'stun:stun.l.google.com:19302',
+        'stun:stun1.l.google.com:19302'
+      ]);
+      expect(servers[1].username).toBe('contingency_user');
+      expect(servers[1].credential).toBe('contingency_pass');
     });
 
     it('setDynamicIceServers does not print Metered log if URLs do not contain relay.metered.ca', () => {

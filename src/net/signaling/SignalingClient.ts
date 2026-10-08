@@ -24,9 +24,12 @@ export class SignalingClient {
   public serverUrl: string;
   public isConnected: boolean = false;
   public isIceReady: boolean = false;
+  public iceConfigReady: Promise<void>;
+  private iceConfigReadyResolve!: () => void;
 
-  public whenIceReady: Promise<void>;
-  private iceReadyResolve!: () => void;
+  public get whenIceReady(): Promise<void> {
+    return this.iceConfigReady;
+  }
 
   public onMessage?: (msg: SignalingMessage) => void;
   public onOpen?: () => void;
@@ -53,8 +56,8 @@ export class SignalingClient {
       this.serverUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SIGNALING_URL) || defaultWsUrl;
     }
     this.peerId = 'peer_' + Math.random().toString(36).substring(2, 9);
-    this.whenIceReady = new Promise<void>((resolve) => {
-      this.iceReadyResolve = () => {
+    this.iceConfigReady = new Promise<void>((resolve) => {
+      this.iceConfigReadyResolve = () => {
         this.isIceReady = true;
         resolve();
       };
@@ -93,12 +96,12 @@ export class SignalingClient {
               return;
             }
             if (data.type === 'ice_config') {
-              const servers = data.iceServers || (data.payload && data.payload.iceServers) || (Array.isArray(data.payload) ? data.payload : undefined);
+              const servers = (data.payload && data.payload.iceServers) || data.iceServers || (Array.isArray(data.payload) ? data.payload : undefined);
               if (servers) {
                 setDynamicIceServers(servers);
               }
-              if (this.iceReadyResolve) {
-                this.iceReadyResolve();
+              if (this.iceConfigReadyResolve) {
+                this.iceConfigReadyResolve();
               }
             }
             if (this.onMessage) {
@@ -196,7 +199,7 @@ export class SignalingClient {
   }
 
   public async createRoom(roomConfig: string | { name: string; maxPlayers?: number; isPrivate?: boolean; password?: string | undefined; timeLimit?: number; scoreLimit?: number; teamsLocked?: boolean }, roomId?: string, nickname?: string): Promise<void> {
-    await this.whenIceReady;
+    await this.iceConfigReady;
     if (typeof roomConfig === 'string') {
       this.send({ type: 'create_room', roomName: roomConfig, roomId, nickname });
     } else {
@@ -205,7 +208,7 @@ export class SignalingClient {
   }
 
   public async joinRoom(roomId: string, password?: string, nickname?: string): Promise<void> {
-    await this.whenIceReady;
+    await this.iceConfigReady;
     this.send({ type: 'join_room', roomId, password, nickname });
   }
 

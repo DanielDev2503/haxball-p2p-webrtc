@@ -42,9 +42,9 @@ export function getRuntimeIceServers(): RTCIceServer[] {
 
   const servers: RTCIceServer[] = [{ urls: stunUrls }];
 
-  const turnUrl = process.env.VITE_TURN_URL || process.env.TURN_URL;
-  const turnUser = process.env.VITE_TURN_USERNAME || process.env.TURN_USERNAME;
-  const turnPass = process.env.VITE_TURN_CREDENTIAL || process.env.TURN_CREDENTIAL;
+  const turnUser = process.env.METERED_TURN_USERNAME || process.env.TURN_USERNAME || process.env.VITE_TURN_USERNAME;
+  const turnPass = process.env.METERED_TURN_CREDENTIAL || process.env.TURN_CREDENTIAL || process.env.VITE_TURN_CREDENTIAL;
+  const turnUrl = process.env.METERED_TURN_URL || process.env.TURN_URL || process.env.VITE_TURN_URL || (turnUser && turnPass ? 'turn:relay.metered.ca:80,turn:relay.metered.ca:443,turn:relay.metered.ca:443?transport=tcp' : undefined);
 
   if (turnUrl && turnUser && turnPass) {
     servers.push({
@@ -65,30 +65,40 @@ export async function fetchMeteredIceServers(): Promise<RTCIceServer[]> {
     return cachedIceServers;
   }
 
-  const cleanDomain = (process.env.METERED_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const apiKey = process.env.METERED_API_KEY?.trim();
+  const rawDomain = process.env.METERED_DOMAIN || '';
+  const cleanDomain = rawDomain.replace(/^https?:\/\//i, '').replace(/\/+$/, '').trim();
+  const apiKey = (process.env.METERED_API_KEY || '').trim();
 
-  if (cleanDomain && apiKey) {
-    try {
-      console.log('[SignalingServer] Solicitando credenciales ICE a Metered.ca...');
-      const url = `https://${cleanDomain}/api/v1/turn/credentials?apiKey=${apiKey}`;
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data) && data.length > 0) {
-          cachedIceServers = data as RTCIceServer[];
-          cacheExpiryTime = Date.now() + 12 * 60 * 60 * 1000;
-          console.log(`[SignalingServer] ${cachedIceServers.length} servidores ICE recibidos de Metered.ca.`);
-          return cachedIceServers;
-        } else {
-          console.error('[SignalingServer] Error obteniendo credenciales de Metered: respuesta inválida o arreglo vacío');
-        }
+  if (!cleanDomain || !apiKey) {
+    console.warn('[Metered] Variables de API no encontradas. Verificando credenciales estáticas de contingencia...');
+    return getRuntimeIceServers();
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    console.log('[Metered] Solicitando credenciales ICE a Metered.ca...');
+    const url = `https://${cleanDomain}/api/v1/turn/credentials?apiKey=${apiKey}`;
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data) && data.length > 0) {
+        cachedIceServers = data as RTCIceServer[];
+        cacheExpiryTime = Date.now() + 12 * 60 * 60 * 1000;
+        console.log(`[Metered] ${cachedIceServers.length} servidores ICE recibidos de Metered.ca.`);
+        return cachedIceServers;
       } else {
-        console.error(`[SignalingServer] Error obteniendo credenciales de Metered: HTTP ${response.status} ${response.statusText}`);
+        console.error('[Metered] Error de API: respuesta inválida o arreglo vacío');
       }
-    } catch (error) {
-      console.error('[SignalingServer] Error obteniendo credenciales de Metered:', error);
+    } else {
+      console.error(`[Metered] Error de API: Status ${response.status} - ${await response.text()}`);
     }
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.error('[Metered] Error obteniendo credenciales de Metered:', error);
   }
 
   return getRuntimeIceServers();
@@ -102,7 +112,7 @@ export function resetCachedIceServers(): void {
 export function setupSignalingServer(wss: WebSocketServer) {
   // Pre-calentar caché de credenciales Metered.ca
   fetchMeteredIceServers().catch((error) => {
-    console.error('[SignalingServer] Error obteniendo credenciales de Metered:', error);
+    console.error('[Metered] Error obteniendo credenciales de Metered:', error);
   });
 
   const rooms = new Map<string, Room>();
@@ -261,7 +271,7 @@ export function setupSignalingServer(wss: WebSocketServer) {
         }));
       }
     } catch (err) {
-      console.error('[SignalingServer] Error obteniendo credenciales de Metered:', err);
+      console.error('[Metered] Error obteniendo credenciales de Metered:', err);
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({
           type: 'ice_config',
