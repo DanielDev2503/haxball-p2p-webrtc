@@ -128,21 +128,32 @@ export class PhysicsWorld {
     this.goalNets = [leftNet, rightNet];
   }
 
+  public get goalNetLeft(): GoalNet | undefined {
+    return this.goalNets[0];
+  }
+
+  public get goalNetRight(): GoalNet | undefined {
+    return this.goalNets[1];
+  }
+
   /**
    * Advances the simulation by fixedDt using adaptive substepping.
    * Calculates maximum displacement to guarantee no fast-moving disc
    * tunnels through another disc or segment in a single sub-step.
    * Enforces N >= 4 kinematic substeps whenever Dash is active.
+   *
+   * @param dt Integration step time in seconds (defaults to this.fixedDt)
+   * @param isReplay When true, bypasses expensive cloth mass-spring GoalNet simulation during prediction replay
    */
-  public step(isDashActive?: boolean): void {
-    const dt = this.fixedDt;
+  public step(dt: number = this.fixedDt, isReplay: boolean = false): void {
+    const actualDt = typeof dt === 'number' && dt > 0 ? dt : this.fixedDt;
     const discCount = this.discs.length;
     const segCount = this.segments.length;
 
     // 1. Calculate maximum velocity among dynamic discs to determine substepping
     let maxSpeedSq = 0;
     let minRadius = 10;
-    let hasDashingDisc = Boolean(isDashActive);
+    let hasDashingDisc = false;
 
     for (let i = 0; i < discCount; i++) {
       const d = this.discs[i];
@@ -161,7 +172,7 @@ export class PhysicsWorld {
     }
 
     const maxSpeed = Math.sqrt(maxSpeedSq);
-    const maxDisplacement = maxSpeed * dt;
+    const maxDisplacement = maxSpeed * actualDt;
 
     // Critical step threshold: no movement larger than half the smallest radius
     const criticalThreshold = minRadius * 0.45;
@@ -169,7 +180,7 @@ export class PhysicsWorld {
     // Garantizar al menos N >= 4 subiteraciones en ticks con Dash activo para prevenir tunelización
     const minSubsteps = hasDashingDisc ? 4 : 1;
     const substeps = clamp(neededSubsteps, minSubsteps, Math.max(this.maxSubsteps, minSubsteps));
-    const subDt = dt / substeps;
+    const subDt = actualDt / substeps;
 
     // 2. Perform substepping simulation
     for (let s = 0; s < substeps; s++) {
@@ -216,19 +227,22 @@ export class PhysicsWorld {
     }
 
     // Step cloth mass-spring simulation on goal nets
-    if (this.goalNets.length > 0) {
-      let ball: Disc | undefined;
-      for (let i = 0; i < discCount; i++) {
-        if (this.discs[i].isBall) {
-          ball = this.discs[i];
-          break;
+    // Bypassed completely if isReplay === true to prevent CPU bottlenecks during reconciliation
+    if (!isReplay) {
+      if (this.goalNets.length > 0) {
+        let ball: Disc | undefined;
+        for (let i = 0; i < discCount; i++) {
+          if (this.discs[i].isBall) {
+            ball = this.discs[i];
+            break;
+          }
         }
-      }
-      for (let i = 0; i < this.goalNets.length; i++) {
-        const net = this.goalNets[i];
-        net.step(dt);
-        if (ball) {
-          net.checkBallCollision(ball);
+        for (let i = 0; i < this.goalNets.length; i++) {
+          const net = this.goalNets[i];
+          net.step(actualDt);
+          if (ball) {
+            net.checkBallCollision(ball);
+          }
         }
       }
     }

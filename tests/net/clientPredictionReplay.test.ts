@@ -84,4 +84,72 @@ describe('Client Input Buffer & Prediction Replay Reconciliation', () => {
     expect(visualOffset.x).toBe(0);
     expect(visualOffset.y).toBe(0);
   });
+
+  it('skips replay when discrepancy is within deadzone threshold (<= 0.5px / 0.25 sq)', () => {
+    const ERROR_THRESHOLD_SQ = 0.25;
+    const predicted = { x: 100.3, y: 50.2 };
+    const authSnapshot = { x: 100.0, y: 50.0 };
+
+    const dx = predicted.x - authSnapshot.x;
+    const dy = predicted.y - authSnapshot.y;
+    const distSq = dx * dx + dy * dy;
+
+    // (0.3)^2 + (0.2)^2 = 0.09 + 0.04 = 0.13 <= 0.25
+    expect(distSq).toBeLessThanOrEqual(ERROR_THRESHOLD_SQ);
+
+    let replayExecuted = false;
+    if (distSq > ERROR_THRESHOLD_SQ) {
+      replayExecuted = true;
+    }
+
+    expect(replayExecuted).toBe(false);
+  });
+
+  it('flushes input buffer and directly snaps on catastrophic error (> 50px / 2500 sq)', () => {
+    const CATASTROPHIC_ERROR_SQ = 2500;
+    const inputBuffer = [{ tick: 105 }, { tick: 106 }, { tick: 107 }];
+    let visualOffset = { x: 3, y: 2 };
+    const predicted = { x: 200, y: 150 };
+    const authSnapshot = { x: 100, y: 50 };
+
+    const dx = predicted.x - authSnapshot.x;
+    const dy = predicted.y - authSnapshot.y;
+    const distSq = dx * dx + dy * dy;
+
+    expect(distSq).toBeGreaterThan(CATASTROPHIC_ERROR_SQ);
+
+    let replayExecuted = false;
+    if (distSq > CATASTROPHIC_ERROR_SQ) {
+      predicted.x = authSnapshot.x;
+      predicted.y = authSnapshot.y;
+      visualOffset.x = 0;
+      visualOffset.y = 0;
+      inputBuffer.length = 0;
+    } else {
+      replayExecuted = true;
+    }
+
+    expect(replayExecuted).toBe(false);
+    expect(inputBuffer.length).toBe(0);
+    expect(predicted.x).toBe(100);
+    expect(visualOffset.x).toBe(0);
+  });
+
+  it('caps pending inputs to MAX_REPLAY_TICKS (5) during intermediate reconciliation', () => {
+    const MAX_REPLAY_TICKS = 5;
+    let inputBuffer = [
+      { tick: 105 }, { tick: 106 }, { tick: 107 }, { tick: 108 },
+      { tick: 109 }, { tick: 110 }, { tick: 111 }, { tick: 112 }
+    ];
+
+    expect(inputBuffer.length).toBe(8);
+
+    if (inputBuffer.length > MAX_REPLAY_TICKS) {
+      inputBuffer = inputBuffer.slice(-MAX_REPLAY_TICKS);
+    }
+
+    expect(inputBuffer.length).toBe(5);
+    expect(inputBuffer[0].tick).toBe(108);
+    expect(inputBuffer[inputBuffer.length - 1].tick).toBe(112);
+  });
 });

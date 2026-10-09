@@ -2,14 +2,36 @@ import { Stadium } from '../core/entities/Stadium';
 import { $theme } from '../ui/stores/gameStore';
 
 export class PitchRenderer {
-  public draw(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
-    this.render(ctx, stadium);
+  public cachedCanvas: HTMLCanvasElement | null = null;
+  private cachedCtx: CanvasRenderingContext2D | null = null;
+  private cachedTheme: string | null = null;
+  public cachedStadium: Stadium | null = null;
+  private cachedWidth: number = 0;
+  private cachedHeight: number = 0;
+  private cachedGoalSize: number = 0;
+
+  public invalidateCache(): void {
+    this.cachedCanvas = null;
+    this.cachedCtx = null;
+    this.cachedStadium = null;
   }
 
-  public renderPitch(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
-    const isDark = $theme.get() === 'dark';
-    const width = stadium.width ?? (stadium.halfWidth * 2);
-    const height = stadium.height ?? (stadium.halfHeight * 2);
+  public resize(): void {
+    this.invalidateCache();
+  }
+
+  private buildCachedCanvas(stadium: Stadium, width: number, height: number, isDark: boolean): void {
+    if (typeof document === 'undefined') return;
+
+    if (!this.cachedCanvas) {
+      this.cachedCanvas = document.createElement('canvas');
+    }
+    this.cachedCanvas.width = width;
+    this.cachedCanvas.height = height;
+    this.cachedCtx = this.cachedCanvas.getContext('2d');
+    if (!this.cachedCtx) return;
+
+    const ctx = this.cachedCtx;
     const hw = width / 2;
     const hh = height / 2;
     const goalSize = stadium.goals[0]?.size ?? (stadium.goalSize ?? (stadium.goalHalfHeight * 2));
@@ -19,6 +41,8 @@ export class PitchRenderer {
     const penaltyAreaHeight = gh * 3;
 
     ctx.save();
+    // Centrar coordenadas para que (-hw, -hh) corresponda al origen (0, 0) del lienzo fuera de pantalla
+    ctx.translate(hw, hh);
 
     // 1. Césped según el Tema
     const pitchGrad = ctx.createLinearGradient(0, -hh, 0, hh);
@@ -83,10 +107,9 @@ export class PitchRenderer {
     ctx.stroke();
     ctx.restore();
 
-    // 4. Líneas de Marcación Técnicas: Modo Claro (#0EA5E9) vs Modo Oscuro (rgba(0, 229, 255, 0.45))
+    // 4. Líneas de Marcación Técnicas (concentric stroke sin shadowBlur por CPU)
     ctx.save();
     const lineColor = isDark ? 'rgba(0, 229, 255, 0.45)' : '#0EA5E9';
-    const shadowColor = isDark ? 'rgba(0, 229, 255, 0.35)' : 'rgba(14, 165, 233, 0.25)';
     const dotColor = isDark ? '#00E5FF' : '#0EA5E9';
     const dashLineColor = isDark ? 'rgba(0, 229, 255, 0.45)' : 'rgba(14, 165, 233, 0.5)';
 
@@ -94,8 +117,6 @@ export class PitchRenderer {
     ctx.lineWidth = 3.0;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.shadowColor = shadowColor;
-    ctx.shadowBlur = 4;
 
     // Perímetro reglamentario con bocas de portería abiertas hacia la red dinámica GoalNet
     ctx.beginPath();
@@ -148,8 +169,38 @@ export class PitchRenderer {
     ctx.lineTo(hw, gh);
     ctx.stroke();
 
-    ctx.restore(); // Restaura sombras y dash
-    ctx.restore(); // Restaura save principal del césped
+    ctx.restore();
+    ctx.restore();
+  }
+
+  public renderPitch(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
+    const isDark = $theme.get() === 'dark';
+    const width = stadium.width ?? (stadium.halfWidth * 2);
+    const height = stadium.height ?? (stadium.halfHeight * 2);
+    const goalSize = stadium.goals[0]?.size ?? (stadium.goalSize ?? (stadium.goalHalfHeight * 2));
+    const hw = width / 2;
+    const hh = height / 2;
+    const currentTheme = isDark ? 'dark' : 'light';
+
+    if (
+      !this.cachedCanvas ||
+      this.cachedStadium !== stadium ||
+      this.cachedWidth !== width ||
+      this.cachedHeight !== height ||
+      this.cachedGoalSize !== goalSize ||
+      this.cachedTheme !== currentTheme
+    ) {
+      this.buildCachedCanvas(stadium, width, height, isDark);
+      this.cachedStadium = stadium;
+      this.cachedWidth = width;
+      this.cachedHeight = height;
+      this.cachedGoalSize = goalSize;
+      this.cachedTheme = currentTheme;
+    }
+
+    if (this.cachedCanvas) {
+      ctx.drawImage(this.cachedCanvas, -hw, -hh);
+    }
   }
 
   public renderPosts(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
@@ -159,26 +210,37 @@ export class PitchRenderer {
     }
   }
 
-  public render(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
-    this.renderPitch(ctx, stadium);
-    this.renderPosts(ctx, stadium);
+  public draw(ctx: CanvasRenderingContext2D, stadium: Stadium): void {
+    this.render(ctx, stadium);
   }
 
+  public render(ctx: CanvasRenderingContext2D, stadium?: Stadium): void {
+    const currentStadium = stadium ?? this.cachedStadium;
+    if (currentStadium) {
+      this.renderPitch(ctx, currentStadium);
+      this.renderPosts(ctx, currentStadium);
+    } else if (this.cachedCanvas) {
+      ctx.drawImage(this.cachedCanvas, 0, 0);
+    }
+  }
 
   private renderPost(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
     ctx.save();
     const isLeft = x < 0;
-    const haloColor = isLeft ? 'rgba(255, 0, 85, 0.5)' : 'rgba(0, 229, 255, 0.5)';
+    const haloColor = isLeft ? 'rgba(255, 0, 85, 0.4)' : 'rgba(0, 229, 255, 0.4)';
 
-    // Sombra proyectada difusa sobre césped blanco
+    // Sombra proyectada difusa sobre césped
     ctx.fillStyle = 'rgba(15, 23, 42, 0.25)';
     ctx.beginPath();
     ctx.arc(x + 2, y + 2, r, 0, Math.PI * 2);
     ctx.fill();
 
-    // Halo perimetral del poste con color de la portería
-    ctx.shadowColor = haloColor;
-    ctx.shadowBlur = 8;
+    // Halo perimetral concéntrico con canal alfa estático (sin shadowBlur por software)
+    ctx.strokeStyle = haloColor;
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.arc(x, y, r + 1, 0, Math.PI * 2);
+    ctx.stroke();
 
     // Gradiente metálico esférico 3D con brillo especular nítido
     const grad = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, 1, x, y, r);
@@ -198,4 +260,3 @@ export class PitchRenderer {
     ctx.restore();
   }
 }
-

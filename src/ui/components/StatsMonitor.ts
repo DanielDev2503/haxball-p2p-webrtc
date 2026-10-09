@@ -9,6 +9,16 @@ export class StatsMonitor {
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
 
+  public get pingElement(): HTMLElement | null {
+    return this.pingEl;
+  }
+  public get fpsElement(): HTMLElement | null {
+    return this.fpsEl;
+  }
+
+  private lastDomUpdate = 0;
+  private readonly UPDATE_INTERVAL_MS = 250; // 4 Hz
+
   // Buffer circular estático prealocado de 40 muestras para Cero Alocaciones en 60 Hz
   public readonly capacity: number = 40;
   public readonly samples: Float32Array = new Float32Array(40);
@@ -85,6 +95,7 @@ export class StatsMonitor {
   /**
    * Actualiza las métricas y dibuja el sparkline en el canvas de 110x28.
    * CERO alocaciones en bucle caliente de 60 Hz.
+   * Modificaciones DOM desacopladas y estranguladas a 4 Hz (250 ms) para prevenir Layout Thrashing.
    */
   public update(pingMs: number, fps: number, sampleVal?: number): void {
     this.currentPing = pingMs;
@@ -110,12 +121,12 @@ export class StatsMonitor {
     this.head = (this.head + 1) % this.capacity;
     if (this.count < this.capacity) this.count++;
 
-    // Actualizar textos de estado
-    if (this.pingEl) {
-      this.pingEl.textContent = `Ping: ${Math.round(this.currentPing)}ms - ${Math.round(this.cachedAvgPing)}ms`;
-    }
-    if (this.fpsEl) {
-      this.fpsEl.textContent = `Fps: ${Math.round(this.currentFps)}`;
+    // Desacoplar y estrangular mutación de elementos HTML del bucle de renderizado (4 Hz / 250ms)
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - this.lastDomUpdate >= this.UPDATE_INTERVAL_MS) {
+      this.lastDomUpdate = now;
+      if (this.fpsEl) this.fpsEl.textContent = `Fps: ${Math.round(this.currentFps)}`;
+      if (this.pingEl) this.pingEl.textContent = `Ping: ${Math.round(this.currentPing)}ms - ${Math.round(this.cachedAvgPing)}ms`;
     }
 
     this.drawSparkline();

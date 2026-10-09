@@ -248,7 +248,6 @@ export class DiscRenderer {
       if (count < 2) continue;
 
       const isRed = buf.team === 1;
-      const teamColor = isRed ? '#FF0055' : '#00E5FF';
       const neonPrefix = isRed ? 'rgba(255, 0, 85, ' : 'rgba(0, 229, 255, ';
 
       // Calcular vértices del ribbon usando buffers prealocados (Zero GC)
@@ -317,8 +316,6 @@ export class DiscRenderer {
       grad.addColorStop(1, `${neonPrefix}0)`);
 
       ctx.fillStyle = grad;
-      ctx.shadowBlur = 14;
-      ctx.shadowColor = teamColor;
       ctx.fill();
       ctx.restore();
 
@@ -340,8 +337,6 @@ export class DiscRenderer {
       coreGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
 
       ctx.fillStyle = coreGrad;
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = '#FFFFFF';
       ctx.fill();
       ctx.restore();
     }
@@ -385,8 +380,6 @@ export class DiscRenderer {
         ctx.save();
         ctx.globalAlpha = ghost.alpha;
         ctx.fillStyle = ghost.color;
-        ctx.shadowColor = ghost.color;
-        ctx.shadowBlur = 10;
         ctx.beginPath();
         ctx.arc(ghost.x, ghost.y, ghost.radius * 0.96, 0, Math.PI * 2);
         ctx.fill();
@@ -438,13 +431,10 @@ export class DiscRenderer {
       }
 
       ctx.save();
-      const teamGlow = p.color.includes('255, 0, 85') ? '#FF0055' : '#00E5FF';
       ctx.strokeStyle = `${p.color}${p.alpha})`;
       ctx.fillStyle = `${p.color}${p.alpha})`;
       ctx.lineWidth = p.size;
       ctx.lineCap = 'round';
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = teamGlow;
 
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
@@ -521,10 +511,13 @@ export class DiscRenderer {
     // 1. Anillo de Pulso Expansivo Blanco al Activar Patada (Kick)
     if (kicking) {
       ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.lineWidth = 6.0;
+      ctx.beginPath();
+      ctx.arc(x, y, radius + 5.5, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.strokeStyle = '#FFFFFF';
       ctx.lineWidth = 3.5;
-      ctx.shadowColor = '#FFFFFF';
-      ctx.shadowBlur = 12;
       ctx.beginPath();
       ctx.arc(x, y, radius + 5.5, 0, Math.PI * 2);
       ctx.stroke();
@@ -566,10 +559,13 @@ export class DiscRenderer {
 
     // 4. Anillo Exterior Neón con Resplandor Perimetral
     ctx.save();
+    ctx.strokeStyle = neonGlow;
+    ctx.lineWidth = 4.8;
+    ctx.beginPath();
+    ctx.arc(x, y, radius - 0.6, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.strokeStyle = neonColor;
     ctx.lineWidth = 2.4;
-    ctx.shadowColor = neonGlow;
-    ctx.shadowBlur = 9;
     ctx.beginPath();
     ctx.arc(x, y, radius - 0.6, 0, Math.PI * 2);
     ctx.stroke();
@@ -606,10 +602,13 @@ export class DiscRenderer {
     // 8. Indicador del Jugador Local en Verde Neovital
     if (isLocal) {
       ctx.save();
+      ctx.strokeStyle = 'rgba(0, 229, 153, 0.35)';
+      ctx.lineWidth = 4.5;
+      ctx.beginPath();
+      ctx.arc(x, y, radius + 11, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.strokeStyle = '#00E599';
       ctx.lineWidth = 2.0;
-      ctx.shadowColor = 'rgba(0, 229, 153, 0.7)';
-      ctx.shadowBlur = 8;
       ctx.beginPath();
       ctx.arc(x, y, radius + 11, 0, Math.PI * 2);
       ctx.stroke();
@@ -634,7 +633,6 @@ export class DiscRenderer {
 
     const isRed = team === 1;
     const satinColor = isRed ? 'rgba(255, 0, 85, 0.45)' : 'rgba(0, 229, 255, 0.45)';
-    const subtleGlow = isRed ? 'rgba(255, 0, 85, 0.25)' : 'rgba(0, 229, 255, 0.25)';
 
     ctx.save();
     ctx.lineCap = 'round';
@@ -665,7 +663,7 @@ export class DiscRenderer {
     ctx.arc(x, y, ringRadius, Math.PI + gap, Math.PI * 2 - gap);
     ctx.stroke();
 
-    const isFull = E >= 99.5;
+
 
     // 3. Segmento 1 Activo (0% - 50% de estamina)
     const ratio1 = Math.min(1, E / 50);
@@ -676,8 +674,6 @@ export class DiscRenderer {
 
       ctx.lineWidth = lineWidth;
       ctx.strokeStyle = satinColor;
-      ctx.shadowColor = subtleGlow;
-      ctx.shadowBlur = 2.0;
 
       ctx.beginPath();
       ctx.arc(x, y, ringRadius, startAngle1, endAngle1);
@@ -694,8 +690,6 @@ export class DiscRenderer {
 
       ctx.lineWidth = lineWidth;
       ctx.strokeStyle = satinColor;
-      ctx.shadowColor = subtleGlow;
-      ctx.shadowBlur = isFull ? 3.0 : 2.0;
 
       ctx.beginPath();
       ctx.arc(x, y, ringRadius, startAngle2, endAngle2);

@@ -4,8 +4,11 @@
  */
 export class PhysicsTicker {
   private worker: Worker | null = null;
-  public onTick?: () => void;
+  public onTick?: (dt?: number) => void;
   public isRunning: boolean = false;
+  public fixedStep: number = 1 / 60;
+  public accumulator: number = 0;
+  private lastTime: number = 0;
 
   constructor() {
     if (typeof window !== 'undefined' && typeof Worker !== 'undefined') {
@@ -32,14 +35,41 @@ export class PhysicsTicker {
 
       this.worker.onmessage = (e: MessageEvent) => {
         if (e.data === 'TICK' && this.isRunning && this.onTick) {
-          this.onTick();
+          const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+          const rawDelta = this.lastTime > 0 ? (now - this.lastTime) / 1000 : this.fixedStep;
+          this.lastTime = now;
+          this.update(rawDelta);
         }
       };
     }
   }
 
+  public update(rawDelta: number): void {
+    const maxDelta = 0.1; // 100 ms máximo
+    const dt = Math.min(rawDelta, maxDelta);
+    this.accumulator += dt;
+
+    let steps = 0;
+    const MAX_STEPS_PER_FRAME = 4;
+
+    while (this.accumulator >= this.fixedStep && steps < MAX_STEPS_PER_FRAME) {
+      if (this.onTick) {
+        this.onTick(this.fixedStep);
+      }
+      this.accumulator -= this.fixedStep;
+      steps++;
+    }
+
+    // Descartar exceso residual si el motor se quedó atrás
+    if (this.accumulator >= this.fixedStep) {
+      this.accumulator = 0;
+    }
+  }
+
   public start(): void {
     this.isRunning = true;
+    this.accumulator = 0;
+    this.lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
     if (this.worker) {
       this.worker.postMessage('START');
     }
@@ -47,6 +77,8 @@ export class PhysicsTicker {
 
   public stop(): void {
     this.isRunning = false;
+    this.accumulator = 0;
+    this.lastTime = 0;
     if (this.worker) {
       this.worker.postMessage('STOP');
     }

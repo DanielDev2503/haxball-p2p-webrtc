@@ -2241,7 +2241,7 @@ export class GameApp {
    * Predicción cinemática inmediata a 60 Hz para el jugador local en cliente (cero input lag).
    * p_local(t + dt) = p_local(t) + v_local * dt
    */
-  private stepClientPrediction(mask: number, _curve?: { x: number; y: number }, isTurbo?: boolean, triggerDash?: boolean): void {
+  private stepClientPrediction(mask: number, _curve?: { x: number; y: number }, isTurbo?: boolean, triggerDash?: boolean, _isReplay: boolean = false): void {
     const isSimulationActive = this.currentMatchState === MatchPhase.PLAYING ||
                                this.currentMatchState === MatchPhase.GOAL_CELEBRATION ||
                                this.currentMatchState === MatchPhase.VICTORY_CELEBRATION;
@@ -2521,7 +2521,56 @@ export class GameApp {
       this.clientInputBuffer.shift();
     }
 
-    // Guardar posición previa para calcular la discrepancia post-replay
+    const ERROR_THRESHOLD_SQ = 0.25; // 0.5px al cuadrado
+    const MAX_REPLAY_TICKS = 5;      // Jamás re-simular más de 5 ticks por frame
+    const CATASTROPHIC_ERROR_SQ = 2500; // 50px al cuadrado
+
+    const dx = this.predictedPos.x - authDisc.x;
+    const dy = this.predictedPos.y - authDisc.y;
+    const distSq = dx * dx + dy * dy;
+
+    // A. Banda muerta de tolerancia (<= 0.5px): No hacer replay; conservar la posición predicha actual
+    if (distSq <= ERROR_THRESHOLD_SQ) {
+      if (authDisc.stamina !== undefined) {
+        this.clientStamina = authDisc.stamina;
+        this.localPlayer.stamina = authDisc.stamina;
+      }
+      if (authDisc.isDashing !== undefined) {
+        this.clientIsDashing = authDisc.isDashing;
+        this.localPlayer.isDashing = authDisc.isDashing;
+      }
+      if (authDisc.isTurbo !== undefined) {
+        this.clientIsTurbo = authDisc.isTurbo;
+        this.localPlayer.isTurbo = authDisc.isTurbo;
+      }
+      return;
+    }
+
+    // B. Error catastrófico (> 50px): Snap directo (teletransporte suave), vaciar entradas y omitir replay
+    if (distSq > CATASTROPHIC_ERROR_SQ) {
+      this.predictedPos.x = authDisc.x;
+      this.predictedPos.y = authDisc.y;
+      this.predictedVel.x = authDisc.vx;
+      this.predictedVel.y = authDisc.vy;
+      this.visualOffset.x = 0;
+      this.visualOffset.y = 0;
+      this.clientInputBuffer.length = 0;
+      if (authDisc.stamina !== undefined) {
+        this.clientStamina = authDisc.stamina;
+        this.localPlayer.stamina = authDisc.stamina;
+      }
+      if (authDisc.isDashing !== undefined) {
+        this.clientIsDashing = authDisc.isDashing;
+        this.localPlayer.isDashing = authDisc.isDashing;
+      }
+      if (authDisc.isTurbo !== undefined) {
+        this.clientIsTurbo = authDisc.isTurbo;
+        this.localPlayer.isTurbo = authDisc.isTurbo;
+      }
+      return;
+    }
+
+    // C. Discrepancia intermedia: Guardar posición previa para calcular la discrepancia post-replay
     const prevPredictedX = this.predictedPos.x;
     const prevPredictedY = this.predictedPos.y;
 
@@ -2544,22 +2593,27 @@ export class GameApp {
       this.localPlayer.isTurbo = authDisc.isTurbo;
     }
 
+    // Acotar los inputs a los últimos MAX_REPLAY_TICKS para prevenir espiral de muerte
+    if (this.clientInputBuffer.length > MAX_REPLAY_TICKS) {
+      this.clientInputBuffer = this.clientInputBuffer.slice(-MAX_REPLAY_TICKS);
+    }
+
     // 3. Re-simular localmente los inputs pendientes desde T_snap + 1 hasta T_current
     for (let i = 0; i < this.clientInputBuffer.length; i++) {
       const item = this.clientInputBuffer[i];
-      this.stepClientPrediction(item.mask, item.curve, item.isTurbo, item.triggerDash);
+      this.stepClientPrediction(item.mask, item.curve, item.isTurbo, item.triggerDash, true);
     }
 
     // 4. Calcular el error residual post-replay: Delta_error = p_simulada - p_render
     const errX = prevPredictedX - this.predictedPos.x;
     const errY = prevPredictedY - this.predictedPos.y;
-    const distSq = errX * errX + errY * errY;
+    const postDistSq = errX * errX + errY * errY;
 
-    if (distSq > 50 * 50) {
+    if (postDistSq > CATASTROPHIC_ERROR_SQ) {
       // Discrepancia post-replay masiva (ej. spawn, gol, reseteo): Hard-Snap inmediato
       this.visualOffset.x = 0;
       this.visualOffset.y = 0;
-    } else {
+    } else if (postDistSq > ERROR_THRESHOLD_SQ) {
       // Absorber Delta_error en visualOffset y atenuarlo suavemente en el loop de render (visualOffset *= 0.82)
       this.visualOffset.x += errX;
       this.visualOffset.y += errY;
