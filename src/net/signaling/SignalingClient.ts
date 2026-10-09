@@ -97,6 +97,7 @@ export class SignalingClient {
             }
             if (data.type === 'ice_config') {
               const servers = (data.payload && data.payload.iceServers) || data.iceServers || (Array.isArray(data.payload) ? data.payload : undefined);
+              console.log('[WebRTC] Servidores ICE actualizados desde señalización:', (data.payload && data.payload.iceServers) || data.iceServers);
               if (servers) {
                 setDynamicIceServers(servers);
               }

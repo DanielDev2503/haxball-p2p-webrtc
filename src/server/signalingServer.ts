@@ -34,86 +34,40 @@ export interface RTCIceServer {
   credential?: string;
 }
 
-export function getRuntimeIceServers(): RTCIceServer[] {
-  const stunRaw = process.env.VITE_STUN_URLS || process.env.STUN_URLS;
-  const stunUrls = stunRaw
-    ? stunRaw.split(',').map(s => s.trim()).filter(Boolean)
-    : ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'];
+export function getProvisionedIceServers(): RTCIceServer[] {
+  const stunUrls = [
+    'stun:stun.l.google.com:19302',
+    'stun:stun1.l.google.com:19302'
+  ];
 
   const servers: RTCIceServer[] = [{ urls: stunUrls }];
 
-  const turnUser = process.env.METERED_TURN_USERNAME || process.env.TURN_USERNAME || process.env.VITE_TURN_USERNAME;
-  const turnPass = process.env.METERED_TURN_CREDENTIAL || process.env.TURN_CREDENTIAL || process.env.VITE_TURN_CREDENTIAL;
-  const turnUrl = process.env.METERED_TURN_URL || process.env.TURN_URL || process.env.VITE_TURN_URL || (turnUser && turnPass ? 'turn:relay.metered.ca:80,turn:relay.metered.ca:443,turn:relay.metered.ca:443?transport=tcp' : undefined);
+  const turnUrlRaw = process.env.TURN_URL || process.env.VITE_TURN_URL;
+  const turnUser = process.env.TURN_USERNAME || process.env.VITE_TURN_USERNAME;
+  const turnPass = process.env.TURN_CREDENTIAL || process.env.VITE_TURN_CREDENTIAL;
 
-  if (turnUrl && turnUser && turnPass) {
+  if (turnUrlRaw && turnUser && turnPass) {
+    const turnUrls = turnUrlRaw
+      .split(',')
+      .map((u) => u.trim())
+      .filter(Boolean);
+
     servers.push({
-      urls: turnUrl.split(',').map(s => s.trim()).filter(Boolean),
+      urls: turnUrls,
       username: turnUser.trim(),
       credential: turnPass.trim()
     });
+    console.log('[SignalingServer] Servidor TURN de Metered.ca configurado y activo.');
+  } else {
+    console.warn('[SignalingServer] AVISO: No hay variables TURN configuradas en el entorno.');
   }
 
   return servers;
 }
 
-let cachedIceServers: RTCIceServer[] | null = null;
-let cacheExpiryTime: number = 0;
-
-export async function fetchMeteredIceServers(): Promise<RTCIceServer[]> {
-  if (cachedIceServers && Date.now() < cacheExpiryTime) {
-    return cachedIceServers;
-  }
-
-  const rawDomain = process.env.METERED_DOMAIN || '';
-  const cleanDomain = rawDomain.replace(/^https?:\/\//i, '').replace(/\/+$/, '').trim();
-  const apiKey = (process.env.METERED_API_KEY || '').trim();
-
-  if (!cleanDomain || !apiKey) {
-    console.warn('[Metered] Variables de API no encontradas. Verificando credenciales estáticas de contingencia...');
-    return getRuntimeIceServers();
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-  try {
-    console.log('[Metered] Solicitando credenciales ICE a Metered.ca...');
-    const url = `https://${cleanDomain}/api/v1/turn/credentials?apiKey=${apiKey}`;
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const data = await response.json();
-      if (Array.isArray(data) && data.length > 0) {
-        cachedIceServers = data as RTCIceServer[];
-        cacheExpiryTime = Date.now() + 12 * 60 * 60 * 1000;
-        console.log(`[Metered] ${cachedIceServers.length} servidores ICE recibidos de Metered.ca.`);
-        return cachedIceServers;
-      } else {
-        console.error('[Metered] Error de API: respuesta inválida o arreglo vacío');
-      }
-    } else {
-      console.error(`[Metered] Error de API: Status ${response.status} - ${await response.text()}`);
-    }
-  } catch (error) {
-    clearTimeout(timeoutId);
-    console.error('[Metered] Error obteniendo credenciales de Metered:', error);
-  }
-
-  return getRuntimeIceServers();
-}
-
-export function resetCachedIceServers(): void {
-  cachedIceServers = null;
-  cacheExpiryTime = 0;
-}
+export const getRuntimeIceServers = getProvisionedIceServers;
 
 export function setupSignalingServer(wss: WebSocketServer) {
-  // Pre-calentar caché de credenciales Metered.ca
-  fetchMeteredIceServers().catch((error) => {
-    console.error('[Metered] Error obteniendo credenciales de Metered:', error);
-  });
 
   const rooms = new Map<string, Room>();
   const peerToRoom = new Map<string, string>();
@@ -256,28 +210,18 @@ export function setupSignalingServer(wss: WebSocketServer) {
     clearInterval(heartbeatInterval);
   });
 
-  wss.on('connection', async (socket: WebSocket) => {
+  wss.on('connection', (socket: WebSocket) => {
     const ws = socket as AliveWebSocket;
     ws.isAlive = true;
     let currentPeerId = '';
 
     // Enviar inmediatamente ice_config como el primer mensaje hacia el cliente
-    try {
-      const iceServers = await fetchMeteredIceServers();
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-          type: 'ice_config',
-          iceServers
-        }));
-      }
-    } catch (err) {
-      console.error('[Metered] Error obteniendo credenciales de Metered:', err);
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-          type: 'ice_config',
-          iceServers: getRuntimeIceServers()
-        }));
-      }
+    const iceServers = getProvisionedIceServers();
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: 'ice_config',
+        iceServers
+      }));
     }
 
     ws.on('pong', () => {
@@ -298,7 +242,7 @@ export function setupSignalingServer(wss: WebSocketServer) {
         switch (type) {
           case 'get_ice_config':
           case 'request_ice_config': {
-            const iceServers = await fetchMeteredIceServers();
+            const iceServers = getProvisionedIceServers();
             send(ws, { type: 'ice_config', iceServers });
             break;
           }
