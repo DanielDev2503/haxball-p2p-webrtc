@@ -139,6 +139,11 @@ export class PeerConnection {
    * Hasta entonces no se transmite tráfico binario de física.
    */
   public isReady: boolean = false;
+  public connectionType: string = 'Direct (STUN/P2P)';
+
+  public getConnectionType(): string {
+    return this.connectionType;
+  }
 
   public get peerId(): string {
     return this.remotePeerId;
@@ -232,11 +237,25 @@ export class PeerConnection {
     }
 
     this.pc.onicecandidate = (event) => {
-      if (event.candidate && this.onIceCandidate) {
-        this.onIceCandidate(event.candidate);
+      if (event.candidate) {
+        const candStr = event.candidate.candidate || '';
+        const candType = event.candidate.type;
+        const isRelay = candType === 'relay' || candStr.includes('typ relay') || candStr.includes('relay.metered.ca');
+        if (isRelay) {
+          console.log(`[WebRTC] Servidores ICE actualizados: Candidato relay detectado (turn:relay.metered.ca) para ${this.peerId}`);
+        }
+        if (this.onIceCandidate) {
+          this.onIceCandidate(event.candidate);
+        }
       }
     };
-    this.pc.oniceconnectionstatechange = () => this.handleTransportState(this.pc.iceConnectionState);
+    this.pc.oniceconnectionstatechange = () => {
+      const state = this.pc.iceConnectionState;
+      if (state === 'connected' || state === 'completed') {
+        void this.auditIceConnection();
+      }
+      this.handleTransportState(state);
+    };
     this.pc.onconnectionstatechange = () => this.handleTransportState(this.pc.connectionState);
 
     if (this.isInitiator) {
@@ -654,7 +673,16 @@ export class PeerConnection {
   }
 
   /**
+   * Audita la conexión ICE activa e imprime log estructurado de telemetría.
+   */
+  public async auditIceConnection(): Promise<void> {
+    await this.measureRtt();
+    console.log(`[WebRTC] Servidores ICE actualizados: estado ICE "${this.pc.iceConnectionState}" con ${this.peerId}. Conexión activa: ${this.connectionType} (${this.connectionType.includes('Relayed') ? 'turn:relay.metered.ca' : 'STUN/P2P'})`);
+  }
+
+  /**
    * Mide el RTT / Ping actual usando la API estándar de WebRTC getStats()
+   * e identifica si el enlace es Direct (STUN/P2P) o Relayed (TURN Metered).
    */
   public async measureRtt(): Promise<number> {
     if (!this.pc || typeof this.pc.getStats !== 'function') {
@@ -662,14 +690,40 @@ export class PeerConnection {
     }
     try {
       const stats = await this.pc.getStats();
+      let activePair: any = null;
       for (const report of stats.values()) {
         if (
           report.type === 'candidate-pair' &&
-          (report.state === 'succeeded' || (report as any).nominated) &&
-          typeof (report as any).currentRoundTripTime === 'number'
+          (report.state === 'succeeded' || (report as any).nominated || (report as any).selected)
         ) {
-          this.currentRtt = Math.round((report as any).currentRoundTripTime * 1000);
-          return this.currentRtt;
+          activePair = report;
+          if (typeof (report as any).currentRoundTripTime === 'number') {
+            this.currentRtt = Math.round((report as any).currentRoundTripTime * 1000);
+          }
+          break;
+        }
+      }
+
+      if (activePair) {
+        let isRelay = false;
+        const localCand = activePair.localCandidateId ? stats.get(activePair.localCandidateId) : null;
+        const remoteCand = activePair.remoteCandidateId ? stats.get(activePair.remoteCandidateId) : null;
+        const checkCand = (c: any) => {
+          if (!c) return false;
+          if (c.candidateType === 'relay' || c.type === 'relay') return true;
+          if (typeof c.url === 'string' && c.url.includes('metered.ca')) return true;
+          if (typeof c.relayProtocol === 'string') return true;
+          return false;
+        };
+
+        if (checkCand(localCand) || checkCand(remoteCand)) {
+          isRelay = true;
+        }
+
+        const prevType = this.connectionType;
+        this.connectionType = isRelay ? 'Relayed (TURN Metered)' : 'Direct (STUN/P2P)';
+        if (prevType !== this.connectionType) {
+          console.log(`[WebRTC] Servidores ICE actualizados: conexión con ${this.peerId} establecida vía ${this.connectionType} (${isRelay ? 'turn:relay.metered.ca' : 'STUN/P2P'})`);
         }
       }
     } catch {

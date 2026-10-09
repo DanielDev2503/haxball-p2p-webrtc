@@ -2205,10 +2205,13 @@ export class GameApp {
   }
 
   /**
-   * Transmisión ininterrumpida de snapshots a 60 Hz para todos los peers conectados.
+   * Transmisión adaptativa de snapshots para todos los peers conectados:
+   * - <= 3 jugadores: 60 Hz (cada 16.6 ms)
+   * - >= 4 jugadores: 30 Hz (cada 33.3 ms) para optimizar CPU y ancho de banda TURN
    */
-  private broadcastSnapshot(): void {
+  private broadcastSnapshot(force: boolean = false): void {
     if (this.mode !== 'host' || !this.engine || this.peers.size === 0) return;
+    if (!force && !this.engine.shouldBroadcastSnapshot(this.engine.tickCount)) return;
     const snapshot = this.engine.getSnapshot();
     const totalLength = SnapshotPacket.HEADER_LENGTH + snapshot.discs.length * SnapshotPacket.DISC_LENGTH;
     if (!this.hostSnapshotBuffer || this.hostSnapshotBuffer.byteLength !== totalLength) {
@@ -2841,8 +2844,17 @@ export class GameApp {
           this.hud.updateStats(this.currentPing, this.currentFps);
         }
 
-        // Actualización a 60 Hz del widget de telemetría (Zero-GC)
-        this.statsMonitor.update(this.currentPing, this.currentFps, frameDelta);
+        // Actualización a 60 Hz del widget de telemetría (Zero-GC) y conexión activa
+        let activeConnectionType = 'Direct (STUN/P2P)';
+        if (this.mode === 'client' && this.hostPeer) {
+          activeConnectionType = this.hostPeer.connectionType;
+        } else if (this.mode === 'host' && this.peers.size > 0) {
+          const firstPeer = this.peers.values().next().value;
+          if (firstPeer) {
+            activeConnectionType = firstPeer.connectionType;
+          }
+        }
+        this.statsMonitor.update(this.currentPing, this.currentFps, frameDelta, activeConnectionType);
       }
 
       this.renderLoopId = requestAnimationFrame(loop);

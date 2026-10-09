@@ -7,6 +7,26 @@ interface BufferedSnapshot {
   receivedAt: number;
 }
 
+/**
+ * Spline cúbico Hermite con tangentes continuas de velocidad (C^1).
+ * Suprime oscilaciones y saltos visuales durante transmisiones adaptativas a 30 Hz.
+ * - p0, p1: posiciones en t=0 y t=1
+ * - v0, v1: velocidades en t=0 y t=1
+ * - t: parámetro normalizado [0, 1]
+ * - dtSec: lapso de tiempo en segundos entre snapshots (t1 - t0)
+ */
+export function hermite(p0: number, p1: number, v0: number, v1: number, t: number, dtSec: number): number {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const m0 = v0 * dtSec;
+  const m1 = v1 * dtSec;
+  const h00 = 2 * t3 - 3 * t2 + 1;
+  const h10 = t3 - 2 * t2 + t;
+  const h01 = -2 * t3 + 3 * t2;
+  const h11 = t3 - t2;
+  return h00 * p0 + h10 * m0 + h01 * p1 + h11 * m1;
+}
+
 export class JitterBuffer {
   public buffer: BufferedSnapshot[] = [];
   public interpolationDelayMs: number;
@@ -187,13 +207,15 @@ export class JitterBuffer {
       };
     }
 
-    // Calcular factor de interpolación alpha [0, 1]
+    // Calcular factor de interpolación alpha [0, 1] y dtSec para spline cúbico Hermite
     const timeSpan = s1.receivedAt - s0.receivedAt;
     const alpha = timeSpan > 0 ? (renderTime - s0.receivedAt) / timeSpan : 0;
+    const clampedAlpha = Math.max(0, Math.min(1, alpha));
+    const dtSec = Math.max(0.001, timeSpan / 1000);
 
     this.lastProcessedTick = Math.max(this.lastProcessedTick, s0.snapshot.tick);
 
-    // Interpolar discos entre s0 y s1: P_render = lerp(P_0, P_1, alpha)
+    // Interpolar discos entre s0 y s1 con spline cúbico Hermite (continuidad C^1 en posiciones)
     const s1DiscsById = new Map<number, DiscSnapshot>();
     for (const d of s1.snapshot.discs) {
       s1DiscsById.set(d.id, d);
@@ -206,10 +228,10 @@ export class JitterBuffer {
         interpolatedDiscs.push({
           id: d0.id,
           team: d1.team,
-          x: lerp(d0.x, d1.x, alpha),
-          y: lerp(d0.y, d1.y, alpha),
-          vx: lerp(d0.vx, d1.vx, alpha),
-          vy: lerp(d0.vy, d1.vy, alpha),
+          x: hermite(d0.x, d1.x, d0.vx, d1.vx, clampedAlpha, dtSec),
+          y: hermite(d0.y, d1.y, d0.vy, d1.vy, clampedAlpha, dtSec),
+          vx: lerp(d0.vx, d1.vx, clampedAlpha),
+          vy: lerp(d0.vy, d1.vy, clampedAlpha),
           radius: d1.radius,
           kicking: d1.kicking,
           avatar: d1.avatar,

@@ -6,6 +6,7 @@ export class StatsMonitor {
   private container: HTMLElement | null = null;
   private pingEl: HTMLElement | null = null;
   private fpsEl: HTMLElement | null = null;
+  private connEl: HTMLElement | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
 
@@ -14,6 +15,9 @@ export class StatsMonitor {
   }
   public get fpsElement(): HTMLElement | null {
     return this.fpsEl;
+  }
+  public get connElement(): HTMLElement | null {
+    return this.connEl;
   }
 
   private lastDomUpdate = 0;
@@ -31,9 +35,10 @@ export class StatsMonitor {
   private pingCount: number = 0;
   private cachedAvgPing: number = 0;
 
-  // Cache numérico primitivo
+  // Cache numérico primitivo y telemetría de transporte
   private currentPing: number = 0;
   private currentFps: number = 60;
+  public currentConnectionType: string = 'Direct (STUN/P2P)';
 
   constructor() {
     if (typeof document === 'undefined') return;
@@ -53,6 +58,11 @@ export class StatsMonitor {
     this.container.id = 'statsMonitor';
     this.container.className = 'stats-monitor-widget fixed bottom-3 left-3 z-30 select-none pointer-events-none';
 
+    this.connEl = document.createElement('div');
+    this.connEl.id = 'statsConnText';
+    this.connEl.className = 'stats-line font-mono text-xs text-cyan-400';
+    this.connEl.textContent = 'Net: Direct (STUN/P2P)';
+
     this.pingEl = document.createElement('div');
     this.pingEl.id = 'statsPingText';
     this.pingEl.className = 'stats-line font-mono text-xs text-white';
@@ -69,6 +79,7 @@ export class StatsMonitor {
     this.canvas.width = 110;
     this.canvas.height = 28;
 
+    this.container.appendChild(this.connEl);
     this.container.appendChild(this.pingEl);
     this.container.appendChild(this.fpsEl);
     this.container.appendChild(this.canvas);
@@ -83,6 +94,7 @@ export class StatsMonitor {
   private bindElements(): void {
     if (!this.container) return;
 
+    this.connEl = document.getElementById('statsConnText');
     this.pingEl = document.getElementById('statsPingText');
     this.fpsEl = document.getElementById('statsFpsText');
     this.canvas = document.getElementById('statsSparkline') as HTMLCanvasElement | null;
@@ -97,9 +109,12 @@ export class StatsMonitor {
    * CERO alocaciones en bucle caliente de 60 Hz.
    * Modificaciones DOM desacopladas y estranguladas a 4 Hz (250 ms) para prevenir Layout Thrashing.
    */
-  public update(pingMs: number, fps: number, sampleVal?: number): void {
+  public update(pingMs: number, fps: number, sampleVal?: number, connectionType?: string): void {
     this.currentPing = pingMs;
     this.currentFps = fps;
+    if (connectionType) {
+      this.currentConnectionType = connectionType;
+    }
 
     // Actualizar ventana deslizante de ping sin GC
     this.pingSamples[this.pingHead] = pingMs;
@@ -127,6 +142,7 @@ export class StatsMonitor {
       this.lastDomUpdate = now;
       if (this.fpsEl) this.fpsEl.textContent = `Fps: ${Math.round(this.currentFps)}`;
       if (this.pingEl) this.pingEl.textContent = `Ping: ${Math.round(this.currentPing)}ms - ${Math.round(this.cachedAvgPing)}ms`;
+      if (this.connEl) this.connEl.textContent = `Net: ${this.currentConnectionType}`;
     }
 
     this.drawSparkline();

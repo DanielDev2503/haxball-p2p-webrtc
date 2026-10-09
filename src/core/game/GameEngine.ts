@@ -924,5 +924,22 @@ export class GameEngine {
       }
     }
   }
+
+  /**
+   * Determina si el Host debe emitir un SnapshotPacket en el tick actual para
+   * broadcast rate adaptativo:
+   * - <= 3 jugadores: 60 Hz (cada tick de 16.6 ms)
+   * - >= 4 jugadores: 30 Hz (cada 2 ticks / 33.3 ms) para economizar CPU y ancho de banda TURN
+   */
+  public shouldBroadcastSnapshot(tickIndex: number): boolean {
+    if (this.players.size <= 3) {
+      return true;
+    }
+    return tickIndex % 2 === 0;
+  }
+
+  public getAdaptiveSnapshotRate(): number {
+    return this.players.size <= 3 ? 60 : 30;
+  }
 }
 

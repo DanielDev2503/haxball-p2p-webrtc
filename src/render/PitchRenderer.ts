@@ -2,7 +2,13 @@ import { Stadium } from '../core/entities/Stadium';
 import { $theme } from '../ui/stores/gameStore';
 
 export class PitchRenderer {
-  public cachedCanvas: HTMLCanvasElement | null = null;
+  public cacheCanvas: HTMLCanvasElement | null = null;
+  public get cachedCanvas(): HTMLCanvasElement | null {
+    return this.cacheCanvas;
+  }
+  public set cachedCanvas(canvas: HTMLCanvasElement | null) {
+    this.cacheCanvas = canvas;
+  }
   private cachedCtx: CanvasRenderingContext2D | null = null;
   private cachedTheme: string | null = null;
   public cachedStadium: Stadium | null = null;
@@ -11,7 +17,7 @@ export class PitchRenderer {
   private cachedGoalSize: number = 0;
 
   public invalidateCache(): void {
-    this.cachedCanvas = null;
+    this.cacheCanvas = null;
     this.cachedCtx = null;
     this.cachedStadium = null;
   }
@@ -23,12 +29,12 @@ export class PitchRenderer {
   private buildCachedCanvas(stadium: Stadium, width: number, height: number, isDark: boolean): void {
     if (typeof document === 'undefined') return;
 
-    if (!this.cachedCanvas) {
-      this.cachedCanvas = document.createElement('canvas');
+    if (!this.cacheCanvas) {
+      this.cacheCanvas = document.createElement('canvas');
     }
-    this.cachedCanvas.width = width;
-    this.cachedCanvas.height = height;
-    this.cachedCtx = this.cachedCanvas.getContext('2d');
+    this.cacheCanvas.width = width;
+    this.cacheCanvas.height = height;
+    this.cachedCtx = this.cacheCanvas.getContext('2d');
     if (!this.cachedCtx) return;
 
     const ctx = this.cachedCtx;
@@ -198,8 +204,8 @@ export class PitchRenderer {
       this.cachedTheme = currentTheme;
     }
 
-    if (this.cachedCanvas) {
-      ctx.drawImage(this.cachedCanvas, -hw, -hh);
+    if (this.cacheCanvas) {
+      ctx.drawImage(this.cacheCanvas, -hw, -hh);
     }
   }
 
@@ -219,8 +225,8 @@ export class PitchRenderer {
     if (currentStadium) {
       this.renderPitch(ctx, currentStadium);
       this.renderPosts(ctx, currentStadium);
-    } else if (this.cachedCanvas) {
-      ctx.drawImage(this.cachedCanvas, 0, 0);
+    } else if (this.cacheCanvas) {
+      ctx.drawImage(this.cacheCanvas, 0, 0);
     }
   }
 

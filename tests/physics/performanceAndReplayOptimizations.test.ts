@@ -6,6 +6,9 @@ import { Stadium } from '../../src/core/entities/Stadium';
 import { PitchRenderer } from '../../src/render/PitchRenderer';
 import { DiscRenderer } from '../../src/render/DiscRenderer';
 import { StatsMonitor } from '../../src/ui/components/StatsMonitor';
+import { GameEngine } from '../../src/core/game/GameEngine';
+import { Player } from '../../src/core/game/Player';
+import { JitterBuffer, hermite } from '../../src/net/transport/JitterBuffer';
 
 describe('Performance and FPS Optimizations (Non-Host, Physics Replay & Canvas 2D)', () => {
   describe('A. GoalNet Bypass during Physics Replay', () => {
@@ -243,6 +246,113 @@ describe('Performance and FPS Optimizations (Non-Host, Physics Replay & Canvas 2
       monitor.update(90, 55);
       expect(fpsEl.textContent).toBe('Fps: 55');
       expect(pingEl.textContent).toContain('90ms');
+    });
+  });
+
+  describe('E. Adaptive Snapshot Broadcast Rate and Hermite Interpolation', () => {
+    it('GameEngine.shouldBroadcastSnapshot maintains 60Hz (all ticks) for <= 3 players and 30Hz (alternating ticks) for >= 4 players', () => {
+      const engine = new GameEngine();
+      expect(engine.players.size).toBe(0);
+
+      // <= 3 players: 60 Hz (broadcast every tick)
+      expect(engine.getAdaptiveSnapshotRate()).toBe(60);
+      expect(engine.shouldBroadcastSnapshot(0)).toBe(true);
+      expect(engine.shouldBroadcastSnapshot(1)).toBe(true);
+      expect(engine.shouldBroadcastSnapshot(2)).toBe(true);
+
+      // Add 3 players
+      engine.addPlayer(new Player({ id: 'p1', name: 'P1', avatar: '1', team: 'red' }));
+      engine.addPlayer(new Player({ id: 'p2', name: 'P2', avatar: '2', team: 'blue' }));
+      engine.addPlayer(new Player({ id: 'p3', name: 'P3', avatar: '3', team: 'spec' }));
+      expect(engine.players.size).toBe(3);
+      expect(engine.getAdaptiveSnapshotRate()).toBe(60);
+      expect(engine.shouldBroadcastSnapshot(10)).toBe(true);
+      expect(engine.shouldBroadcastSnapshot(11)).toBe(true);
+
+      // Add 4th player: transitions to 30 Hz (even ticks only)
+      engine.addPlayer(new Player({ id: 'p4', name: 'P4', avatar: '4', team: 'spec' }));
+      expect(engine.players.size).toBe(4);
+      expect(engine.getAdaptiveSnapshotRate()).toBe(30);
+      expect(engine.shouldBroadcastSnapshot(0)).toBe(true);
+      expect(engine.shouldBroadcastSnapshot(1)).toBe(false);
+      expect(engine.shouldBroadcastSnapshot(2)).toBe(true);
+      expect(engine.shouldBroadcastSnapshot(3)).toBe(false);
+    });
+
+    it('hermite cubic spline smoothly interpolates positions with C^1 derivative continuity', () => {
+      // p0 = 0, p1 = 100, v0 = 0, v1 = 0, dt = 1s
+      const mid = hermite(0, 100, 0, 0, 0.5, 1.0);
+      expect(mid).toBe(50);
+
+      // Boundary values
+      expect(hermite(10, 20, 50, 50, 0, 0.033)).toBe(10);
+      expect(hermite(10, 20, 50, 50, 1, 0.033)).toBe(20);
+
+      // JitterBuffer interpolates discs using hermite
+      const jb = new JitterBuffer(33, 30);
+      const s0 = {
+        tick: 1,
+        matchPhase: 1, // PLAYING
+        discs: [{ id: 0, team: 0, x: 0, y: 0, vx: 100, vy: 0, radius: 10 }]
+      } as any;
+      const s1 = {
+        tick: 2,
+        matchPhase: 1, // PLAYING
+        discs: [{ id: 0, team: 0, x: 33.3, y: 0, vx: 100, vy: 0, radius: 10 }]
+      } as any;
+
+      jb.push(s0, 1000);
+      jb.push(s1, 1033.3);
+
+      const interp = jb.getInterpolatedSnapshot(1016.65 + 33);
+      expect(interp).not.toBeNull();
+      expect(interp!.discs[0].x).toBeGreaterThan(0);
+      expect(interp!.discs[0].x).toBeLessThan(33.3);
+    });
+  });
+
+  describe('F. Telemetry Handshake: Connection Type Display in StatsMonitor', () => {
+    it('StatsMonitor displays Relayed (TURN Metered) vs Direct (STUN/P2P)', () => {
+      const connEl = { textContent: '' };
+      const pingEl = { textContent: '' };
+      const fpsEl = { textContent: '' };
+      const mockCanvasEl: any = {
+        width: 110,
+        height: 28,
+        getContext: () => ({
+          clearRect: vi.fn(),
+          fillRect: vi.fn(),
+          beginPath: vi.fn(),
+          moveTo: vi.fn(),
+          lineTo: vi.fn(),
+          stroke: vi.fn()
+        })
+      };
+
+      (globalThis as any).document = {
+        getElementById: (id: string) => {
+          if (id === 'statsConnText') return connEl;
+          if (id === 'statsSparkline') return mockCanvasEl;
+          if (id === 'statsPingText') return pingEl;
+          if (id === 'statsFpsText') return fpsEl;
+          if (id === 'statsMonitor') return { appendChild: vi.fn() };
+          return null;
+        },
+        createElement: (tag: string) => {
+          if (tag === 'canvas') return mockCanvasEl;
+          return { id: '', className: '', appendChild: vi.fn(), textContent: '' };
+        },
+        body: { appendChild: vi.fn() }
+      };
+
+      const monitor = new StatsMonitor();
+      monitor.update(25, 60, 16.6, 'Relayed (TURN Metered)');
+      expect(monitor.currentConnectionType).toBe('Relayed (TURN Metered)');
+      expect(connEl.textContent).toBe('Net: Relayed (TURN Metered)');
+
+      // Update to Direct (STUN/P2P)
+      monitor.update(10, 60, 16.6, 'Direct (STUN/P2P)');
+      expect(monitor.currentConnectionType).toBe('Direct (STUN/P2P)');
     });
   });
 });

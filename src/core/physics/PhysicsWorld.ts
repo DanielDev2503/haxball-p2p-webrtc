@@ -229,21 +229,20 @@ export class PhysicsWorld {
     // Step cloth mass-spring simulation on goal nets
     // Bypassed completely if isReplay === true to prevent CPU bottlenecks during reconciliation
     if (!isReplay) {
-      if (this.goalNets.length > 0) {
-        let ball: Disc | undefined;
-        for (let i = 0; i < discCount; i++) {
-          if (this.discs[i].isBall) {
-            ball = this.discs[i];
-            break;
-          }
+      let ball: Disc | undefined;
+      for (let i = 0; i < discCount; i++) {
+        if (this.discs[i].isBall) {
+          ball = this.discs[i];
+          break;
         }
-        for (let i = 0; i < this.goalNets.length; i++) {
-          const net = this.goalNets[i];
-          net.step(actualDt);
-          if (ball) {
-            net.checkBallCollision(ball);
-          }
-        }
+      }
+      if (this.goalNetLeft) {
+        this.goalNetLeft.step(actualDt);
+        if (ball) this.goalNetLeft.checkBallCollision(ball);
+      }
+      if (this.goalNetRight) {
+        this.goalNetRight.step(actualDt);
+        if (ball) this.goalNetRight.checkBallCollision(ball);
       }
     }
   }
