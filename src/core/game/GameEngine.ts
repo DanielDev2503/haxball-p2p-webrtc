@@ -117,6 +117,7 @@ export class GameEngine {
             for (const [_, player] of this.players.entries()) {
               if (this.playerDiscs.get(player.id) === playerDisc) {
                 this.kickoffState.active = false;
+                this.updatePhysicsKickoffContext();
                 break;
               }
             }
@@ -270,6 +271,7 @@ export class GameEngine {
       mode: 'NEUTRAL',
       possessingTeam: null
     };
+    this.updatePhysicsKickoffContext();
     this.activePlayTicks = 0;
     this.matchTimerSeconds = this.config.timeLimitSeconds > 0 ? this.config.timeLimitSeconds : 0;
     this.resetKickoffPositions(false);
@@ -289,6 +291,7 @@ export class GameEngine {
       mode: 'NEUTRAL',
       possessingTeam: null
     };
+    this.updatePhysicsKickoffContext();
     this.activePlayTicks = 0;
     this.matchTimerSeconds = 0;
     this.soundMask = 0;
@@ -615,6 +618,7 @@ export class GameEngine {
 
           if (this.kickoffState.active) {
             this.kickoffState.active = false;
+            this.updatePhysicsKickoffContext();
           }
 
           this.soundMask |= SOUND_KICK;
@@ -690,6 +694,7 @@ export class GameEngine {
         const dy = this.ball.pos.y - disc.pos.y;
         if (dx * dx + dy * dy <= touchDist * touchDist + 1.0) {
           this.kickoffState.active = false;
+          this.updatePhysicsKickoffContext();
           break;
         }
       }
@@ -745,6 +750,7 @@ export class GameEngine {
           mode: 'TEAM_KICKOFF',
           possessingTeam
         };
+        this.updatePhysicsKickoffContext();
         this.activePlayTicks = 0;
         this.lastScoringTeam = null;
         this.resetPositionsForKickoff(true);
@@ -885,8 +891,38 @@ export class GameEngine {
    * - Equipo rival: no pueden traspasar su línea media (X = 0) ni ingresar al círculo central (R >= centerR + r).
    * - En saque NEUTRAL: ambos equipos limitados a su respectivo semicampo en X = 0.
    */
+  public updatePhysicsKickoffContext(): void {
+    if (this.kickoffState.active && this.kickoffState.possessingTeam) {
+      this.physicsWorld.kickoffContext = {
+        active: true,
+        possessingTeam: this.kickoffState.possessingTeam,
+        centerRadius: this.stadium.centerRadius ?? 80
+      };
+    } else {
+      this.physicsWorld.kickoffContext = null;
+    }
+  }
+
+  /**
+   * Resolución física pura y sin GC de las barreras reglamentarias de saque:
+   * - Desacoplamiento de restricciones en semicampos:
+   *   - En propio campo: sin restricción circular ni barrera de línea media.
+   *   - En semicampo rival: si |y| >= R_círculo impide cruce (x <= 0 o x >= 0, v_x anulada).
+   *     si |y| < R_círculo, permite paso dentro del círculo y proyecta suavemente a la
+   *     circunferencia interior sin saltos ni teleporting.
+   * - Eliminación de impulsos espurios en vértices (0, ±R_círculo) para jugadores que sacan.
+   * - Equipo rival: no pueden traspasar su línea media (X = 0) ni ingresar al círculo central (R >= centerR + r).
+   * - En saque NEUTRAL: ambos equipos limitados a su respectivo semicampo en X = 0.
+   */
   public applyKickoffBarriers(): void {
-    if (!this.kickoffState.active) return;
+    if (!this.kickoffState.active) {
+      if (this.physicsWorld.kickoffContext) {
+        this.physicsWorld.kickoffContext = null;
+      }
+      return;
+    }
+
+    this.updatePhysicsKickoffContext();
 
     const centerR = this.stadium.centerRadius ?? 80;
 
@@ -903,66 +939,73 @@ export class GameEngine {
 
         if (isPossessing) {
           // Equipo con posesión del saque:
-          // Libre acceso a todo su semicampo y a la totalidad del círculo central.
-          // Confinado estrictamente dentro del círculo central si ingresa al campo rival.
+          // Desacoplamiento estricto de restricciones en semicampos.
           if (player.team === 'red') {
-            // Semicampo propio es X <= 0.
+            // Semicampo base propio es X <= 0:
+            // En su propio campo (X <= 0): No se aplica ninguna restricción circular ni barrera de línea media.
+            // No sufren ningún tipo de clamping, proyección radial ni fuerza normal por el círculo central.
             if (disc.pos.x > 0) {
-              // En campo contrario (X > 0): confinado a r <= centerR - r
-              const distSq = disc.pos.x * disc.pos.x + disc.pos.y * disc.pos.y;
-              const maxR = centerR - r;
-              if (distSq > maxR * maxR) {
-                const dist = Math.sqrt(distSq);
-                if (dist > 1e-6) {
-                  const nx = disc.pos.x / dist;
-                  const ny = disc.pos.y / dist;
-                  disc.pos.x = nx * maxR;
-                  disc.pos.y = ny * maxR;
-                  const vDotN = disc.vel.x * nx + disc.vel.y * ny;
-                  if (vDotN > 0) {
-                    disc.vel.x -= vDotN * nx;
-                    disc.vel.y -= vDotN * ny;
-                  }
-                } else {
-                  disc.pos.x = 0;
-                }
-              }
-            } else {
-              // En semicampo propio (X <= 0): no puede cruzar la línea media por fuera del círculo
-              const maxR = centerR - r;
-              if (Math.abs(disc.pos.y) > maxR && disc.pos.x > -r) {
-                disc.pos.x = -r;
+              // En el semicampo rival (X > 0):
+              if (Math.abs(disc.pos.y) >= centerR) {
+                // Si |y| >= R_círculo, impide el cruce restringiendo la posición a x <= 0 y anulando la velocidad positiva (v_x = min(v_x, 0))
+                disc.pos.x = 0;
                 if (disc.vel.x > 0) disc.vel.x = 0;
+              } else {
+                // Si |y| < R_círculo, permite el paso siempre que sqrt(x^2 + y^2) <= R_círculo - r_jugador
+                const maxR = centerR - r;
+                const distSq = disc.pos.x * disc.pos.x + disc.pos.y * disc.pos.y;
+                if (distSq > maxR * maxR) {
+                  // Proyecta la posición suavemente a la circunferencia interior: p = p * (R_círculo - r_jugador) / ||p||
+                  const dist = Math.sqrt(distSq);
+                  if (dist > 1e-6) {
+                    const nx = disc.pos.x / dist;
+                    const ny = disc.pos.y / dist;
+                    disc.pos.x = nx * maxR;
+                    disc.pos.y = ny * maxR;
+                    // Eliminar la componente de velocidad saliente (v . n <= 0)
+                    const vDotN = disc.vel.x * nx + disc.vel.y * ny;
+                    if (vDotN > 0) {
+                      disc.vel.x -= vDotN * nx;
+                      disc.vel.y -= vDotN * ny;
+                    }
+                  } else {
+                    disc.pos.x = 0;
+                  }
+                }
               }
             }
           } else if (player.team === 'blue') {
-            // Semicampo propio es X >= 0.
+            // Semicampo base propio es X >= 0:
+            // En su propio campo (X >= 0): No se aplica ninguna restricción circular ni barrera de línea media.
+            // No sufren ningún tipo de clamping, proyección radial ni fuerza normal por el círculo central.
             if (disc.pos.x < 0) {
-              // En campo contrario (X < 0): confinado a r <= centerR - r
-              const distSq = disc.pos.x * disc.pos.x + disc.pos.y * disc.pos.y;
-              const maxR = centerR - r;
-              if (distSq > maxR * maxR) {
-                const dist = Math.sqrt(distSq);
-                if (dist > 1e-6) {
-                  const nx = disc.pos.x / dist;
-                  const ny = disc.pos.y / dist;
-                  disc.pos.x = nx * maxR;
-                  disc.pos.y = ny * maxR;
-                  const vDotN = disc.vel.x * nx + disc.vel.y * ny;
-                  if (vDotN > 0) {
-                    disc.vel.x -= vDotN * nx;
-                    disc.vel.y -= vDotN * ny;
-                  }
-                } else {
-                  disc.pos.x = 0;
-                }
-              }
-            } else {
-              // En semicampo propio (X >= 0): no puede cruzar la línea media por fuera del círculo
-              const maxR = centerR - r;
-              if (Math.abs(disc.pos.y) > maxR && disc.pos.x < r) {
-                disc.pos.x = r;
+              // En el semicampo rival (X < 0):
+              if (Math.abs(disc.pos.y) >= centerR) {
+                // Si |y| >= R_círculo, impide el cruce restringiendo la posición a x >= 0 y anulando la velocidad negativa (v_x = max(v_x, 0))
+                disc.pos.x = 0;
                 if (disc.vel.x < 0) disc.vel.x = 0;
+              } else {
+                // Si |y| < R_círculo, permite el paso siempre que sqrt(x^2 + y^2) <= R_círculo - r_jugador
+                const maxR = centerR - r;
+                const distSq = disc.pos.x * disc.pos.x + disc.pos.y * disc.pos.y;
+                if (distSq > maxR * maxR) {
+                  // Proyecta la posición suavemente a la circunferencia interior: p = p * (R_círculo - r_jugador) / ||p||
+                  const dist = Math.sqrt(distSq);
+                  if (dist > 1e-6) {
+                    const nx = disc.pos.x / dist;
+                    const ny = disc.pos.y / dist;
+                    disc.pos.x = nx * maxR;
+                    disc.pos.y = ny * maxR;
+                    // Eliminar la componente de velocidad saliente (v . n <= 0)
+                    const vDotN = disc.vel.x * nx + disc.vel.y * ny;
+                    if (vDotN > 0) {
+                      disc.vel.x -= vDotN * nx;
+                      disc.vel.y -= vDotN * ny;
+                    }
+                  } else {
+                    disc.pos.x = 0;
+                  }
+                }
               }
             }
           }

@@ -58,7 +58,7 @@
 
   --font-zen: 'Space Grotesk', system-ui, -apple-system, sans-serif;
   --font-space: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  --chat-height: 130px;
+  --chat-height: 180px;
 }
 
 [data-theme="dark"],
@@ -440,15 +440,20 @@ canvas#gameCanvas, canvas#game-canvas, canvas.game-canvas {
 /* IN-GAME COLLAPSIBLE OVERLAY MENU */
 .ingame-menu-overlay {
   position: fixed;
-  inset: 0;
+  top: 60px;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--chat-height, 180px) + 16px);
   background: rgba(0, 0, 0, 0.25) !important;
   backdrop-filter: blur(2px) !important;
   -webkit-backdrop-filter: blur(2px) !important;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  overflow: hidden;
   z-index: 140 !important;
-  transition: opacity 0.2s ease, visibility 0.2s ease;
+  transition: bottom 0.15s ease-out, opacity 0.2s ease, visibility 0.2s ease;
 }
 .ingame-menu-overlay.hidden {
   display: none !important;
@@ -472,7 +477,8 @@ canvas#gameCanvas, canvas#game-canvas, canvas.game-canvas {
   padding: 20px 24px;
   width: 720px;
   max-width: 95vw;
-  max-height: calc(100vh - var(--chat-height, 130px) - 60px) !important;
+  max-height: calc(100vh - var(--chat-height, 180px) - 90px) !important;
+  box-sizing: border-box !important;
   margin-top: auto !important;
   margin-bottom: auto !important;
   overflow-y: auto !important;
@@ -481,6 +487,7 @@ canvas#gameCanvas, canvas#game-canvas, canvas.game-canvas {
   flex-direction: column;
   gap: 12px;
   color: var(--text-primary);
+  transition: max-height 0.15s ease-out;
 }
 
 .menu-header {
@@ -1056,16 +1063,26 @@ button:disabled, input:disabled, select:disabled {
   color: #BE123C;
 }
 
-/* MODAL OVERLAY */
-.modal-overlay {
+/* MODAL OVERLAY & BACKDROP CONTAINERS */
+.modal-backdrop,
+.modal-overlay,
+.room-lobby-container,
+.modifier-modal-overlay {
   position: fixed;
-  inset: 0;
+  top: 60px;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--chat-height, 180px) + 16px);
   background: rgba(15, 23, 42, 0.35);
   backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  overflow: hidden;
   z-index: 100;
+  transition: bottom 0.15s ease-out;
 }
 
 #settingsModal {
@@ -1193,7 +1210,11 @@ button:disabled, input:disabled, select:disabled {
   color: var(--aero-sky-600);
 }
 
-/* MODAL CARDS (WHITE GLASS AERO) */
+/* MODAL CONTENT BOXES (WHITE GLASS AERO) */
+.room-lobby-modal,
+.gameplay-modifier-modal,
+.settings-modal,
+.modal-container,
 .modal-content {
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(24px) saturate(190%);
@@ -1202,13 +1223,15 @@ button:disabled, input:disabled, select:disabled {
   padding: 24px;
   width: 480px;
   max-width: 92vw;
-  max-height: 85vh;
+  max-height: calc(100vh - var(--chat-height, 180px) - 90px);
+  box-sizing: border-box;
   overflow-y: auto;
   box-shadow: 0 20px 45px -10px rgba(14, 165, 233, 0.18), inset 0 1px 2px #FFFFFF;
   display: flex;
   flex-direction: column;
   gap: 16px;
   color: var(--text-primary);
+  transition: max-height 0.15s ease-out;
 }
 
 .modal-title {
@@ -1487,7 +1510,8 @@ button:disabled, input:disabled, select:disabled {
 
 #settingsModal .modal-content,
 #gameplay-modifiers-modal .menu-modal-card {
-  max-height: calc(100vh - var(--chat-height, 130px) - 60px) !important;
+  max-height: calc(100vh - var(--chat-height, 180px) - 90px) !important;
+  box-sizing: border-box !important;
   overflow-y: auto !important;
 }
 
@@ -2090,10 +2114,15 @@ button:disabled, input:disabled, select:disabled {
   background: rgba(0, 229, 255, 0.55);
 }
 
+.room-lobby-modal,
+.gameplay-modifier-modal,
+.settings-modal,
+.modal-container,
 .modal-content,
 .create-room-card,
 .menu-modal-card {
-  max-height: 85vh !important;
+  max-height: calc(100vh - var(--chat-height, 180px) - 90px) !important;
+  box-sizing: border-box !important;
   overflow-y: auto !important;
 }
 
@@ -2137,9 +2166,16 @@ select:focus-visible {
 
 /* PANTALLAS REDUCIDAS / ALTURA < 650PX */
 @media (max-height: 650px) {
-  .menu-modal-card {
-    max-height: 60vh !important;
+  .room-lobby-modal,
+  .gameplay-modifier-modal,
+  .settings-modal,
+  .modal-container,
+  .menu-modal-card,
+  .modal-content,
+  .create-room-card {
+    max-height: calc(100vh - var(--chat-height, 180px) - 90px) !important;
     overflow-y: auto !important;
+    box-sizing: border-box !important;
     padding: 12px 16px !important;
     gap: 8px !important;
   }

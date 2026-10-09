@@ -2,7 +2,12 @@ import { Disc, COLLISION_GROUP_BALL } from '../entities/Disc';
 import { Segment } from '../entities/Segment';
 import { GoalNet } from '../entities/GoalNet';
 import { Stadium } from '../entities/Stadium';
-import { resolveDiscDiscCollision, resolveDiscSegmentCollision, CollisionEvent } from './Collision';
+import {
+  resolveDiscDiscCollision,
+  resolveDiscSegmentCollision,
+  CollisionEvent,
+  KickoffPhysicsContext
+} from './Collision';
 import { clamp } from '../math/MathUtils';
 
 export interface PhysicsWorldConfig {
@@ -20,6 +25,7 @@ export class PhysicsWorld {
   public maxSubsteps: number;
   public onCollision?: (event: CollisionEvent) => void;
   public onSubstep?: (subDt: number) => void;
+  public kickoffContext?: KickoffPhysicsContext | null = null;
 
   constructor(config: PhysicsWorldConfig = {}) {
     this.fixedDt = config.fixedDt ?? 1 / 60;
@@ -210,7 +216,7 @@ export class PhysicsWorld {
         const d = this.discs[i];
         if (d.invMass > 0) {
           for (let k = 0; k < segCount; k++) {
-            resolveDiscSegmentCollision(d, this.segments[k], this.onCollision);
+            resolveDiscSegmentCollision(d, this.segments[k], this.onCollision, this.kickoffContext);
           }
         }
       }

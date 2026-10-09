@@ -1,7 +1,13 @@
 import { Vec2 } from '../math/Vec2';
 import { closestPointOnSegment } from '../math/MathUtils';
-import { Disc } from '../entities/Disc';
+import { Disc, COLLISION_GROUP_RED, COLLISION_GROUP_BLUE } from '../entities/Disc';
 import { Segment } from '../entities/Segment';
+
+export interface KickoffPhysicsContext {
+  active: boolean;
+  possessingTeam: 'red' | 'blue' | null;
+  centerRadius: number;
+}
 
 export interface CollisionEvent {
   type: 'disc-disc' | 'disc-segment';
@@ -103,7 +109,8 @@ export function resolveDiscDiscCollision(
 export function resolveDiscSegmentCollision(
   disc: Disc,
   seg: Segment,
-  onCollision?: (e: CollisionEvent) => void
+  onCollision?: (e: CollisionEvent) => void,
+  kickoffContext?: KickoffPhysicsContext | null
 ): boolean {
   if (disc.invMass === 0) return false;
   if ((disc.cGroup & seg.cMask) === 0 || (seg.cGroup & disc.cMask) === 0) return false;
@@ -116,13 +123,33 @@ export function resolveDiscSegmentCollision(
 
   if (distSq >= disc.radius * disc.radius) return false;
 
+  const isEndpoint = (t <= 1e-6 || t >= 1 - 1e-6);
+
+  // Eliminación de Impulsos de Vértice Espurios:
+  // Si la línea de medio campo está formada por segmentos físicos (Segment.ts),
+  // inhabilita la colisión con los extremos/puntas ubicados en (0, -R_círculo) y (0, R_círculo)
+  // para los jugadores del equipo que saca, evitando que actúen como postes sólidos al transitar
+  // entre campo propio y el círculo.
+  if (isEndpoint && kickoffContext?.active && kickoffContext.possessingTeam && !disc.isBall) {
+    const isPossessing =
+      (kickoffContext.possessingTeam === 'red' && (disc.cGroup & COLLISION_GROUP_RED) !== 0) ||
+      (kickoffContext.possessingTeam === 'blue' && (disc.cGroup & COLLISION_GROUP_BLUE) !== 0);
+
+    if (isPossessing) {
+      const isSeamVertex =
+        Math.abs(closest.x) < 0.5 &&
+        Math.abs(Math.abs(closest.y) - kickoffContext.centerRadius) < 1.0;
+      if (isSeamVertex) {
+        return false;
+      }
+    }
+  }
+
   // Extinción instantánea de la comba al chocar contra segmentos o paredes
   if (disc.isBall && (disc.isCurving || disc.isCurvingAllowed)) disc.resetCurve();
 
   const dist = Math.sqrt(distSq);
   const normal = Vec2.t2;
-
-  const isEndpoint = (t <= 1e-6 || t >= 1 - 1e-6);
 
   if (dist > 1e-9) {
     normal.copy(diff).scale(1 / dist);

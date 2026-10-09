@@ -56,8 +56,30 @@ export class RoomLobby {
   constructor(events: LobbyEvents) {
     this.events = events;
 
-    this.overlayEl = document.getElementById('lobbyModal') || document.querySelector('.lobby-container');
-    if (!this.overlayEl) console.warn('[RoomLobby] Element "#lobbyModal" was not found in DOM.');
+    this.overlayEl = document.getElementById('lobbyModal') || document.querySelector('.lobby-container') || document.querySelector('.room-lobby-container');
+    if (!this.overlayEl) {
+      console.warn('[RoomLobby] Element "#lobbyModal" was not found in DOM.');
+    } else {
+      this.overlayEl.classList.add('room-lobby-container', 'modal-overlay', 'modal-backdrop');
+      const content = this.overlayEl.querySelector('.modal-content') as HTMLElement | null;
+      if (content) {
+        content.classList.add('room-lobby-modal', 'modal-container');
+        content.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 90px)';
+        content.style.overflowY = 'auto';
+        content.style.boxSizing = 'border-box';
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('chat:resize', (e: Event) => {
+        const customEvent = e as CustomEvent<{ height: number }>;
+        const h = customEvent?.detail?.height ?? 180;
+        const content = this.overlayEl?.querySelector('.room-lobby-modal, .modal-content') as HTMLElement | null;
+        if (content) {
+          content.style.maxHeight = `calc(100vh - ${h}px - 90px)`;
+        }
+      });
+    }
 
     this.nicknameInput = document.getElementById('lobbyNickname') as HTMLInputElement | null;
     this.userAvatarEl = document.getElementById('lobbyUserAvatar');

@@ -65,8 +65,8 @@
       </div>
 
       <!-- In-Game Collapsible Room Menu (Classic Haxball Room Window) -->
-      <div id="ingame-menu" class="ingame-menu-overlay hidden">
-        <div class="menu-modal-card custom-scrollbar">
+      <div id="ingame-menu" class="ingame-menu-overlay modal-overlay modal-backdrop hidden">
+        <div class="menu-modal-card modal-container custom-scrollbar">
           <!-- Room Window Header: [Room Name] on left, 🔗 Link & 🚪 Leave on right -->
           <div class="menu-header">
             <div class="room-title-area">
@@ -170,8 +170,8 @@
       </div>
 
       <!-- Stadium Picker Modal (Pick button) -->
-      <div id="stadiumPickerModal" class="modal-overlay u-hidden" style="display: none; z-index: 220;">
-        <div class="modal-content custom-scrollbar" style="max-width: 440px; padding: 22px;">
+      <div id="stadiumPickerModal" class="modal-overlay modal-backdrop u-hidden" style="display: none; z-index: 220;">
+        <div class="modal-content modal-container custom-scrollbar" style="max-width: 440px; padding: 22px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
             <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700;">🏟 Seleccionar Estadio</h3>
             <button id="btnCloseStadiumPicker" class="icon-btn-close">✕</button>
@@ -206,8 +206,8 @@
       </div>
 
       <!-- Keybinds Configuration Modal -->
-      <div id="settingsModal" class="modal-overlay" style="display: none; z-index: 200;">
-        <div class="modal-content custom-scrollbar" style="max-width: 480px;">
+      <div id="settingsModal" class="modal-overlay modal-backdrop" style="display: none; z-index: 200;">
+        <div class="modal-content settings-modal modal-container custom-scrollbar" style="max-width: 480px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <h2 class="modal-title" style="margin: 0; font-size: 1.25rem;">⚙️ Mapeo de Teclas</h2>
             <button id="btnCloseSettings" class="icon-btn-close">✕</button>
@@ -248,8 +248,8 @@
   </div>
 
   <!-- Nickname Gatekeeper Modal (Futurism Aero Floating White Glass) -->
-  <div id="nicknameGatekeeperModal" class="modal-overlay modal-nickname u-hidden" style="z-index: 300;">
-    <div class="modal-content custom-scrollbar" id="gatekeeperModalContent" style="max-width: 390px; text-align: center; position: relative;">
+  <div id="nicknameGatekeeperModal" class="modal-overlay modal-backdrop modal-nickname u-hidden" style="z-index: 300;">
+    <div class="modal-content modal-container custom-scrollbar" id="gatekeeperModalContent" style="max-width: 390px; text-align: center; position: relative;">
       <button id="gatekeeperThemeToggleBtn" class="icon-btn theme-toggle-btn" style="position: absolute; top: 14px; right: 14px;" type="button" title="Alternar tema"></button>
       <div id="gatekeeperAvatar" class="avatar-holo"></div>
       <h2 class="modal-title" style="margin-top: 2px;">Bienvenido a BallHax</h2>
@@ -269,8 +269,8 @@
 
 
   <!-- Room Lobby Modal Overlay (Futurism Aero White Glass) -->
-  <div id="lobbyModal" class="modal-overlay lobby-container u-hidden" style="z-index: 250;">
-    <div class="modal-content custom-scrollbar" style="position: relative; width: 480px;">
+  <div id="lobbyModal" class="modal-overlay modal-backdrop lobby-container room-lobby-container u-hidden" style="z-index: 250;">
+    <div class="modal-content room-lobby-modal modal-container custom-scrollbar" style="position: relative; width: 480px;">
       <button id="lobbyThemeToggleBtn" class="icon-btn theme-toggle-btn" style="position: absolute; top: 14px; right: 14px;" type="button" title="Alternar tema"></button>
       <h2 class="modal-title" style="margin-bottom: 2px;">Haxball P2P Arena</h2>
 
@@ -331,8 +331,8 @@
   </div>
 
   <!-- Dedicated Create Room Modal (Pop-up independiente Futurism Aero) -->
-  <div id="createRoomModal" class="modal-overlay u-hidden" style="display: none; z-index: 280;">
-    <div class="create-room-card custom-scrollbar" id="createRoomCard">
+  <div id="createRoomModal" class="modal-overlay modal-backdrop u-hidden" style="display: none; z-index: 280;">
+    <div class="create-room-card modal-container custom-scrollbar" id="createRoomCard">
       <div class="create-room-header">
         <div class="create-room-header-title">
           <span id="createRoomModalIconSlot" style="display: inline-flex; align-items: center;"></span>

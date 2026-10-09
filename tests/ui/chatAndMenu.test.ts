@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChatBox } from '../../src/ui/components/ChatBox';
 import { SignalingClient } from '../../src/net/signaling/SignalingClient';
 
@@ -117,5 +117,56 @@ describe('SignalingClient leaveRoom Protocol', () => {
     expect(payload.type).toBe('leave_room');
     expect(payload.roomId).toBe('room-test-123');
     expect(payload.peerId).toBe(client.peerId);
+  });
+});
+
+describe('ChatBox Dynamic Reactivity & chat:resize Dispatch', () => {
+  it('updates document.documentElement --chat-height and dispatches chat:resize on height change', () => {
+    const rootStyle: Record<string, string> = {};
+    const setPropertySpy = vi.fn((prop: string, val: string) => {
+      rootStyle[prop] = val;
+    });
+
+    const dispatchSpy = vi.fn();
+    (globalThis as any).window = {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: dispatchSpy,
+      innerHeight: 800
+    };
+    const boxEl = { style: { height: '', maxHeight: '' } };
+    const handleEl = {
+      id: '',
+      className: '',
+      title: '',
+      addEventListener: vi.fn(),
+      classList: { add: vi.fn(), remove: vi.fn() }
+    };
+    (globalThis as any).document = {
+      getElementById: vi.fn((id: string) => {
+        if (id === 'chat-container') return boxEl;
+        if (id === 'chat-resize-handle') return handleEl;
+        return null;
+      }),
+      querySelector: vi.fn(() => null),
+      createElement: vi.fn(() => handleEl),
+      documentElement: {
+        style: {
+          setProperty: setPropertySpy
+        }
+      }
+    };
+
+    const chatBox = new ChatBox();
+    dispatchSpy.mockClear();
+    setPropertySpy.mockClear();
+
+    chatBox.applyHeight(240);
+
+    expect(setPropertySpy).toHaveBeenCalledWith('--chat-height', '240px');
+    expect(dispatchSpy).toHaveBeenCalledTimes(1);
+    const event = dispatchSpy.mock.calls[0][0];
+    expect(event.type).toBe('chat:resize');
+    expect(event.detail).toEqual({ height: 240 });
   });
 });

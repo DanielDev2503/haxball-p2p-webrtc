@@ -201,6 +201,103 @@ describe('Regulatory Kickoff Barriers & Contact Deactivation', () => {
     expect(dist).toBeLessThanOrEqual(65.01);
   });
 
+  it('allows possessing team free movement in own half without clamping or radial force', () => {
+    engine.startMatch();
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+
+    // Goal scored by Red -> Blue gets kickoff
+    engine.ball.pos.set(engine.stadium.halfWidth + 20, 0);
+    engine.tick(new Map());
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+
+    expect(engine.kickoffState.possessingTeam).toBe('blue');
+    const blueDisc = engine.playerDiscs.get(pBlue.id)!;
+
+    // Blue (base half X >= 0) is at x = 5, y = 70 (where |y| = 70 > R - r = 65)
+    blueDisc.pos.set(5, 70);
+    blueDisc.vel.set(-10, 5);
+    engine.tick(new Map());
+
+    // Blue in own half (x >= 0) must NOT suffer any clamping, radial projection, or halfway barrier
+    expect(blueDisc.pos.x).toBeGreaterThanOrEqual(0);
+    expect(blueDisc.pos.y).toBeCloseTo(70.08, 1);
+  });
+
+  it('strictly blocks possessing team in rival half outside central circle (|y| >= R)', () => {
+    engine.startMatch();
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+
+    // Goal scored by Red -> Blue gets kickoff
+    engine.ball.pos.set(engine.stadium.halfWidth + 20, 0);
+    engine.tick(new Map());
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+
+    expect(engine.kickoffState.possessingTeam).toBe('blue');
+    const blueDisc = engine.playerDiscs.get(pBlue.id)!;
+
+    // Blue attempts to cross into Red territory (X < 0) at y = 85 (|y| >= centerR = 80)
+    blueDisc.pos.set(-10, 85);
+    blueDisc.vel.set(-50, 0);
+    engine.tick(new Map());
+
+    // Must be clamped to x >= 0 with negative vx nullified
+    expect(blueDisc.pos.x).toBeGreaterThanOrEqual(0);
+    expect(blueDisc.vel.x).toBeGreaterThanOrEqual(0);
+  });
+
+  it('eliminates spurious vertex impulses at (0, ±R_circle) for possessing kickoff team', async () => {
+    engine.startMatch();
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+
+    // Goal scored by Red -> Blue gets kickoff
+    engine.ball.pos.set(engine.stadium.halfWidth + 20, 0);
+    engine.tick(new Map());
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+
+    const { Segment } = await import('../../src/core/entities/Segment');
+    const { resolveDiscSegmentCollision } = await import('../../src/core/physics/Collision');
+    const { COLLISION_GROUP_WALL } = await import('../../src/core/entities/Disc');
+
+    const halfSeg = new Segment({
+      id: 999,
+      x0: 0,
+      y0: 80,
+      x1: 0,
+      y1: 270,
+      cGroup: COLLISION_GROUP_WALL,
+      cMask: 0xFFFFFFFF
+    });
+
+    const blueDisc = engine.playerDiscs.get(pBlue.id)!;
+    // Position blue disc touching the vertex at (0, 80)
+    blueDisc.pos.set(5, 80);
+    blueDisc.vel.set(-10, 0);
+
+    const collisionResolved = resolveDiscSegmentCollision(
+      blueDisc,
+      halfSeg,
+      undefined,
+      engine.physicsWorld.kickoffContext
+    );
+
+    // Collision with the seam vertex must be disabled for possessing team player
+    expect(collisionResolved).toBe(false);
+
+    // For rival team (Red), collision must NOT be disabled
+    const redDisc = engine.playerDiscs.get(pRed.id)!;
+    redDisc.pos.set(-5, 80);
+    const redCollision = resolveDiscSegmentCollision(
+      redDisc,
+      halfSeg,
+      undefined,
+      engine.physicsWorld.kickoffContext
+    );
+    expect(redCollision).toBe(true);
+  });
+
   it('serializes and deserializes kickoffState in GameSnapshot', () => {
     engine.startMatch();
     const snap = engine.getSnapshot();

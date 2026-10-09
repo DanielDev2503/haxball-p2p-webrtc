@@ -89,6 +89,27 @@ export class SettingsModal {
     this.settings = this.loadSettings();
 
     this.modalEl = document.getElementById('settingsModal');
+    if (this.modalEl) {
+      this.modalEl.classList.add('modal-backdrop', 'modal-overlay');
+      const content = this.modalEl.querySelector('.modal-content') as HTMLElement | null;
+      if (content) {
+        content.classList.add('settings-modal', 'modal-container');
+        content.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 90px)';
+        content.style.overflowY = 'auto';
+        content.style.boxSizing = 'border-box';
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('chat:resize', (e: Event) => {
+        const customEvent = e as CustomEvent<{ height: number }>;
+        const h = customEvent?.detail?.height ?? 180;
+        const content = this.modalEl?.querySelector('.settings-modal, .modal-content') as HTMLElement | null;
+        if (content) {
+          content.style.maxHeight = `calc(100vh - ${h}px - 90px)`;
+        }
+      });
+    }
 
     this.keydownListener = (e: KeyboardEvent) => {
       if (!this.recordingAction || !this.recordingBtn) return;

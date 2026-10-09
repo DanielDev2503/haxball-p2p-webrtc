@@ -35,16 +35,25 @@ export class GameplayModifierModal {
 
     const overlay = document.createElement('div');
     overlay.id = 'gameplay-modifiers-modal';
-    overlay.className = 'ingame-menu-overlay hidden';
+    overlay.className = 'ingame-menu-overlay modal-overlay modal-backdrop modifier-modal-overlay hidden';
     overlay.style.zIndex = '9999';
 
     const card = document.createElement('div');
-    card.className = 'menu-modal-card custom-scrollbar overflow-y-auto p-4 md:p-5 rounded-2xl w-full max-w-lg md:max-w-2xl';
+    card.className = 'gameplay-modifier-modal menu-modal-card modal-container custom-scrollbar overflow-y-auto p-4 md:p-5 rounded-2xl w-full max-w-lg md:max-w-2xl';
     card.style.maxWidth = '780px';
     card.style.width = '95vw';
-    card.style.maxHeight = 'calc(100vh - var(--chat-height, 130px) - 60px)';
+    card.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 90px)';
     card.style.overflowY = 'auto';
+    card.style.boxSizing = 'border-box';
     card.style.marginBottom = 'auto'; // Flex centrado armónico sin colisiones con chat
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('chat:resize', (e: Event) => {
+        const customEvent = e as CustomEvent<{ height: number }>;
+        const h = customEvent?.detail?.height ?? 180;
+        card.style.maxHeight = `calc(100vh - ${h}px - 90px)`;
+      });
+    }
 
     // Header
     const header = document.createElement('div');

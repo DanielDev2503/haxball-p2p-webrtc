@@ -150,6 +150,20 @@ export class ChatBox {
     }
   }
 
+  public notifyHeightChange(chatHeight: number): void {
+    if (typeof document !== 'undefined' && document.documentElement?.style?.setProperty) {
+      document.documentElement.style.setProperty('--chat-height', `${chatHeight}px`);
+    }
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      try {
+        window.dispatchEvent(new CustomEvent('chat:resize', { detail: { height: chatHeight } }));
+      } catch {
+        // En caso de entornos de test sin CustomEvent
+      }
+    }
+    this.onHeightChange?.(chatHeight);
+  }
+
   private setupResizeHandle(): void {
     if (!this.resizeHandleEl && this.boxEl) {
       this.resizeHandleEl = document.createElement('div');
@@ -209,6 +223,7 @@ export class ChatBox {
 
       this.preferredHeight = newHeight;
       this.boxEl.style.height = `${newHeight}px`;
+      this.notifyHeightChange(newHeight);
     };
 
     const onPointerUp = (e?: MouseEvent | PointerEvent) => {
@@ -250,10 +265,7 @@ export class ChatBox {
       this.boxEl.style.maxHeight = '';
       this.boxEl.style.height = `${heightPx}px`;
     }
-    if (typeof document !== 'undefined' && document.documentElement?.style?.setProperty) {
-      document.documentElement.style.setProperty('--chat-height', `${heightPx}px`);
-    }
-    this.onHeightChange?.(heightPx);
+    this.notifyHeightChange(heightPx);
   }
 
   private setupResizeObserver(): void {
@@ -262,8 +274,8 @@ export class ChatBox {
       this.resizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
           const h = Math.round(entry.contentRect.height || entry.target.getBoundingClientRect().height);
-          if (h > 0 && typeof document !== 'undefined' && document.documentElement?.style?.setProperty) {
-            document.documentElement.style.setProperty('--chat-height', `${h}px`);
+          if (h > 0) {
+            this.notifyHeightChange(h);
           }
         }
       });
@@ -295,10 +307,7 @@ export class ChatBox {
       this.boxEl.style.maxHeight = '';
       this.boxEl.style.height = `${this.preferredHeight}px`;
     }
-    if (typeof document !== 'undefined' && document.documentElement?.style?.setProperty) {
-      document.documentElement.style.setProperty('--chat-height', `${this.preferredHeight}px`);
-    }
-    this.onHeightChange?.(this.preferredHeight);
+    this.notifyHeightChange(this.preferredHeight);
   }
 
   public focus(): void {
