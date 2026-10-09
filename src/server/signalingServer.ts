@@ -34,40 +34,63 @@ export interface RTCIceServer {
   credential?: string;
 }
 
-export function getProvisionedIceServers(): RTCIceServer[] {
-  const stunUrls = [
-    'stun:stun.l.google.com:19302',
-    'stun:stun1.l.google.com:19302'
-  ];
+let cachedIceServers: RTCIceServer[] | null = null;
+let cacheExpiry = 0;
 
-  const servers: RTCIceServer[] = [{ urls: stunUrls }];
-
-  const turnUrlRaw = process.env.TURN_URL || process.env.VITE_TURN_URL;
-  const turnUser = process.env.TURN_USERNAME || process.env.VITE_TURN_USERNAME;
-  const turnPass = process.env.TURN_CREDENTIAL || process.env.VITE_TURN_CREDENTIAL;
-
-  if (turnUrlRaw && turnUser && turnPass) {
-    const turnUrls = turnUrlRaw
-      .split(',')
-      .map((u) => u.trim())
-      .filter(Boolean);
-
-    servers.push({
-      urls: turnUrls,
-      username: turnUser.trim(),
-      credential: turnPass.trim()
-    });
-    console.log('[SignalingServer] Servidor TURN de Metered.ca configurado y activo.');
-  } else {
-    console.warn('[SignalingServer] AVISO: No hay variables TURN configuradas en el entorno.');
+export async function getMeteredIceServers(): Promise<RTCIceServer[]> {
+  const now = Date.now();
+  if (cachedIceServers && now < cacheExpiry) {
+    return cachedIceServers;
   }
 
-  return servers;
+  const rawDomain = process.env.METERED_DOMAIN || '';
+  const cleanDomain = rawDomain.replace(/^https?:\/\//i, '').replace(/\/+$/, '').trim();
+  const apiKey = (process.env.METERED_API_KEY || '').trim();
+
+  if (!cleanDomain || !apiKey) {
+    console.warn('[SignalingServer] METERED_DOMAIN o METERED_API_KEY no configurados. Usando STUN público.');
+    return [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+  }
+
+  try {
+    console.log('[SignalingServer] Solicitando credenciales ICE dinámicas a Metered.ca...');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+
+    const url = `https://${cleanDomain}/api/v1/turn/credentials?apiKey=${apiKey}`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      throw new Error(`Metered API status ${res.status}: ${await res.text()}`);
+    }
+
+    const servers = (await res.json()) as RTCIceServer[];
+    if (Array.isArray(servers) && servers.length > 0) {
+      cachedIceServers = servers;
+      cacheExpiry = now + 12 * 60 * 60 * 1000; // 12 horas de caché
+      console.log(`[SignalingServer] ${servers.length} servidores ICE cacheados exitosamente.`);
+      return cachedIceServers;
+    }
+    throw new Error('Respuesta inválida de Metered (no es un array de servidores)');
+  } catch (err) {
+    console.error('[SignalingServer] Error consultando Metered.ca:', err);
+    return [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+  }
 }
 
-export const getRuntimeIceServers = getProvisionedIceServers;
+export function resetCachedIceServers(): void {
+  cachedIceServers = null;
+  cacheExpiry = 0;
+}
+
+export const getProvisionedIceServers = getMeteredIceServers;
+export const getRuntimeIceServers = getMeteredIceServers;
 
 export function setupSignalingServer(wss: WebSocketServer) {
+  getMeteredIceServers().catch((err) => {
+    console.error('[SignalingServer] Error consultando Metered.ca:', err);
+  });
 
   const rooms = new Map<string, Room>();
   const peerToRoom = new Map<string, string>();
@@ -210,13 +233,13 @@ export function setupSignalingServer(wss: WebSocketServer) {
     clearInterval(heartbeatInterval);
   });
 
-  wss.on('connection', (socket: WebSocket) => {
+  wss.on('connection', async (socket: WebSocket) => {
     const ws = socket as AliveWebSocket;
     ws.isAlive = true;
     let currentPeerId = '';
 
     // Enviar inmediatamente ice_config como el primer mensaje hacia el cliente
-    const iceServers = getProvisionedIceServers();
+    const iceServers = await getMeteredIceServers();
     if (socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({
         type: 'ice_config',
@@ -242,7 +265,7 @@ export function setupSignalingServer(wss: WebSocketServer) {
         switch (type) {
           case 'get_ice_config':
           case 'request_ice_config': {
-            const iceServers = getProvisionedIceServers();
+            const iceServers = await getMeteredIceServers();
             send(ws, { type: 'ice_config', iceServers });
             break;
           }

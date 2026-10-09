@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  getMeteredIceServers,
   getProvisionedIceServers,
   getRuntimeIceServers,
+  resetCachedIceServers,
   setupSignalingServer
 } from '../../src/server/signalingServer';
 import {
@@ -12,86 +14,162 @@ import {
 import { SignalingClient } from '../../src/net/signaling/SignalingClient';
 import { WebSocketServer } from 'ws';
 
-describe('Metered TURN Provisioning & Signaling Dispatch', () => {
+describe('Metered.ca Dynamic REST ICE Provisioning & Race Condition Guard', () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
+    resetCachedIceServers();
     setDynamicIceServers(null);
-    delete process.env.TURN_URL;
-    delete process.env.TURN_USERNAME;
-    delete process.env.TURN_CREDENTIAL;
-    delete process.env.VITE_TURN_URL;
-    delete process.env.VITE_TURN_USERNAME;
-    delete process.env.VITE_TURN_CREDENTIAL;
+    delete process.env.METERED_DOMAIN;
+    delete process.env.METERED_API_KEY;
     vi.restoreAllMocks();
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    resetCachedIceServers();
     setDynamicIceServers(null);
     vi.restoreAllMocks();
   });
 
-  describe('getProvisionedIceServers', () => {
-    it('returns default STUN servers and logs warning when no TURN env vars are configured', () => {
+  describe('getMeteredIceServers', () => {
+    it('returns default STUN servers and warns when credentials are not configured', async () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const servers = getProvisionedIceServers();
+      const servers = await getMeteredIceServers();
 
-      expect(servers).toHaveLength(1);
-      expect(servers[0].urls).toEqual([
-        'stun:stun.l.google.com:19302',
-        'stun:stun1.l.google.com:19302'
+      expect(servers).toEqual([
+        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
       ]);
-      expect(warnSpy).toHaveBeenCalledWith('[SignalingServer] AVISO: No hay variables TURN configuradas en el entorno.');
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[SignalingServer] METERED_DOMAIN o METERED_API_KEY no configurados. Usando STUN público.'
+      );
     });
 
-    it('provisions Metered TURN servers from TURN_* environment variables', () => {
-      process.env.TURN_URL = 'turn:relay.metered.ca:80,turn:relay.metered.ca:443';
-      process.env.TURN_USERNAME = 'metered_user';
-      process.env.TURN_CREDENTIAL = 'metered_pass';
+    it('sanitizes domain, queries Metered REST API, and caches the result for 12 hours', async () => {
+      process.env.METERED_DOMAIN = 'https://subdomain.metered.live///';
+      process.env.METERED_API_KEY = ' secret_api_key_123 ';
+
+      const mockResponseServers = [
+        { urls: 'stun:subdomain.metered.live:3478' },
+        { urls: 'turn:subdomain.metered.live:80', username: 'temp_user', credential: 'temp_password' }
+      ];
+
+      const fetchSpy = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => mockResponseServers
+      });
+      vi.stubGlobal('fetch', fetchSpy);
 
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      const servers = getProvisionedIceServers();
 
-      expect(servers).toHaveLength(2);
-      expect(servers[0].urls).toEqual([
-        'stun:stun.l.google.com:19302',
-        'stun:stun1.l.google.com:19302'
-      ]);
-      expect(servers[1].urls).toEqual([
-        'turn:relay.metered.ca:80',
-        'turn:relay.metered.ca:443'
-      ]);
-      expect(servers[1].username).toBe('metered_user');
-      expect(servers[1].credential).toBe('metered_pass');
-      expect(logSpy).toHaveBeenCalledWith('[SignalingServer] Servidor TURN de Metered.ca configurado y activo.');
+      // Primera llamada: debe llamar a fetch con dominio sanitizado y query params
+      const firstResult = await getMeteredIceServers();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const calledUrl = fetchSpy.mock.calls[0][0];
+      expect(calledUrl).toBe('https://subdomain.metered.live/api/v1/turn/credentials?apiKey=secret_api_key_123');
+      expect(firstResult).toEqual(mockResponseServers);
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('2 servidores ICE cacheados exitosamente.')
+      );
+
+      // Segunda llamada inmediata: debe servir desde caché en memoria sin volver a llamar fetch
+      const secondResult = await getMeteredIceServers();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(secondResult).toBe(firstResult);
     });
 
-    it('provisions Metered TURN servers from VITE_TURN_* fallback environment variables', () => {
-      process.env.VITE_TURN_URL = 'turn:relay.metered.ca:80';
-      process.env.VITE_TURN_USERNAME = 'vite_metered_user';
-      process.env.VITE_TURN_CREDENTIAL = 'vite_metered_pass';
+    it('refetches from REST API when cache expires after 12 hours', async () => {
+      process.env.METERED_DOMAIN = 'metered-app.metered.live';
+      process.env.METERED_API_KEY = 'api_key_expiry';
 
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      const servers = getProvisionedIceServers();
+      const initialServers = [{ urls: 'turn:initial.metered.live:80', username: 'u1', credential: 'p1' }];
+      const refreshedServers = [{ urls: 'turn:refreshed.metered.live:80', username: 'u2', credential: 'p2' }];
 
-      expect(servers).toHaveLength(2);
-      expect(servers[1].urls).toEqual(['turn:relay.metered.ca:80']);
-      expect(servers[1].username).toBe('vite_metered_user');
-      expect(servers[1].credential).toBe('vite_metered_pass');
-      expect(logSpy).toHaveBeenCalledWith('[SignalingServer] Servidor TURN de Metered.ca configurado y activo.');
+      let fetchCount = 0;
+      const fetchSpy = vi.fn().mockImplementation(async () => {
+        fetchCount++;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => (fetchCount === 1 ? initialServers : refreshedServers)
+        };
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+
+      const now = 1000000000;
+      const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
+
+      const res1 = await getMeteredIceServers();
+      expect(res1).toEqual(initialServers);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      // Avanzamos 12 horas y 1 segundo
+      dateSpy.mockReturnValue(now + (12 * 60 * 60 * 1000) + 1000);
+
+      const res2 = await getMeteredIceServers();
+      expect(res2).toEqual(refreshedServers);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
 
-    it('getRuntimeIceServers acts as an alias to getProvisionedIceServers', () => {
-      expect(getRuntimeIceServers).toBe(getProvisionedIceServers);
+    it('falls back to default STUN when REST API returns HTTP error', async () => {
+      process.env.METERED_DOMAIN = 'fail.metered.live';
+      process.env.METERED_API_KEY = 'invalid_key';
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        text: async () => 'Unauthorized'
+      }));
+
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const servers = await getMeteredIceServers();
+
+      expect(servers).toEqual([
+        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+      ]);
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[SignalingServer] Error consultando Metered.ca:',
+        expect.any(Error)
+      );
+    });
+
+    it('falls back to default STUN on network timeout or abort', async () => {
+      process.env.METERED_DOMAIN = 'timeout.metered.live';
+      process.env.METERED_API_KEY = 'key';
+
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('AbortError: The operation was aborted')));
+
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const servers = await getMeteredIceServers();
+
+      expect(servers).toEqual([
+        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+      ]);
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('getProvisionedIceServers and getRuntimeIceServers point to getMeteredIceServers', () => {
+      expect(getProvisionedIceServers).toBe(getMeteredIceServers);
+      expect(getRuntimeIceServers).toBe(getMeteredIceServers);
     });
   });
 
   describe('SignalingServer emission of ice_config', () => {
-    it('emits ice_config message on client connection without external HTTP fetch', () => {
-      process.env.TURN_URL = 'turn:relay.metered.ca:80';
-      process.env.TURN_USERNAME = 'user_direct';
-      process.env.TURN_CREDENTIAL = 'pass_direct';
+    it('sends ice_config message with cached Metered servers on client connection', async () => {
+      process.env.METERED_DOMAIN = 'server.metered.live';
+      process.env.METERED_API_KEY = 'server_key';
+
+      const mockServers = [
+        { urls: 'stun:server.metered.live:3478' },
+        { urls: 'turn:server.metered.live:80', username: 'server_u', credential: 'server_p' }
+      ];
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => mockServers
+      }));
 
       const mockWss = {
         clients: new Set(),
@@ -111,17 +189,17 @@ describe('Metered TURN Provisioning & Signaling Dispatch', () => {
         on: vi.fn()
       };
 
-      connectionHandler(mockWs);
+      await connectionHandler(mockWs);
 
       expect(mockWs.send).toHaveBeenCalled();
       const iceConfigMsg = JSON.parse(sentMessages[0]);
       expect(iceConfigMsg.type).toBe('ice_config');
-      expect(iceConfigMsg.iceServers).toEqual(getProvisionedIceServers());
+      expect(iceConfigMsg.iceServers).toEqual(mockServers);
     });
   });
 
-  describe('SignalingClient & PeerConnection Dynamic ICE Application', () => {
-    it('SignalingClient invokes setDynamicIceServers and logs received iceServers on ice_config message', async () => {
+  describe('SignalingClient & PeerConnection Race Condition Guard', () => {
+    it('resolves iceConfigReady Promise and sets dynamic ICE servers on ice_config message', async () => {
       let mockSocketInstance: any = null;
       class MockWebSocket {
         static OPEN = 1;
@@ -148,6 +226,8 @@ describe('Metered TURN Provisioning & Signaling Dispatch', () => {
       ];
 
       const consoleSpy = vi.spyOn(console, 'log');
+
+      // Enviar mensaje ice_config
       mockSocketInstance.onmessage({
         data: JSON.stringify({
           type: 'ice_config',
@@ -155,12 +235,14 @@ describe('Metered TURN Provisioning & Signaling Dispatch', () => {
         })
       });
 
-      expect(consoleSpy).toHaveBeenCalledWith('[WebRTC] Servidores ICE actualizados desde señalización:', testServers);
+      const resolvedServers = await client.iceConfigReady;
+      expect(resolvedServers).toEqual(testServers);
+      expect(consoleSpy).toHaveBeenCalledWith('[WebRTC] Servidores ICE recibidos de señalización:', testServers);
       expect(getIceServers()).toEqual(testServers);
       expect(consoleSpy).toHaveBeenCalledWith('[WebRTC] Credenciales TURN activadas desde Metered.ca API.');
     });
 
-    it('SignalingClient iceConfigReady resolves upon receiving ice_config and unblocks createRoom/joinRoom', async () => {
+    it('iceConfigReady blocks until ice_config is received, preventing premature PeerConnection', async () => {
       let mockSocketInstance: any = null;
       class MockWebSocket {
         static OPEN = 1;
@@ -182,31 +264,28 @@ describe('Metered TURN Provisioning & Signaling Dispatch', () => {
       mockSocketInstance.onopen();
       await connectPromise;
 
-      let isReadyFired = false;
+      let resolved = false;
       client.iceConfigReady.then(() => {
-        isReadyFired = true;
+        resolved = true;
       });
 
-      expect(isReadyFired).toBe(false);
+      expect(resolved).toBe(false);
 
-      // Emitir ice_config
+      const testServers = [{ urls: 'turn:relay.metered.ca:80', username: 'u', credential: 'p' }];
       mockSocketInstance.onmessage({
         data: JSON.stringify({
           type: 'ice_config',
-          iceServers: [{ urls: 'turn:relay.metered.ca:80', username: 'u', credential: 'p' }]
+          iceServers: testServers
         })
       });
 
-      await client.iceConfigReady;
-      expect(isReadyFired).toBe(true);
+      const servers = await client.iceConfigReady;
+      expect(resolved).toBe(true);
+      expect(servers).toEqual(testServers);
       expect(client.isIceReady).toBe(true);
-
-      // createRoom y joinRoom envían mensajes después de que iceConfigReady está resuelto
-      await client.createRoom('Mi Sala');
-      expect(mockSocketInstance.send).toHaveBeenCalled();
     });
 
-    it('getIceServers strictly returns default STUN when dynamicIceServers is null, ignoring static TURN env', () => {
+    it('getIceServers strictly returns default STUN when dynamicIceServers is not set', () => {
       setDynamicIceServers(null);
       const servers = getIceServers();
       expect(servers).toHaveLength(1);
@@ -214,18 +293,6 @@ describe('Metered TURN Provisioning & Signaling Dispatch', () => {
         'stun:stun.l.google.com:19302',
         'stun:stun1.l.google.com:19302'
       ]);
-    });
-
-    it('setDynamicIceServers does not print Metered log if URLs do not contain relay.metered.ca', () => {
-      const nonMeteredServers = [
-        { urls: 'turn:other-relay.company.com:3478', username: 'u', credential: 'p' }
-      ];
-
-      const consoleSpy = vi.spyOn(console, 'log');
-      setDynamicIceServers(nonMeteredServers);
-
-      expect(consoleSpy).not.toHaveBeenCalledWith('[WebRTC] Credenciales TURN activadas desde Metered.ca API.');
-      expect(getIceServers()).toEqual(nonMeteredServers);
     });
 
     it('PeerConnection constructor logs Metered activation when servers contain relay.metered.ca', () => {

@@ -24,11 +24,11 @@ export class SignalingClient {
   public serverUrl: string;
   public isConnected: boolean = false;
   public isIceReady: boolean = false;
-  public iceConfigReady: Promise<void>;
-  private iceConfigReadyResolve!: () => void;
+  public iceConfigReady: Promise<RTCIceServer[]>;
+  private resolveIceConfig!: (servers: RTCIceServer[]) => void;
 
   public get whenIceReady(): Promise<void> {
-    return this.iceConfigReady;
+    return this.iceConfigReady.then(() => {});
   }
 
   public onMessage?: (msg: SignalingMessage) => void;
@@ -56,16 +56,16 @@ export class SignalingClient {
       this.serverUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SIGNALING_URL) || defaultWsUrl;
     }
     this.peerId = 'peer_' + Math.random().toString(36).substring(2, 9);
-    this.iceConfigReady = new Promise<void>((resolve) => {
-      this.iceConfigReadyResolve = () => {
+    this.iceConfigReady = new Promise<RTCIceServer[]>((resolve) => {
+      this.resolveIceConfig = (servers: RTCIceServer[]) => {
         this.isIceReady = true;
-        resolve();
+        resolve(servers);
       };
       // Fallback de seguridad (5s)
       setTimeout(() => {
         if (!this.isIceReady) {
           this.isIceReady = true;
-          resolve();
+          resolve([{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }]);
         }
       }, 5000);
     });
@@ -96,13 +96,16 @@ export class SignalingClient {
               return;
             }
             if (data.type === 'ice_config') {
-              const servers = (data.payload && data.payload.iceServers) || data.iceServers || (Array.isArray(data.payload) ? data.payload : undefined);
-              console.log('[WebRTC] Servidores ICE actualizados desde señalización:', (data.payload && data.payload.iceServers) || data.iceServers);
-              if (servers) {
-                setDynamicIceServers(servers);
-              }
-              if (this.iceConfigReadyResolve) {
-                this.iceConfigReadyResolve();
+              const iceServers = Array.isArray(data.iceServers)
+                ? data.iceServers
+                : (data.payload && Array.isArray(data.payload.iceServers) ? data.payload.iceServers : undefined);
+
+              if (Array.isArray(iceServers)) {
+                setDynamicIceServers(iceServers);
+                if (this.resolveIceConfig) {
+                  this.resolveIceConfig(iceServers);
+                }
+                console.log('[WebRTC] Servidores ICE recibidos de señalización:', iceServers);
               }
             }
             if (this.onMessage) {

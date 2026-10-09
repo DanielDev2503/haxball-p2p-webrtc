@@ -52,24 +52,19 @@ describe('ICE Servers Configuration & ExpressTURN', () => {
     expect(getIceServers()[0].urls).toEqual(DEFAULT_STUN_SERVERS);
   });
 
-  it('getRuntimeIceServers reads environment variables with fallback', () => {
-    const originalTurn = process.env.VITE_TURN_URL;
-    const originalUser = process.env.VITE_TURN_USERNAME;
-    const originalCred = process.env.VITE_TURN_CREDENTIAL;
+  it('getRuntimeIceServers returns default STUN when no Metered credentials configured', async () => {
+    const originalDomain = process.env.METERED_DOMAIN;
+    const originalKey = process.env.METERED_API_KEY;
 
-    process.env.VITE_TURN_URL = 'turn:relay.test.com:3478';
-    process.env.VITE_TURN_USERNAME = 'test-user';
-    process.env.VITE_TURN_CREDENTIAL = 'test-pass';
+    delete process.env.METERED_DOMAIN;
+    delete process.env.METERED_API_KEY;
 
-    const runtimeServers = getRuntimeIceServers();
-    expect(runtimeServers.length).toBeGreaterThanOrEqual(2);
-    expect(runtimeServers[1].urls).toEqual(['turn:relay.test.com:3478']);
-    expect(runtimeServers[1].username).toBe('test-user');
-    expect(runtimeServers[1].credential).toBe('test-pass');
+    const runtimeServers = await getRuntimeIceServers();
+    expect(runtimeServers).toHaveLength(1);
+    expect(runtimeServers[0].urls).toEqual(DEFAULT_STUN_SERVERS);
 
-    process.env.VITE_TURN_URL = originalTurn;
-    process.env.VITE_TURN_USERNAME = originalUser;
-    process.env.VITE_TURN_CREDENTIAL = originalCred;
+    process.env.METERED_DOMAIN = originalDomain;
+    process.env.METERED_API_KEY = originalKey;
   });
 });
 
