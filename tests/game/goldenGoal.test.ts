@@ -20,7 +20,8 @@ describe('Golden Goal (Sudden Death) Overtime Mechanics', () => {
     expect(engine.fsm.currentState).toBe(MatchPhase.PLAYING);
     expect(engine.isGoldenGoal).toBe(false);
 
-    // Fast-forward match timer to 1 second remaining
+    // Fast-forward match timer to 1 second remaining (kickoff has taken place)
+    engine.kickoffState.active = false;
     engine.matchTimerSeconds = 1;
     expect(engine.redScore).toBe(0);
     expect(engine.blueScore).toBe(0);
@@ -47,6 +48,7 @@ describe('Golden Goal (Sudden Death) Overtime Mechanics', () => {
     engine.startMatch();
     for (let i = 0; i < 180; i++) engine.tick(new Map());
 
+    engine.kickoffState.active = false;
     engine.matchTimerSeconds = 1;
     for (let i = 0; i < 60; i++) engine.tick(new Map());
 
@@ -79,6 +81,7 @@ describe('Golden Goal (Sudden Death) Overtime Mechanics', () => {
     for (let i = 0; i < 180; i++) engine.tick(new Map());
 
     // Trigger Golden Goal
+    engine.kickoffState.active = false;
     engine.matchTimerSeconds = 1;
     for (let i = 0; i < 60; i++) engine.tick(new Map());
     expect(engine.isGoldenGoal).toBe(true);
@@ -112,6 +115,7 @@ describe('Golden Goal (Sudden Death) Overtime Mechanics', () => {
     for (let i = 0; i < 180; i++) engine.tick(new Map());
 
     // Red leads 1 - 0
+    engine.kickoffState.active = false;
     engine.redScore = 1;
     engine.blueScore = 0;
     engine.matchTimerSeconds = 1;

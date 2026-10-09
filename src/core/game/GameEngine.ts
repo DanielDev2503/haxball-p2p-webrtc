@@ -13,7 +13,8 @@ import {
   INPUT_TURBO,
   INPUT_DASH,
   INPUT_MAGNUS_LEFT,
-  INPUT_MAGNUS_RIGHT
+  INPUT_MAGNUS_RIGHT,
+  INPUT_TYPING
 } from './Player';
 import { GameFSM, MatchPhase } from './GameFSM';
 import { GameSnapshot, DiscSnapshot, MatchConfig, KickoffState } from './GameState';
@@ -38,6 +39,7 @@ export class GameEngine {
   };
 
   public tickCount: number = 0;
+  public activePlayTicks: number = 0;
   public redScore: number = 0;
   public blueScore: number = 0;
   public matchTimerSeconds: number = 180;
@@ -92,7 +94,7 @@ export class GameEngine {
       y: 0,
       radius: ballRadius,
       mass: ballMass,
-      damping: 0.99,
+      damping: this.gameplayConfig.ballFriction ?? 0.99,
       bounciness: ballRestitution,
       cGroup: COLLISION_GROUP_BALL,
       isBall: true,
@@ -114,9 +116,7 @@ export class GameEngine {
             const playerDisc = event.discA === this.ball ? event.discB : event.discA;
             for (const [_, player] of this.players.entries()) {
               if (this.playerDiscs.get(player.id) === playerDisc) {
-                if (this.kickoffState.mode === 'NEUTRAL' || player.team === this.kickoffState.possessingTeam) {
-                  this.kickoffState.active = false;
-                }
+                this.kickoffState.active = false;
                 break;
               }
             }
@@ -168,11 +168,17 @@ export class GameEngine {
       if (this.gameplayConfig.ballMass !== undefined) {
         this.ball.setMass(this.gameplayConfig.ballMass);
       }
+      if (this.gameplayConfig.ballFriction !== undefined) {
+        this.ball.damping = this.gameplayConfig.ballFriction;
+      }
     }
     for (const disc of this.playerDiscs.values()) {
       disc.radius = this.gameplayConfig.playerRadius;
       if (this.gameplayConfig.playerMass !== undefined) {
         disc.setMass(this.gameplayConfig.playerMass);
+      }
+      if (this.gameplayConfig.playerFriction !== undefined) {
+        disc.damping = this.gameplayConfig.playerFriction;
       }
     }
   }
@@ -241,7 +247,7 @@ export class GameEngine {
       y: spawnY ?? 0,
       radius: this.gameplayConfig.playerRadius,
       mass: this.gameplayConfig.playerMass ?? 2,
-      damping: 0.96,
+      damping: this.gameplayConfig.playerFriction ?? 0.96,
       bounciness: 0.5,
       cGroup: isRed ? COLLISION_GROUP_RED : COLLISION_GROUP_BLUE,
       isBall: false,
@@ -264,6 +270,7 @@ export class GameEngine {
       mode: 'NEUTRAL',
       possessingTeam: null
     };
+    this.activePlayTicks = 0;
     this.matchTimerSeconds = this.config.timeLimitSeconds > 0 ? this.config.timeLimitSeconds : 0;
     this.resetKickoffPositions(false);
     this.fsm.startMatch();
@@ -282,6 +289,7 @@ export class GameEngine {
       mode: 'NEUTRAL',
       possessingTeam: null
     };
+    this.activePlayTicks = 0;
     this.matchTimerSeconds = 0;
     this.soundMask = 0;
     this.fsm.stopMatch();
@@ -399,9 +407,11 @@ export class GameEngine {
     }
 
     // Estados activos: PLAYING, GOAL_CELEBRATION o VICTORY_CELEBRATION (300 ticks con física viva)
-    if (this.fsm.currentState === MatchPhase.PLAYING) {
-      // Advance match timer (every 60 ticks = 1 second) únicamente en PLAYING
-      if (this.tickCount % 60 === 0) {
+    // Tarea 1: Durante el estado de saque (kickoffState.active), el cronómetro de la partida permanece estrictamente congelado
+    if (this.fsm.currentState === MatchPhase.PLAYING && !this.kickoffState.active) {
+      this.activePlayTicks++;
+      // Advance match timer (every 60 ticks = 1 second) únicamente cuando el balón está en juego activo
+      if (this.activePlayTicks % 60 === 0) {
         if (this.isGoldenGoal) {
           // En prórroga (Gol de Oro): el cronómetro avanza como tiempo extra suplementario
           this.matchTimerSeconds++;
@@ -431,6 +441,8 @@ export class GameEngine {
 
       const mask = inputs.get(playerId) ?? player.inputMask;
       player.inputMask = mask;
+      player.isTyping = Boolean(mask & INPUT_TYPING);
+      disc.isTyping = player.isTyping;
 
       // Movement input
       let dirX = 0;
@@ -602,9 +614,7 @@ export class GameEngine {
           }
 
           if (this.kickoffState.active) {
-            if (this.kickoffState.mode === 'NEUTRAL' || player.team === this.kickoffState.possessingTeam) {
-              this.kickoffState.active = false;
-            }
+            this.kickoffState.active = false;
           }
 
           this.soundMask |= SOUND_KICK;
@@ -679,10 +689,8 @@ export class GameEngine {
         const dx = this.ball.pos.x - disc.pos.x;
         const dy = this.ball.pos.y - disc.pos.y;
         if (dx * dx + dy * dy <= touchDist * touchDist + 1.0) {
-          if (this.kickoffState.mode === 'NEUTRAL' || player.team === this.kickoffState.possessingTeam) {
-            this.kickoffState.active = false;
-            break;
-          }
+          this.kickoffState.active = false;
+          break;
         }
       }
     }
@@ -737,6 +745,7 @@ export class GameEngine {
           mode: 'TEAM_KICKOFF',
           possessingTeam
         };
+        this.activePlayTicks = 0;
         this.lastScoringTeam = null;
         this.resetPositionsForKickoff(true);
         if (this.onStateChange) {
@@ -809,7 +818,8 @@ export class GameEngine {
       isSpinActive: this.ball.isCurving,
       isCurvingAllowed: this.ball.isCurvingAllowed,
       lastKickerId: kickerDiscId,
-      curveFactor: Math.round(this.ball.curvePerp * 10)
+      curveFactor: Math.round(this.ball.curvePerp * 10),
+      spin: this.ball.spin || this.ball.curvePerp
     });
 
     // Players
@@ -828,7 +838,8 @@ export class GameEngine {
           avatar: player.avatar,
           stamina: Math.round(player.stamina),
           isDashing: player.isDashing,
-          isTurbo: player.isTurbo
+          isTurbo: player.isTurbo,
+          isTyping: disc.isTyping
         });
       }
     }
@@ -867,10 +878,17 @@ export class GameEngine {
   }
 
   /**
-   * Resolución física pura y sin GC de las barreras reglamentarias de saque.
+   * Resolución física pura y sin GC de las barreras reglamentarias de saque:
+   * - Equipo con derecho al saque: libre acceso a todo su semicampo y a la totalidad del
+   *   círculo central (R <= centerR), incluyendo la mitad en campo rival. No pueden salir
+   *   del círculo central hacia el resto del campo contrario.
+   * - Equipo rival: no pueden traspasar su línea media (X = 0) ni ingresar al círculo central (R >= centerR + r).
+   * - En saque NEUTRAL: ambos equipos limitados a su respectivo semicampo en X = 0.
    */
   public applyKickoffBarriers(): void {
     if (!this.kickoffState.active) return;
+
+    const centerR = this.stadium.centerRadius ?? 80;
 
     for (const [playerId, player] of this.players.entries()) {
       if (player.team === 'spec') continue;
@@ -879,46 +897,140 @@ export class GameEngine {
 
       const r = disc.radius;
 
-      // 1. Barrera de Mitad de Cancha (X = 0)
-      if (player.team === 'red') {
-        if (disc.pos.x > -r) {
-          disc.pos.x = -r;
-          if (disc.vel.x > 0) disc.vel.x = 0;
-        }
-      } else if (player.team === 'blue') {
-        if (disc.pos.x < r) {
-          disc.pos.x = r;
-          if (disc.vel.x < 0) disc.vel.x = 0;
-        }
-      }
+      // 1. Caso TEAM_KICKOFF con equipo poseedor determinado
+      if (this.kickoffState.mode === 'TEAM_KICKOFF' && this.kickoffState.possessingTeam) {
+        const isPossessing = player.team === this.kickoffState.possessingTeam;
 
-      // 2. Barrera de Rotonda Central (R = 80)
-      if (this.kickoffState.mode === 'TEAM_KICKOFF' && player.team !== this.kickoffState.possessingTeam) {
-        const limitR = 80 + r;
-        const px = disc.pos.x;
-        const py = disc.pos.y;
-        const distSq = px * px + py * py;
-
-        if (distSq < limitR * limitR) {
-          const dist = Math.sqrt(distSq);
-          if (dist > 1e-6) {
-            const nx = px / dist;
-            const ny = py / dist;
-            disc.pos.x = nx * limitR;
-            disc.pos.y = ny * limitR;
-
-            // Anular la componente de velocidad entrante hacia el centro
-            const vDotN = disc.vel.x * nx + disc.vel.y * ny;
-            if (vDotN < 0) {
-              disc.vel.x -= vDotN * nx;
-              disc.vel.y -= vDotN * ny;
+        if (isPossessing) {
+          // Equipo con posesión del saque:
+          // Libre acceso a todo su semicampo y a la totalidad del círculo central.
+          // Confinado estrictamente dentro del círculo central si ingresa al campo rival.
+          if (player.team === 'red') {
+            // Semicampo propio es X <= 0.
+            if (disc.pos.x > 0) {
+              // En campo contrario (X > 0): confinado a r <= centerR - r
+              const distSq = disc.pos.x * disc.pos.x + disc.pos.y * disc.pos.y;
+              const maxR = centerR - r;
+              if (distSq > maxR * maxR) {
+                const dist = Math.sqrt(distSq);
+                if (dist > 1e-6) {
+                  const nx = disc.pos.x / dist;
+                  const ny = disc.pos.y / dist;
+                  disc.pos.x = nx * maxR;
+                  disc.pos.y = ny * maxR;
+                  const vDotN = disc.vel.x * nx + disc.vel.y * ny;
+                  if (vDotN > 0) {
+                    disc.vel.x -= vDotN * nx;
+                    disc.vel.y -= vDotN * ny;
+                  }
+                } else {
+                  disc.pos.x = 0;
+                }
+              }
+            } else {
+              // En semicampo propio (X <= 0): no puede cruzar la línea media por fuera del círculo
+              const maxR = centerR - r;
+              if (Math.abs(disc.pos.y) > maxR && disc.pos.x > -r) {
+                disc.pos.x = -r;
+                if (disc.vel.x > 0) disc.vel.x = 0;
+              }
             }
-          } else {
-            const dirX = player.team === 'red' ? -1 : 1;
-            disc.pos.x = dirX * limitR;
-            disc.pos.y = 0;
-            if (player.team === 'red' && disc.vel.x > 0) disc.vel.x = 0;
-            if (player.team === 'blue' && disc.vel.x < 0) disc.vel.x = 0;
+          } else if (player.team === 'blue') {
+            // Semicampo propio es X >= 0.
+            if (disc.pos.x < 0) {
+              // En campo contrario (X < 0): confinado a r <= centerR - r
+              const distSq = disc.pos.x * disc.pos.x + disc.pos.y * disc.pos.y;
+              const maxR = centerR - r;
+              if (distSq > maxR * maxR) {
+                const dist = Math.sqrt(distSq);
+                if (dist > 1e-6) {
+                  const nx = disc.pos.x / dist;
+                  const ny = disc.pos.y / dist;
+                  disc.pos.x = nx * maxR;
+                  disc.pos.y = ny * maxR;
+                  const vDotN = disc.vel.x * nx + disc.vel.y * ny;
+                  if (vDotN > 0) {
+                    disc.vel.x -= vDotN * nx;
+                    disc.vel.y -= vDotN * ny;
+                  }
+                } else {
+                  disc.pos.x = 0;
+                }
+              }
+            } else {
+              // En semicampo propio (X >= 0): no puede cruzar la línea media por fuera del círculo
+              const maxR = centerR - r;
+              if (Math.abs(disc.pos.y) > maxR && disc.pos.x < r) {
+                disc.pos.x = r;
+                if (disc.vel.x < 0) disc.vel.x = 0;
+              }
+            }
+          }
+        } else {
+          // Equipo rival:
+          // 1. No pueden traspasar su línea media (X = 0)
+          if (player.team === 'red') {
+            if (disc.pos.x > -r) {
+              disc.pos.x = -r;
+              if (disc.vel.x > 0) disc.vel.x = 0;
+            }
+          } else if (player.team === 'blue') {
+            if (disc.pos.x < r) {
+              disc.pos.x = r;
+              if (disc.vel.x < 0) disc.vel.x = 0;
+            }
+          }
+
+          // 2. No pueden ingresar en ningún punto del círculo central (dist >= centerR + r)
+          const limitR = centerR + r;
+          const px = disc.pos.x;
+          const py = disc.pos.y;
+          const distSq = px * px + py * py;
+
+          if (distSq < limitR * limitR) {
+            const dist = Math.sqrt(distSq);
+            if (dist > 1e-6) {
+              const nx = px / dist;
+              const ny = py / dist;
+              disc.pos.x = nx * limitR;
+              disc.pos.y = ny * limitR;
+
+              // Anular la componente de velocidad entrante hacia el centro
+              const vDotN = disc.vel.x * nx + disc.vel.y * ny;
+              if (vDotN < 0) {
+                disc.vel.x -= vDotN * nx;
+                disc.vel.y -= vDotN * ny;
+              }
+            } else {
+              const dirX = player.team === 'red' ? -1 : 1;
+              disc.pos.x = dirX * limitR;
+              disc.pos.y = 0;
+              if (player.team === 'red' && disc.vel.x > 0) disc.vel.x = 0;
+              if (player.team === 'blue' && disc.vel.x < 0) disc.vel.x = 0;
+            }
+
+            // Asegurar que el empuje radial no lo empuje hacia el campo rival
+            if (player.team === 'red' && disc.pos.x > -r) {
+              disc.pos.x = -r;
+              if (disc.vel.x > 0) disc.vel.x = 0;
+            } else if (player.team === 'blue' && disc.pos.x < r) {
+              disc.pos.x = r;
+              if (disc.vel.x < 0) disc.vel.x = 0;
+            }
+          }
+        }
+      } else {
+        // 2. Caso NEUTRAL (saque inicial neutral sin equipo poseedor único):
+        // Ambos equipos restringidos a su mitad sin cruzar la línea media (X = 0)
+        if (player.team === 'red') {
+          if (disc.pos.x > -r) {
+            disc.pos.x = -r;
+            if (disc.vel.x > 0) disc.vel.x = 0;
+          }
+        } else if (player.team === 'blue') {
+          if (disc.pos.x < r) {
+            disc.pos.x = r;
+            if (disc.vel.x < 0) disc.vel.x = 0;
           }
         }
       }

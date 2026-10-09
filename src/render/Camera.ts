@@ -5,6 +5,7 @@ export class Camera {
   public y: number = 0;
   public targetX: number = 0;
   public targetY: number = 0;
+  public zoom: number = 1.0;
   public readonly lerpFactor: number = 0.12;
 
   constructor(initialX: number = 0, initialY: number = 0) {
@@ -103,14 +104,16 @@ export class Camera {
    * cam_y = clamp(cam_y, -(H_ext - Usable_h)/2, (H_ext - Usable_h)/2)
    */
   public clamp(wExt: number, hExt: number, vWidth: number, vHeight: number, safeAreaBottom: number = 0): void {
-    const boundX = (wExt - vWidth) / 2;
+    const z = Math.max(0.1, this.zoom || 1.0);
+    const effectiveVWidth = vWidth / z;
+    const boundX = (wExt - effectiveVWidth) / 2;
     if (boundX <= 0) {
       this.x = 0;
     } else {
       this.x = clamp(this.x, -boundX, boundX);
     }
 
-    const usableHeight = vHeight - safeAreaBottom;
+    const usableHeight = (vHeight - safeAreaBottom) / z;
     const boundY = (hExt - usableHeight) / 2;
     if (boundY <= 0) {
       this.y = 0;

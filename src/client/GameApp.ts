@@ -1,5 +1,5 @@
 import { GameEngine } from '../core/game/GameEngine';
-import { Player, TeamType, INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK, INPUT_TURBO, INPUT_DASH } from '../core/game/Player';
+import { Player, TeamType, INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK, INPUT_TURBO, INPUT_DASH, INPUT_TYPING } from '../core/game/Player';
 import { MatchPhase, MatchState, toMatchPhase } from '../core/game/GameFSM';
 import { GameSnapshot, DiscSnapshot } from '../core/game/GameState';
 import { CanvasRenderer } from '../render/CanvasRenderer';
@@ -23,7 +23,7 @@ import { MatchStatePayload } from '../net/protocol/ControlMessages';
 import { UIStateMachine, UIState } from '../ui/UIStateMachine';
 import { GameplayConfig, DEFAULT_GAMEPLAY_CONFIG } from '../core/game/GameConfig';
 import { GameplayModifierModal } from '../ui/components/GameplayModifierModal';
-import { KeybindModal } from '../ui/components/KeybindModal';
+import { SettingsModal, KeybindModal } from '../ui/components/SettingsModal';
 import { $matchPhase, $gameConfig } from '../ui/stores/gameStore';
 import { resolveGoalAndPitchBoundaries, resolvePredictivePlayerCollision, resolvePredictiveBallCollision } from '../core/physics/Collision';
 import { StadiumRegistry } from '../core/stadiums/StadiumRegistry';
@@ -166,6 +166,7 @@ export class GameApp {
   public gameplayConfig: GameplayConfig = { ...DEFAULT_GAMEPLAY_CONFIG };
   public modifierModal: GameplayModifierModal;
   public keybindModal: KeybindModal;
+  public settingsModal: SettingsModal;
   private clientPrevDashState: boolean = false;
   private btnOpenPhysicsModifiers: HTMLButtonElement | null = null;
 
@@ -224,7 +225,8 @@ export class GameApp {
       () => Boolean(this.mode === 'host' || this.localPlayer.isHost),
       () => false
     );
-    this.keybindModal = new KeybindModal(this.inputManager);
+    this.settingsModal = new SettingsModal(this.inputManager, this.audioManager);
+    this.keybindModal = this.settingsModal;
 
     // Physics Engine por defecto
     this.engine = new GameEngine({
@@ -244,6 +246,7 @@ export class GameApp {
     this.canvasRenderer = new CanvasRenderer(canvas, this.engine.stadium);
     this.canvasRenderer.setExtrapolation(this.extrapolationMs);
     this.canvasRenderer.setGoalNets(this.engine.world.goalNets);
+    this.settingsModal.setCanvasRenderer(this.canvasRenderer);
 
     this.chat.onExtrapolationChange = (ms) => {
       this.extrapolationMs = ms;
@@ -630,8 +633,8 @@ export class GameApp {
 
       // Escape y tecla de menú gestionados centralizadamente por InputManager.ts
 
-      // Tecla Enter para enfocar el chat sin movimiento residual
-      if (e.code === 'Enter') {
+      // Tecla Enter o NumpadEnter para enfocar el chat sin movimiento residual
+      if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter' || this.inputManager.isActionKey('chat', e.code)) {
         if (!this.chat.isFocused()) {
           if (!(document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement)) {
             e.preventDefault();
@@ -1197,6 +1200,7 @@ export class GameApp {
             if (input.curveY !== undefined) p.curveY = input.curveY;
             if (input.isTurbo !== undefined) p.isTurbo = input.isTurbo;
             if (input.triggerDash) p.triggerDash = true;
+            p.isTyping = Boolean(input.isTyping || (input.inputMask & INPUT_TYPING));
           }
         }
       } catch (err) {
@@ -2633,7 +2637,10 @@ export class GameApp {
     if (this.mode === 'host' || this.mode === 'practice') {
       if (this.engine) {
         const inputs = new Map<string, number>();
-        const mask = this.inputManager.getMask();
+        let mask = this.inputManager.getMask();
+        if (this.chat?.isTyping) {
+          mask |= INPUT_TYPING;
+        }
         inputs.set(this.localPlayer.id, mask);
 
         const curve = this.inputManager.getCurveVector();
@@ -2642,6 +2649,7 @@ export class GameApp {
         this.localPlayer.curveX = curve.x;
         this.localPlayer.curveY = curve.y;
         this.localPlayer.isTurbo = this.inputManager.isTurboActive();
+        this.localPlayer.isTyping = this.chat?.isTyping ?? false;
         if (this.inputManager.consumeDashTrigger()) {
           this.localPlayer.triggerDash = true;
         }
@@ -2654,7 +2662,10 @@ export class GameApp {
     } else if (this.mode === 'client') {
       this.clientTick++;
       this.clientInputSequence = this.clientTick;
-      const mask = this.inputManager.getMask();
+      let mask = this.inputManager.getMask();
+      if (this.chat?.isTyping) {
+        mask |= INPUT_TYPING;
+      }
       const curve = this.inputManager.getCurveVector();
       const curveInput = this.inputManager.getCurveInput();
       const isTurbo = this.inputManager.isTurboActive();
@@ -2680,6 +2691,7 @@ export class GameApp {
         GameApp.clientInputData.curveY = curve.y;
         GameApp.clientInputData.isTurbo = isTurbo;
         GameApp.clientInputData.triggerDash = triggerDash;
+        GameApp.clientInputData.isTyping = this.chat?.isTyping ?? false;
 
         const inputBuf = InputPacket.encode(GameApp.clientInputData, GameApp.clientInputBuf);
         this.hostPeer.sendUnreliable(inputBuf);

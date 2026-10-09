@@ -38,6 +38,16 @@ export class DiscRenderer {
   private nextParticleIdx: number = 0;
   private ribbonMap: Map<number, PlayerTurboBuffer> = new Map();
 
+  // Buffers circulares prealocados para estela de balón con giro Magnus (Zero-GC)
+  private static readonly BALL_TRAIL_CAPACITY = 16;
+  private ballTrailX: Float32Array = new Float32Array(16);
+  private ballTrailY: Float32Array = new Float32Array(16);
+  private ballTrailSpin: Float32Array = new Float32Array(16);
+  private ballTrailHead: number = 0;
+  private ballTrailCount: number = 0;
+  public ballTrailEnabled: boolean = true;
+  public playerGlowEnabled: boolean = true;
+
   // Buffers prealocados de coordenadas de polígonos para CERO GC en hot loop
   private scratchLeftX: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
   private scratchLeftY: Float32Array = new Float32Array(TURBO_TRAIL_CAPACITY);
@@ -63,7 +73,8 @@ export class DiscRenderer {
     kicking: false,
     stamina: 100,
     isDashing: false,
-    isTurbo: false
+    isTurbo: false,
+    isTyping: false
   };
 
   public setExtrapolation(ms: number): void {
@@ -128,6 +139,10 @@ export class DiscRenderer {
     s.stamina = disc.stamina;
     s.isDashing = disc.isDashing;
     s.isTurbo = disc.isTurbo;
+    s.isTyping = disc.isTyping;
+    s.spin = disc.spin;
+    s.isSpinActive = disc.isSpinActive;
+    s.curveFactor = disc.curveFactor;
     return s;
   }
 
@@ -180,10 +195,25 @@ export class DiscRenderer {
       }
     }
 
+    // 2. Procesar y registrar posiciones para la estela Magnus del balón (Tarea 6)
+    const ballDisc = discs.find(d => d.team === 0);
+    if (ballDisc) {
+      const spinVal = ballDisc.spin ?? (ballDisc.curveFactor ? ballDisc.curveFactor / 10 : 0);
+      const isSpinning = Boolean(ballDisc.isSpinActive || spinVal !== 0);
+      if (isSpinning) {
+        this.recordBallTrailPoint(ballDisc.x, ballDisc.y, spinVal !== 0 ? spinVal : (ballDisc.isSpinActive ? 1.0 : 0));
+      } else if (this.ballTrailCount > 0) {
+        this.ballTrailCount--;
+      }
+    }
+
     // 3. Renderizar estelas de movimiento (Ribbon trails, partículas y siluetas fantasma)
     this.renderRibbonTrails(ctx);
     this.renderTurboParticles(ctx);
     this.renderDashGhosts(ctx);
+    if (ballDisc) {
+      this.renderBallMagnusTrail(ctx, ballDisc.radius || 5.8);
+    }
 
     // 4. Aros de estamina de los jugadores (capa inferior a los discos de jugadores)
     for (const disc of discs) {
@@ -559,11 +589,13 @@ export class DiscRenderer {
 
     // 4. Anillo Exterior Neón con Resplandor Perimetral
     ctx.save();
-    ctx.strokeStyle = neonGlow;
-    ctx.lineWidth = 4.8;
-    ctx.beginPath();
-    ctx.arc(x, y, radius - 0.6, 0, Math.PI * 2);
-    ctx.stroke();
+    if (this.playerGlowEnabled) {
+      ctx.strokeStyle = neonGlow;
+      ctx.lineWidth = 4.8;
+      ctx.beginPath();
+      ctx.arc(x, y, radius - 0.6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.strokeStyle = neonColor;
     ctx.lineWidth = 2.4;
     ctx.beginPath();
@@ -613,6 +645,11 @@ export class DiscRenderer {
       ctx.arc(x, y, radius + 11, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
+    }
+
+    // 9. Indicador Visual de Chat sobre el Avatar (Bocadillo / Globo de Diálogo)
+    if (disc.isTyping) {
+      this.renderTypingBubble(ctx, disc);
     }
 
     ctx.restore();
@@ -695,6 +732,104 @@ export class DiscRenderer {
       ctx.arc(x, y, ringRadius, startAngle2, endAngle2);
       ctx.stroke();
       ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  private recordBallTrailPoint(x: number, y: number, spinIntensity: number): void {
+    this.ballTrailHead = (this.ballTrailHead + 1) & (DiscRenderer.BALL_TRAIL_CAPACITY - 1);
+    this.ballTrailX[this.ballTrailHead] = x;
+    this.ballTrailY[this.ballTrailHead] = y;
+    this.ballTrailSpin[this.ballTrailHead] = spinIntensity;
+    if (this.ballTrailCount < DiscRenderer.BALL_TRAIL_CAPACITY) {
+      this.ballTrailCount++;
+    }
+  }
+
+  private renderBallMagnusTrail(ctx: CanvasRenderingContext2D, ballRadius: number): void {
+    if (!this.ballTrailEnabled || this.ballTrailCount < 2) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (let i = 0; i < this.ballTrailCount; i++) {
+      const idx = (this.ballTrailHead - i + DiscRenderer.BALL_TRAIL_CAPACITY) & (DiscRenderer.BALL_TRAIL_CAPACITY - 1);
+      const px = this.ballTrailX[idx];
+      const py = this.ballTrailY[idx];
+      const spin = this.ballTrailSpin[idx];
+      const spinMag = Math.min(1.5, Math.abs(spin));
+
+      const taper = Math.max(0, 1 - i / this.ballTrailCount);
+      const alpha = taper * Math.min(0.65, 0.15 + spinMag * 0.35);
+      const r = ballRadius * (0.35 + 0.65 * taper);
+
+      if (alpha <= 0.01) continue;
+
+      ctx.save();
+      // Color de estela según sentido de giro (Z izquierda = cian neón, C derecha = magenta/neón)
+      const color = spin < 0 ? `rgba(0, 229, 255, ${alpha})` : `rgba(255, 0, 85, ${alpha})`;
+      ctx.fillStyle = color;
+      ctx.shadowColor = spin < 0 ? '#00E5FF' : '#FF0055';
+      ctx.shadowBlur = 8 * taper;
+
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  private renderTypingBubble(ctx: CanvasRenderingContext2D, disc: DiscSnapshot): void {
+    const { x, y, radius } = disc;
+    const bx = x;
+    const by = y - radius - 15;
+
+    ctx.save();
+    const left = bx - 11;
+    const top = by - 8;
+    const right = bx + 11;
+    const bottom = by + 6;
+    const r = 5;
+
+    ctx.beginPath();
+    ctx.moveTo(left + r, top);
+    ctx.lineTo(right - r, top);
+    ctx.arcTo(right, top, right, top + r, r);
+    ctx.lineTo(right, bottom - r);
+    ctx.arcTo(right, bottom, right - r, bottom, r);
+    ctx.lineTo(bx + 3, bottom);
+    ctx.lineTo(bx, bottom + 4); // Pico apuntando hacia el avatar
+    ctx.lineTo(bx - 3, bottom);
+    ctx.lineTo(left + r, bottom);
+    ctx.arcTo(left, bottom, left, bottom - r, r);
+    ctx.lineTo(left, top + r);
+    ctx.arcTo(left, top, left + r, top, r);
+    ctx.closePath();
+
+    // Relleno sólido blanco aero con sombra difusa
+    ctx.fillStyle = '#FFFFFF';
+    ctx.shadowColor = 'rgba(0, 229, 255, 0.45)';
+    ctx.shadowBlur = 6;
+    ctx.fill();
+
+    // Borde técnico
+    ctx.strokeStyle = '#0284C7';
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+
+    // 3 Puntos animados de escritura
+    ctx.fillStyle = '#0F172A';
+    const dotR = 1.25;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const t = now / 220;
+    for (let d = -1; d <= 1; d++) {
+      const bounce = Math.sin(t + d * 1.3) * 1.3;
+      ctx.beginPath();
+      ctx.arc(bx + d * 4.8, by - 0.5 + bounce, dotR, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     ctx.restore();

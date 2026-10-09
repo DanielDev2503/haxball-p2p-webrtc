@@ -7,6 +7,7 @@ export const INPUT_TURBO = 1 << 5;       // Bit 5: Turbo (Shift)
 export const INPUT_DASH = 1 << 6;        // Bit 6: DashTrigger (Space) — Flanco ascendente exclusivo
 export const INPUT_MAGNUS_LEFT = 1 << 7; // Bit 7: MagnusLeft (Z)
 export const INPUT_MAGNUS_RIGHT = 1 << 8;// Bit 8: MagnusRight (C)
+export const INPUT_TYPING = 1 << 9;       // Bit 9: Chat typing status
 
 // Parámetros Cinemáticos del Dash (Zero-GC)
 export function getDashStaminaCost(dashesPerFullBar: number = 4): number {
@@ -50,6 +51,7 @@ export class Player {
   public dashDirX: number = 0;
   public dashDirY: number = 0;
   public isTurbo: boolean = false;
+  public isTyping: boolean = false;
   public curveX: number = 0; // -1, 0, 1 (compatibilidad)
   public curveY: number = 0; // -1, 0, 1 (compatibilidad)
   public curveInput: number = 0; // 00 (ninguno), 01 (A - Izquierda), 10 (D - Derecha)

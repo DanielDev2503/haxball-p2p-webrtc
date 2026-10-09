@@ -45,6 +45,7 @@ export class Disc {
   public isCurvingAllowed: boolean = false;
   public curvePerp: number = 0;   // c_perp
   public curveBrake: number = 0;  // k_brake * |c_parallel|
+  public spin: number = 0;        // Magnitud y sentido de rotación angular Magnus
   public lastKickerId: string | null = null;
   public lastKickerDiscId: number = -1;
   public kickerHeading: Vec2 | null = null;
@@ -53,6 +54,7 @@ export class Disc {
   public stamina: number = 100;
   public isDashing: boolean = false;
   public isTurbo: boolean = false;
+  public isTyping: boolean = false;
 
   constructor(options: DiscOptions) {
     this.id = options.id;
@@ -90,6 +92,7 @@ export class Disc {
     this.isCurvingAllowed = false;
     this.curvePerp = 0;
     this.curveBrake = 0;
+    this.spin = 0;
     this.lastKickerId = null;
     this.lastKickerDiscId = -1;
     this.kickerHeading = null;
@@ -115,6 +118,7 @@ export class Disc {
       this.vel.y += -ux * kMagnus;
       this.isCurving = true;
       this.curvePerp = -1;
+      this.spin = -kMagnus;
     } else if (curveRight && !curveLeft) {
       const ux = this.vel.x / speed;
       const uy = this.vel.y / speed;
@@ -122,10 +126,12 @@ export class Disc {
       this.vel.y += ux * kMagnus;
       this.isCurving = true;
       this.curvePerp = 1;
+      this.spin = kMagnus;
     } else {
       // Regla estricta: aceleración lateral nula inmediatamente al no presionar Z/C
       this.isCurving = false;
       this.curvePerp = 0;
+      this.spin = 0;
     }
   }
 }

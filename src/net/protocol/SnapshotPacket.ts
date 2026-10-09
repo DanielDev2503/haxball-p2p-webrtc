@@ -54,11 +54,12 @@ export class SnapshotPacket {
       let flags = 0;
       if (disc.kicking) flags |= 1 << 0;
       if (disc.team === 0) {
-        if (disc.isSpinActive) flags |= 1 << 1;
+        if (disc.isSpinActive || (disc.spin !== undefined && disc.spin !== 0)) flags |= 1 << 1;
         if (disc.isCurvingAllowed) flags |= 1 << 2;
       } else {
         if (disc.isDashing) flags |= 1 << 1;
         if (disc.isTurbo) flags |= 1 << 2;
+        if (disc.isTyping) flags |= 1 << 3;
       }
       view.setUint8(offset + 3, flags);
 
@@ -83,7 +84,9 @@ export class SnapshotPacket {
 
       // Stamina (UInt8: 0 a 100) y curveFactor (Int8: -128 a 127)
       const staminaVal = disc.team !== 0 ? Math.max(0, Math.min(100, Math.round(disc.stamina ?? 100))) : 0;
-      const curveFactorVal = disc.team === 0 ? Math.max(-128, Math.min(127, Math.round(disc.curveFactor ?? 0))) : 0;
+      const curveFactorVal = disc.team === 0
+        ? Math.max(-128, Math.min(127, Math.round(disc.spin !== undefined ? disc.spin * 10 : (disc.curveFactor ?? 0))))
+        : 0;
       view.setUint8(offset + 18, staminaVal);
       view.setInt8(offset + 19, curveFactorVal);
 
@@ -139,6 +142,7 @@ export class SnapshotPacket {
       const kicking = (flags & (1 << 0)) !== 0;
       const isDashing = team !== 0 && (flags & (1 << 1)) !== 0;
       const isTurbo = team !== 0 && (flags & (1 << 2)) !== 0;
+      const isTyping = team !== 0 && (flags & (1 << 3)) !== 0;
       const isSpinActive = team === 0 && (flags & (1 << 1)) !== 0;
       const isCurvingAllowed = team === 0 && (flags & (1 << 2)) !== 0;
 
@@ -185,10 +189,12 @@ export class SnapshotPacket {
         stamina: team !== 0 ? stamina : undefined,
         isDashing: team !== 0 ? isDashing : undefined,
         isTurbo: team !== 0 ? isTurbo : undefined,
+        isTyping: team !== 0 ? isTyping : undefined,
         isSpinActive: team === 0 ? isSpinActive : undefined,
         isCurvingAllowed: team === 0 ? isCurvingAllowed : undefined,
         lastKickerId: team === 0 ? lastKickerId : undefined,
-        curveFactor: team === 0 ? curveFactor : undefined
+        curveFactor: team === 0 ? curveFactor : undefined,
+        spin: team === 0 ? (curveFactor / 10) : undefined
       });
 
       offset += discStride;

@@ -13,6 +13,8 @@ export interface GameplayConfig {
   magnusCurveStrength: number;  // min: 0.0, max: 5.0, def: 1.05 (0.0x - 5.0x)
   ballMass: number;             // min: 0.1, max: 10.0, def: 1.0
   playerMass: number;           // min: 0.1, max: 10.0, def: 2.0
+  playerFriction: number;       // min: 0.80, max: 0.999, def: 0.96 (damping jugador)
+  ballFriction: number;         // min: 0.80, max: 0.999, def: 0.99 (damping balón)
   turboEnabled: boolean;        // default: true
   dashEnabled: boolean;         // default: true
   magnusEnabled: boolean;       // default: true
@@ -134,6 +136,22 @@ export const GAMEPLAY_CONFIG_LIMITS: Record<
     label: 'Masa del Jugador',
     description: 'Masa inercial del jugador para colisiones de cuerpo y tackle.'
   },
+  playerFriction: {
+    min: 0.80,
+    max: 0.999,
+    step: 0.005,
+    default: 0.96,
+    label: 'Fricción Jugador',
+    description: 'Factor de amortiguamiento/damping en el movimiento de jugadores.'
+  },
+  ballFriction: {
+    min: 0.80,
+    max: 0.999,
+    step: 0.005,
+    default: 0.99,
+    label: 'Fricción Balón',
+    description: 'Factor de amortiguamiento/damping por rozamiento del balón con el suelo.'
+  },
   dashesPerFullBar: {
     min: 1,
     max: 6,
@@ -158,6 +176,8 @@ export const DEFAULT_GAMEPLAY_CONFIG: Readonly<GameplayConfig> = Object.freeze({
   magnusCurveStrength: 1.05,
   ballMass: 1.0,
   playerMass: 2.0,
+  playerFriction: 0.96,
+  ballFriction: 0.99,
   turboEnabled: true,
   dashEnabled: true,
   magnusEnabled: true,

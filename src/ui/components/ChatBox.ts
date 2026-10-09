@@ -18,7 +18,10 @@ export class ChatBox {
   public inputEl: HTMLInputElement | null = null;
   private formEl: HTMLFormElement | null = null;
   private preferredHeight: number = DEFAULT_CHAT_HEIGHT;
+  private resizeObserver: ResizeObserver | null = null;
 
+  public isTyping: boolean = false;
+  public onTypingChange?: (isTyping: boolean) => void;
   public audioManager?: AudioManager;
   public onSendMessage?: (text: string) => void;
   public onHeightChange?: (height: number) => void;
@@ -30,6 +33,9 @@ export class ChatBox {
     this.container = document.getElementById('chat-messages') || document.getElementById('chatMessages');
     if (!this.container) {
       console.warn('[ChatBox] Element "#chat-messages" was not found in DOM.');
+    } else if (this.container.style) {
+      this.container.style.userSelect = 'text';
+      (this.container.style as any).webkitUserSelect = 'text';
     }
 
     this.boxEl = document.getElementById('chat-container') || (typeof document !== 'undefined' && typeof document.querySelector === 'function' ? (document.querySelector('.chat-box') as HTMLElement | null) : null);
@@ -52,12 +58,22 @@ export class ChatBox {
     // Inicializar tirador de arrastre superior (Drag Handle)
     this.setupResizeHandle();
 
+    // Instrumentar ResizeObserver para exponer dinámicamente --chat-height
+    this.setupResizeObserver();
+
     // Responsive listener para pantallas reducidas (< 650px)
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', () => {
         this.updateResponsiveHeight();
       });
     }
+
+    const setTypingState = (typing: boolean) => {
+      if (this.isTyping !== typing) {
+        this.isTyping = typing;
+        this.onTypingChange?.(typing);
+      }
+    };
 
     const submitMessage = () => {
       if (!this.inputEl) return;
@@ -70,6 +86,7 @@ export class ChatBox {
         }
       }
       this.inputEl.value = '';
+      setTypingState(false);
       this.inputEl.blur(); // Desenfocar inmediatamente para devolver control de juego
     };
 
@@ -78,8 +95,21 @@ export class ChatBox {
       submitMessage();
     });
 
+    this.inputEl?.addEventListener('focus', () => {
+      setTypingState(true);
+    });
+
+    this.inputEl?.addEventListener('input', () => {
+      setTypingState(true);
+    });
+
+    this.inputEl?.addEventListener('blur', () => {
+      setTypingState(false);
+    });
+
     this.inputEl?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      // Requerimiento 3: Soporte para Enter y NumpadEnter
+      if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') {
         e.preventDefault();
         e.stopPropagation();
         submitMessage();
@@ -89,6 +119,7 @@ export class ChatBox {
         if (this.inputEl) {
           this.inputEl.value = '';
         }
+        setTypingState(false);
         this.blur();
       }
     });
@@ -215,9 +246,38 @@ export class ChatBox {
 
   public applyHeight(heightPx: number): void {
     if (!this.boxEl) return;
-    this.boxEl.style.maxHeight = '';
-    this.boxEl.style.height = `${heightPx}px`;
+    if (this.boxEl.style) {
+      this.boxEl.style.maxHeight = '';
+      this.boxEl.style.height = `${heightPx}px`;
+    }
+    if (typeof document !== 'undefined' && document.documentElement?.style?.setProperty) {
+      document.documentElement.style.setProperty('--chat-height', `${heightPx}px`);
+    }
     this.onHeightChange?.(heightPx);
+  }
+
+  private setupResizeObserver(): void {
+    if (typeof ResizeObserver === 'undefined' || !this.boxEl) return;
+    try {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const h = Math.round(entry.contentRect.height || entry.target.getBoundingClientRect().height);
+          if (h > 0 && typeof document !== 'undefined' && document.documentElement?.style?.setProperty) {
+            document.documentElement.style.setProperty('--chat-height', `${h}px`);
+          }
+        }
+      });
+      this.resizeObserver.observe(this.boxEl);
+    } catch {
+      // Ignorar en entornos de pruebas
+    }
+  }
+
+  public destroy(): void {
+    if (this.resizeObserver && this.boxEl) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
   }
 
   /**
@@ -231,8 +291,13 @@ export class ChatBox {
 
   private updateResponsiveHeight(): void {
     if (!this.boxEl) return;
-    this.boxEl.style.maxHeight = '';
-    this.boxEl.style.height = `${this.preferredHeight}px`;
+    if (this.boxEl.style) {
+      this.boxEl.style.maxHeight = '';
+      this.boxEl.style.height = `${this.preferredHeight}px`;
+    }
+    if (typeof document !== 'undefined' && document.documentElement?.style?.setProperty) {
+      document.documentElement.style.setProperty('--chat-height', `${this.preferredHeight}px`);
+    }
     this.onHeightChange?.(this.preferredHeight);
   }
 
@@ -271,6 +336,10 @@ export class ChatBox {
 
     const row = document.createElement('div');
     row.className = 'chat-msg chat-msg--system';
+    if (row.style) {
+      row.style.userSelect = 'text';
+      (row.style as any).webkitUserSelect = 'text';
+    }
     row.textContent = message;
 
     this.container.appendChild(row);
@@ -295,6 +364,10 @@ export class ChatBox {
 
     const row = document.createElement('div');
     row.className = `chat-msg ${msg.team ?? 'spec'}`;
+    if (row.style) {
+      row.style.userSelect = 'text';
+      (row.style as any).webkitUserSelect = 'text';
+    }
 
     const authorSpan = document.createElement('span');
     authorSpan.className = 'author';

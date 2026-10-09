@@ -135,6 +135,72 @@ describe('Regulatory Kickoff Barriers & Contact Deactivation', () => {
     expect(engine.kickoffState.active).toBe(false);
   });
 
+  it('keeps matchTimerSeconds and activePlayTicks frozen during kickoff and starts clock only after ball touch', () => {
+    engine.startMatch();
+    // Fast-forward countdown into PLAYING
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+    expect(engine.fsm.currentState).toBe(MatchPhase.PLAYING);
+    expect(engine.kickoffState.active).toBe(true);
+
+    // Initial matchTimerSeconds should be 180 and activePlayTicks 0
+    expect(engine.matchTimerSeconds).toBe(180);
+    expect(engine.activePlayTicks).toBe(0);
+
+    // Simulate 120 ticks without any player touching the ball
+    for (let i = 0; i < 120; i++) {
+      engine.tick(new Map());
+    }
+
+    // Timer must remain strictly frozen
+    expect(engine.matchTimerSeconds).toBe(180);
+    expect(engine.activePlayTicks).toBe(0);
+    expect(engine.kickoffState.active).toBe(true);
+
+    // Now player touches the ball
+    const redDisc = engine.playerDiscs.get(pRed.id)!;
+    redDisc.pos.set(-15, 0); // Touching ball at (0, 0)
+    engine.tick(new Map());
+
+    // Kickoff becomes inactive
+    expect(engine.kickoffState.active).toBe(false);
+
+    // Next ticks must advance activePlayTicks and decrement matchTimerSeconds
+    for (let i = 0; i < 60; i++) {
+      engine.tick(new Map());
+    }
+    expect(engine.activePlayTicks).toBeGreaterThan(0);
+    expect(engine.matchTimerSeconds).toBeLessThan(180);
+  });
+
+  it('confines possessing team to own half plus center circle (cannot exit circle into opponent half)', () => {
+    engine.startMatch();
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+
+    // Goal scored by Red -> Blue gets kickoff
+    engine.ball.pos.set(engine.stadium.halfWidth + 20, 0);
+    engine.tick(new Map());
+    for (let i = 0; i < 180; i++) engine.tick(new Map()); // Celebration
+    for (let i = 0; i < 180; i++) engine.tick(new Map()); // Countdown
+
+    expect(engine.kickoffState.possessingTeam).toBe('blue');
+    const blueDisc = engine.playerDiscs.get(pBlue.id)!;
+
+    // 1. Blue can be inside the circle in Red's half (x < 0, inside circle r=80, radius 15 -> r <= 65)
+    blueDisc.pos.set(-30, 0);
+    blueDisc.vel.set(0, 0);
+    engine.tick(new Map());
+    expect(blueDisc.pos.x).toBeCloseTo(-30, 0);
+
+    // 2. Blue attempts to leave the circle deeper into Red territory (x = -80)
+    blueDisc.pos.set(-75, 0);
+    blueDisc.vel.set(-50, 0);
+    engine.tick(new Map());
+
+    // Blue should be restricted by the circle boundary in Red territory (distance <= 80 - 15 = 65)
+    const dist = Math.hypot(blueDisc.pos.x, blueDisc.pos.y);
+    expect(dist).toBeLessThanOrEqual(65.01);
+  });
+
   it('serializes and deserializes kickoffState in GameSnapshot', () => {
     engine.startMatch();
     const snap = engine.getSnapshot();
@@ -143,3 +209,4 @@ describe('Regulatory Kickoff Barriers & Contact Deactivation', () => {
     expect(snap.possessingTeam).toBeNull();
   });
 });
+

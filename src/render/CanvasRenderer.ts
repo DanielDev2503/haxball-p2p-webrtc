@@ -29,6 +29,11 @@ export class CanvasRenderer {
   private safeAreaBottom: number = 160;
   public chatHeight: number = 130;
 
+  // Visual effect toggles
+  public netDeformationEnabled: boolean = true;
+  public offscreenIndicatorsEnabled: boolean = true;
+  public goalShakeEnabled: boolean = true;
+
   // Transformación de cámara y sacudón elástico con GSAP
   public cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
   private lastCelebrationPhase: MatchPhase | null = null;
@@ -195,6 +200,7 @@ export class CanvasRenderer {
    * Micro-sacudón de cámara de 150ms con decaimiento elástico en impactos de postes o choques fuertes
    */
   public triggerPostHitShake(): void {
+    if (!this.goalShakeEnabled) return;
     try {
       gsap.fromTo(
         this.cameraOffset,
@@ -263,7 +269,8 @@ export class CanvasRenderer {
     // Transformaciones High-DPI y Centrado
     ctx.scale(dpr, dpr);
     ctx.translate(this.offsetX + this.cameraOffset.x, this.offsetY + this.cameraOffset.y);
-    ctx.scale(this.scale, this.scale);
+    const zoom = this.camera?.zoom || 1.0;
+    ctx.scale(this.scale * zoom, this.scale * zoom);
 
     // 1-7. Render estructurado por capas bajo traslación de Cámara Dinámica:
     // 1. Césped, marcas de cal y líneas de campo (PitchRenderer)
@@ -295,14 +302,16 @@ export class CanvasRenderer {
       }
       this.lastMirrorPhase = currentPhase;
 
-      this.scratchBall.pos.x = ball.x;
-      this.scratchBall.pos.y = ball.y;
-      this.scratchBall.vel.x = ball.vx || 0;
-      this.scratchBall.vel.y = ball.vy || 0;
-      this.scratchBall.radius = ball.radius || 5.8;
-      for (let i = 0; i < this.localGoalNets.length; i++) {
-        this.localGoalNets[i].step(1 / 60);
-        this.localGoalNets[i].checkBallCollision(this.scratchBall);
+      if (this.netDeformationEnabled) {
+        this.scratchBall.pos.x = ball.x;
+        this.scratchBall.pos.y = ball.y;
+        this.scratchBall.vel.x = ball.vx || 0;
+        this.scratchBall.vel.y = ball.vy || 0;
+        this.scratchBall.radius = ball.radius || 5.8;
+        for (let i = 0; i < this.localGoalNets.length; i++) {
+          this.localGoalNets[i].step(1 / 60);
+          this.localGoalNets[i].checkBallCollision(this.scratchBall);
+        }
       }
     }
     for (let i = 0; i < activeNets.length; i++) {
@@ -321,7 +330,7 @@ export class CanvasRenderer {
     ctx.restore();
 
     // 4. Render Indicadores Fuera de Pantalla (Off-Screen Triangles) en Espacio de Pantalla
-    if (snapshot.discs && snapshot.discs.length > 0) {
+    if (this.offscreenIndicatorsEnabled && snapshot.discs && snapshot.discs.length > 0) {
       ctx.save();
       ctx.scale(dpr, dpr);
       this.offscreenRenderer.draw(

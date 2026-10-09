@@ -39,12 +39,12 @@ export class GameplayModifierModal {
     overlay.style.zIndex = '9999';
 
     const card = document.createElement('div');
-    card.className = 'menu-modal-card custom-scrollbar max-h-[65vh] overflow-y-auto p-4 md:p-5 rounded-2xl w-full max-w-lg md:max-w-2xl';
+    card.className = 'menu-modal-card custom-scrollbar overflow-y-auto p-4 md:p-5 rounded-2xl w-full max-w-lg md:max-w-2xl';
     card.style.maxWidth = '780px';
     card.style.width = '95vw';
-    card.style.maxHeight = '65vh';
+    card.style.maxHeight = 'calc(100vh - var(--chat-height, 130px) - 60px)';
     card.style.overflowY = 'auto';
-    card.style.marginBottom = '80px'; // Previene colisión vertical con el chat inferior
+    card.style.marginBottom = 'auto'; // Flex centrado armónico sin colisiones con chat
 
     // Header
     const header = document.createElement('div');

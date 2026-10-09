@@ -40,7 +40,7 @@ export const DEFAULT_KEYBINDS: KeyBinds = {
   curveRight: ['ArrowRight'],
   menu: ['Escape'],
   pause: ['KeyP'],
-  chat: ['Enter']
+  chat: ['Enter', 'NumpadEnter']
 };
 
 export const KEYBIND_STORAGE_KEY = 'haxball_keybinds';
@@ -168,6 +168,11 @@ export class InputManager {
 
       if (!this.isEnabled) return;
       if (e.repeat) return; // Edge-trigger estricto: descartar auto-repeticiones del sistema operativo
+
+      // Requerimiento 4: Evitar que el gestor global bloquee combinaciones estándar del OS (Ctrl+C, Cmd+C, etc.)
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        return;
+      }
 
       // Si el foco está en un input/textarea, no capturamos controles de juego
       if (

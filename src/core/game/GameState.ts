@@ -13,10 +13,12 @@ export interface DiscSnapshot {
   stamina?: number | undefined;
   isDashing?: boolean | undefined;
   isTurbo?: boolean | undefined;
+  isTyping?: boolean | undefined;
   isSpinActive?: boolean | undefined;
   isCurvingAllowed?: boolean | undefined;
   lastKickerId?: string | number | null | undefined;
   curveFactor?: number | undefined;
+  spin?: number | undefined;
 }
 
 export interface KickoffState {

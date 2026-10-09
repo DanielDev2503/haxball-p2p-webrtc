@@ -3,7 +3,8 @@ import {
   INPUT_TURBO,
   INPUT_DASH,
   INPUT_MAGNUS_LEFT,
-  INPUT_MAGNUS_RIGHT
+  INPUT_MAGNUS_RIGHT,
+  INPUT_TYPING
 } from '../../core/game/Player';
 
 export interface InputData {
@@ -15,6 +16,7 @@ export interface InputData {
   curveY?: number | undefined;
   isTurbo?: boolean | undefined;
   triggerDash?: boolean | undefined;
+  isTyping?: boolean | undefined;
 }
 
 export class InputPacket {
@@ -24,7 +26,7 @@ export class InputPacket {
    * Encodes an input message into a clean 9-byte ArrayBuffer without bit overlap.
    * Byte 0: OP_INPUT (0x01)
    * Bytes 1-4: sequence (uint32)
-   * Bytes 5-6: inputMask (uint16: bits 0-8 sin colisiones)
+   * Bytes 5-6: inputMask (uint16: bits 0-9 sin colisiones)
    *   Bit 0: ArrowUp
    *   Bit 1: ArrowDown
    *   Bit 2: ArrowLeft
@@ -34,6 +36,7 @@ export class InputPacket {
    *   Bit 6: DashTrigger (Space) — Flanco ascendente exclusivo
    *   Bit 7: MagnusLeft (Z)
    *   Bit 8: MagnusRight (C)
+   *   Bit 9: Chat Typing Indicator
    * Bytes 7-8: clientTimestamp (uint16)
    */
   public static encode(data: InputData, buffer?: ArrayBuffer): ArrayBuffer {
@@ -48,6 +51,7 @@ export class InputPacket {
     if (data.triggerDash) mask |= INPUT_DASH;
     if (data.curveInput === 1 || data.curveX === -1) mask |= INPUT_MAGNUS_LEFT;
     if (data.curveInput === 2 || data.curveX === 1) mask |= INPUT_MAGNUS_RIGHT;
+    if (data.isTyping) mask |= INPUT_TYPING;
 
     view.setUint16(5, mask, false);
     view.setUint16(7, data.clientTimestamp, false);
@@ -82,6 +86,7 @@ export class InputPacket {
     const triggerDash = (inputMask & INPUT_DASH) !== 0;
     const magnusLeft = (inputMask & INPUT_MAGNUS_LEFT) !== 0;
     const magnusRight = (inputMask & INPUT_MAGNUS_RIGHT) !== 0;
+    const isTyping = (inputMask & INPUT_TYPING) !== 0;
 
     const curveInput = magnusLeft ? 1 : (magnusRight ? 2 : 0);
     const curveX = magnusLeft ? -1 : (magnusRight ? 1 : 0);
@@ -95,7 +100,8 @@ export class InputPacket {
       curveX,
       curveY,
       isTurbo,
-      triggerDash
+      triggerDash,
+      isTyping
     };
   }
 }

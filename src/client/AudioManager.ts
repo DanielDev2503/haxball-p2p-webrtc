@@ -8,6 +8,13 @@ export class AudioManager {
   public isMuted: boolean = false;
   public volume: number = 0.5;
 
+  // Toggles independientes de efectos sonoros
+  public chatSoundEnabled: boolean = true;
+  public postHitSoundEnabled: boolean = true;
+  public kickSoundEnabled: boolean = true;
+  public goalSoundEnabled: boolean = true;
+  public whistleSoundEnabled: boolean = true;
+
   public setMuted(muted: boolean): void {
     this.isMuted = muted;
   }
@@ -25,7 +32,7 @@ export class AudioManager {
   }
 
   public playKick(): void {
-    if (this.isMuted) return;
+    if (this.isMuted || !this.kickSoundEnabled) return;
     this.initContext();
     if (!this.ctx) return;
 
@@ -72,7 +79,7 @@ export class AudioManager {
   }
 
   public playPostHit(): void {
-    if (this.isMuted) return;
+    if (this.isMuted || !this.postHitSoundEnabled) return;
     this.initContext();
     if (!this.ctx) return;
 
@@ -104,8 +111,18 @@ export class AudioManager {
     osc2.stop(t + 0.25);
   }
 
-  public playGoalWhistle(): void {
+  public playGoal(): void {
+    this.playGoalWhistle(true);
+  }
+
+  public playWhistle(): void {
+    this.playGoalWhistle(false);
+  }
+
+  public playGoalWhistle(isGoal: boolean = true): void {
     if (this.isMuted) return;
+    if (isGoal && !this.goalSoundEnabled) return;
+    if (!isGoal && !this.whistleSoundEnabled) return;
     this.initContext();
     if (!this.ctx) return;
 
@@ -180,7 +197,7 @@ export class AudioManager {
    * Sine wave: 800 Hz -> 1200 Hz en 0.05s, decay en 0.08s con ganancia 0.12.
    */
   public playChatMessageSound(): void {
-    if (this.isMuted) return;
+    if (this.isMuted || !this.chatSoundEnabled) return;
     this.initContext();
     if (!this.ctx) return;
 
