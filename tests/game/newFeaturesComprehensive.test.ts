@@ -71,7 +71,7 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
     });
 
     it('queries current extrapolation value when /extrapolation is called with no args', () => {
-      localStorageMock['haxball_extrapolation'] = '60';
+      localStorageMock['haxball_extrapolation_ms'] = '60';
       const chatBox = new ChatBox();
       const messages: any[] = [];
       (globalThis as any).document.createElement = vi.fn(() => {
@@ -83,10 +83,10 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
       const handled = chatBox.handleLocalCommand('/extrapolation');
       expect(handled).toBe(true);
       expect(messages.length).toBe(1);
-      expect(messages[0].textContent).toContain('Current extrapolation is 60 msec');
+      expect(messages[0].textContent).toContain('[Ajustes] Extrapolación actual: 60 ms. Uso: /extrapolation <0-250>');
     });
 
-    it('updates extrapolation value and localStorage when valid number is passed (0 - 150)', () => {
+    it('updates extrapolation value and localStorage when valid number is passed (0 - 250)', () => {
       const chatBox = new ChatBox();
       const messages: any[] = [];
       (globalThis as any).document.createElement = vi.fn(() => {
@@ -101,12 +101,12 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
       const handled = chatBox.handleLocalCommand('/extrapolation 50');
       expect(handled).toBe(true);
       expect(onExtrapSpy).toHaveBeenCalledWith(50);
-      expect(localStorageMock['haxball_extrapolation']).toBe('50');
+      expect(localStorageMock['haxball_extrapolation_ms']).toBe('50');
       expect(chatBox.getCurrentExtrapolation()).toBe(50);
-      expect(messages[0].textContent).toContain('Extrapolation set to 50 msec');
+      expect(messages[0].textContent).toContain('[Ajustes] Tu extrapolación visual ha sido fijada en 50 ms (Afecta únicamente a tu pantalla).');
     });
 
-    it('rejects extrapolation values outside 0 - 150 range or invalid numbers', () => {
+    it('supports /extra alias and rejects extrapolation values outside 0 - 250 range', () => {
       const chatBox = new ChatBox();
       const messages: any[] = [];
       (globalThis as any).document.createElement = vi.fn(() => {
@@ -118,15 +118,56 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
       const onExtrapSpy = vi.fn();
       chatBox.onExtrapolationChanged = onExtrapSpy;
 
-      expect(chatBox.handleLocalCommand('/extrapolation 200')).toBe(true);
-      expect(onExtrapSpy).not.toHaveBeenCalled();
-      expect(messages[messages.length - 1].textContent).toContain('Invalid extrapolation value');
+      expect(chatBox.handleLocalCommand('/extra 120')).toBe(true);
+      expect(onExtrapSpy).toHaveBeenCalledWith(120);
+      expect(localStorageMock['haxball_extrapolation_ms']).toBe('120');
+      expect(messages[0].textContent).toContain('[Ajustes] Tu extrapolación visual ha sido fijada en 120 ms (Afecta únicamente a tu pantalla).');
+
+      expect(chatBox.handleLocalCommand('/extrapolation 300')).toBe(true);
+      expect(messages[messages.length - 1].textContent).toContain('[Ajustes] Extrapolación actual:');
 
       expect(chatBox.handleLocalCommand('/extrapolation -10')).toBe(true);
-      expect(onExtrapSpy).not.toHaveBeenCalled();
+      expect(messages[messages.length - 1].textContent).toContain('[Ajustes] Extrapolación actual:');
 
       expect(chatBox.handleLocalCommand('/extrapolation abc')).toBe(true);
-      expect(onExtrapSpy).not.toHaveBeenCalled();
+      expect(messages[messages.length - 1].textContent).toContain('[Ajustes] Extrapolación actual:');
+    });
+
+    it('ensures /extrapolation does not trigger onSendMessage (no WebRTC propagation)', () => {
+      const chatBox = new ChatBox();
+      const sendSpy = vi.fn();
+      chatBox.onSendMessage = sendSpy;
+
+      expect(chatBox.handleLocalCommand('/extrapolation 100')).toBe(true);
+      expect(sendSpy).not.toHaveBeenCalled();
+
+      expect(chatBox.handleLocalCommand('/extra 100')).toBe(true);
+      expect(sendSpy).not.toHaveBeenCalled();
+    });
+
+    it('allows independent client extrapolation preferences without cross-client interference', () => {
+      const clientChatA = new ChatBox();
+      const clientChatB = new ChatBox();
+      const mockGameAppA = {
+        extrapolationMs: 0,
+        setExtrapolation(ms: number) { this.extrapolationMs = ms; }
+      };
+      const mockGameAppB = {
+        extrapolationMs: 0,
+        setExtrapolation(ms: number) { this.extrapolationMs = ms; }
+      };
+      clientChatA.gameApp = mockGameAppA;
+      clientChatB.gameApp = mockGameAppB;
+
+      // Client A sets 150 ms
+      clientChatA.handleLocalCommand('/extrapolation 150');
+      expect(mockGameAppA.extrapolationMs).toBe(150);
+      expect(mockGameAppB.extrapolationMs).toBe(0);
+
+      // Client B sets 50 ms
+      clientChatB.handleLocalCommand('/extra 50');
+      expect(mockGameAppA.extrapolationMs).toBe(150);
+      expect(mockGameAppB.extrapolationMs).toBe(50);
     });
 
     it('prints controls guide in cyan/green formatting with new schema', () => {
@@ -257,8 +298,8 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
       };
 
       const renderPlayer = discRenderer.getRenderDisc(remotePlayer, true);
-      // Expected x = 100 + 100 * 0.05 = 105
-      expect(renderPlayer.x).toBeCloseTo(105, 1);
+      // Expected x = 100 + 100 * (0.05 * 0.96) = 104.8
+      expect(renderPlayer.x).toBeCloseTo(104.8, 1);
       expect(renderPlayer.y).toBeCloseTo(50, 1);
 
       // 2. Remote ball with velocity (200 px/s)
@@ -278,9 +319,9 @@ describe('Comprehensive Validation: Controls, Rope Net, Universal Extrapolation 
       };
 
       const renderBall = discRenderer.getRenderDisc(remoteBall, true);
-      // Expected ball x = 0 + 200 * 0.05 = 10, y = 0 + (-100) * 0.05 = -5
-      expect(renderBall.x).toBeCloseTo(10, 1);
-      expect(renderBall.y).toBeCloseTo(-5, 1);
+      // Expected ball x = 0 + 200 * (0.05 * 0.99) = 9.9, y = 0 + (-100) * (0.05 * 0.99) = -4.95
+      expect(renderBall.x).toBeCloseTo(9.9, 1);
+      expect(renderBall.y).toBeCloseTo(-4.95, 1);
 
       // 3. Clamping test: remote entity projected outside pitch boundaries
       const fastPlayerNearWall = {

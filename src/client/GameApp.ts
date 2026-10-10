@@ -235,22 +235,19 @@ export class GameApp {
     }, this.gameplayConfig);
     this.setupEngineCallbacks(this.engine);
 
-    const savedExtrap = typeof localStorage !== 'undefined' ? localStorage.getItem('haxball_extrapolation') : null;
-    if (savedExtrap !== null) {
-      const parsedExtrap = parseInt(savedExtrap, 10);
-      if (!isNaN(parsedExtrap)) {
-        this.extrapolationMs = Math.max(0, Math.min(150, parsedExtrap));
-      }
-    }
+    const savedExtrap = typeof localStorage !== 'undefined'
+      ? (localStorage.getItem('haxball_extrapolation_ms') ?? localStorage.getItem('haxball_extrapolation'))
+      : null;
+    this.extrapolationMs = savedExtrap !== null ? Math.max(0, Math.min(250, parseInt(savedExtrap, 10) || 0)) : 0;
 
     this.canvasRenderer = new CanvasRenderer(canvas, this.engine.stadium);
     this.canvasRenderer.setExtrapolation(this.extrapolationMs);
     this.canvasRenderer.setGoalNets(this.engine.world.goalNets);
     this.settingsModal.setCanvasRenderer(this.canvasRenderer);
 
+    this.chat.gameApp = this;
     this.chat.onExtrapolationChange = (ms) => {
-      this.extrapolationMs = ms;
-      this.canvasRenderer?.setExtrapolation(ms);
+      this.setExtrapolation(ms);
     };
     this.chat.getExtrapolationMs = () => this.extrapolationMs;
 
@@ -414,6 +411,11 @@ export class GameApp {
       window.addEventListener('beforeunload', notifyDisconnection);
       window.addEventListener('pagehide', notifyDisconnection);
     }
+  }
+
+  public setExtrapolation(ms: number): void {
+    this.extrapolationMs = Math.max(0, Math.min(250, ms));
+    this.canvasRenderer?.setExtrapolation(this.extrapolationMs);
   }
 
   private handleUIStateChange(newState: UIState, _prevState: UIState): void {

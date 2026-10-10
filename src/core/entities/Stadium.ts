@@ -72,6 +72,15 @@ export class Stadium {
     return this.goalHalfHeight * 2;
   }
 
+  public get bounds(): { halfWidth: number; halfHeight: number; goalDepth: number; goalHalfHeight: number } {
+    return {
+      halfWidth: this.halfWidth,
+      halfHeight: this.halfHeight,
+      goalDepth: this.goalDepth,
+      goalHalfHeight: this.goalHalfHeight
+    };
+  }
+
   public segments: Segment[] = [];
   public posts: Disc[] = [];
   public goals: GoalDefinition[] = [];

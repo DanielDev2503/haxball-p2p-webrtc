@@ -50,12 +50,7 @@ export class CanvasRenderer {
     this.stadium = stadium;
     this.pitchRenderer = new PitchRenderer();
     this.discRenderer = new DiscRenderer();
-    this.discRenderer.setStadiumBounds({
-      halfWidth: this.stadium.halfWidth,
-      halfHeight: this.stadium.halfHeight,
-      goalDepth: this.stadium.goalDepth,
-      goalHalfHeight: this.stadium.goalHalfHeight
-    });
+    this.discRenderer.setStadiumBounds(this.stadium.bounds);
     this.camera = new Camera();
     this.offscreenRenderer = new OffscreenIndicatorRenderer();
 
@@ -71,7 +66,7 @@ export class CanvasRenderer {
   }
 
   public setExtrapolation(ms: number): void {
-    this.extrapolationMs = Math.max(0, Math.min(150, ms));
+    this.extrapolationMs = Math.max(0, Math.min(250, ms));
     this.discRenderer.setExtrapolation(this.extrapolationMs);
   }
 
@@ -158,12 +153,7 @@ export class CanvasRenderer {
 
   public setStadium(stadium: Stadium): void {
     this.stadium = stadium;
-    this.discRenderer.setStadiumBounds({
-      halfWidth: stadium.halfWidth,
-      halfHeight: stadium.halfHeight,
-      goalDepth: stadium.goalDepth,
-      goalHalfHeight: stadium.goalHalfHeight
-    });
+    this.discRenderer.setStadiumBounds(stadium.bounds);
     this.initLocalGoalNets();
     this.handleResize();
   }

@@ -28,6 +28,10 @@ export class ChatBox {
   public onExtrapolationChange?: (ms: number) => void;
   public onExtrapolationChanged?: (ms: number) => void;
   public getExtrapolationMs?: () => number;
+  public gameApp?: {
+    extrapolationMs?: number;
+    setExtrapolation?: (ms: number) => void;
+  };
 
   constructor() {
     this.container = document.getElementById('chat-messages') || document.getElementById('chatMessages');
@@ -92,6 +96,7 @@ export class ChatBox {
 
     this.formEl?.addEventListener('submit', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       submitMessage();
     });
 
@@ -404,25 +409,30 @@ export class ChatBox {
     const parts = trimmed.split(/\s+/);
     const cmd = parts[0].toLowerCase();
 
-    if (cmd === '/extrapolation') {
+    if (cmd === '/extrapolation' || cmd === '/extra') {
       if (parts.length > 1) {
         const val = parseFloat(parts[1]);
-        if (!isNaN(val) && val >= 0 && val <= 150) {
+        if (!isNaN(val) && val >= 0 && val <= 250) {
           const rounded = Math.round(val);
           if (typeof localStorage !== 'undefined') {
             try {
-              localStorage.setItem('haxball_extrapolation', String(rounded));
+              localStorage.setItem('haxball_extrapolation_ms', rounded.toString());
+              localStorage.setItem('haxball_extrapolation', rounded.toString());
             } catch {}
+          }
+          if (this.gameApp && typeof this.gameApp.setExtrapolation === 'function') {
+            this.gameApp.setExtrapolation(rounded);
           }
           this.onExtrapolationChange?.(rounded);
           this.onExtrapolationChanged?.(rounded);
-          this.addSystemMessage(`Extrapolation set to ${rounded} msec`);
+          this.addSystemMessage(`[Ajustes] Tu extrapolación visual ha sido fijada en ${rounded} ms (Afecta únicamente a tu pantalla).`);
         } else {
-          this.addSystemMessage('Invalid extrapolation value. Use 0 - 150 msec.');
+          const current = this.getCurrentExtrapolation();
+          this.addSystemMessage(`[Ajustes] Extrapolación actual: ${current} ms. Uso: /extrapolation <0-250>`);
         }
       } else {
         const current = this.getCurrentExtrapolation();
-        this.addSystemMessage(`Current extrapolation is ${current} msec`);
+        this.addSystemMessage(`[Ajustes] Extrapolación actual: ${current} ms. Uso: /extrapolation <0-250>`);
       }
       return true;
     }
@@ -431,15 +441,18 @@ export class ChatBox {
   }
 
   public getCurrentExtrapolation(): number {
+    if (this.gameApp && typeof this.gameApp.extrapolationMs === 'number') {
+      return this.gameApp.extrapolationMs;
+    }
     if (this.getExtrapolationMs) {
       return this.getExtrapolationMs();
     }
     if (typeof localStorage !== 'undefined') {
       try {
-        const val = localStorage.getItem('haxball_extrapolation');
+        const val = localStorage.getItem('haxball_extrapolation_ms') ?? localStorage.getItem('haxball_extrapolation');
         if (val !== null) {
           const num = parseInt(val, 10);
-          if (!isNaN(num)) return Math.max(0, Math.min(150, num));
+          if (!isNaN(num)) return Math.max(0, Math.min(250, num));
         }
       } catch {}
     }

@@ -60,6 +60,8 @@ export class DiscRenderer {
 
   public extrapolationMs: number = 0;
   public stadiumBounds: { halfWidth: number; halfHeight: number; goalDepth: number; goalHalfHeight: number } | null = null;
+  public dampingBall: number = 0.99;
+  public dampingPlayer: number = 0.96;
 
   private scratchDisc: DiscSnapshot = {
     id: 0,
@@ -78,14 +80,14 @@ export class DiscRenderer {
   };
 
   public setExtrapolation(ms: number): void {
-    this.extrapolationMs = Math.max(0, Math.min(150, ms));
+    this.extrapolationMs = Math.max(0, Math.min(250, ms));
   }
 
   public setStadiumBounds(bounds: { halfWidth: number; halfHeight: number; goalDepth: number; goalHalfHeight: number } | null): void {
     this.stadiumBounds = bounds;
   }
 
-  private isBallControlledLocally(ball: DiscSnapshot, discs: DiscSnapshot[], localDiscId?: number | null): boolean {
+  public isBallControlledLocally(ball: DiscSnapshot, discs: DiscSnapshot[], localDiscId?: number | null): boolean {
     if (localDiscId === null || localDiscId === undefined) return false;
     for (let i = 0; i < discs.length; i++) {
       const d = discs[i];
@@ -102,13 +104,16 @@ export class DiscRenderer {
     return false;
   }
 
-  public getRenderDisc(disc: DiscSnapshot, isRemote: boolean): DiscSnapshot {
+  public getRenderDisc(disc: DiscSnapshot, isRemote: boolean = true): DiscSnapshot {
     if (!isRemote || this.extrapolationMs <= 0) return disc;
     const dt = this.extrapolationMs / 1000;
+    if (dt === 0) return disc;
+
+    const damping = (disc as any).damping ?? (disc.team === 0 ? this.dampingBall : this.dampingPlayer);
     const s = this.scratchDisc;
     s.id = disc.id;
-    let px = disc.x + (disc.vx || 0) * dt;
-    let py = disc.y + (disc.vy || 0) * dt;
+    let px = disc.x + (disc.vx || 0) * (dt * damping);
+    let py = disc.y + (disc.vy || 0) * (dt * damping);
 
     if (this.stadiumBounds) {
       const hw = this.stadiumBounds.halfWidth;
@@ -218,8 +223,7 @@ export class DiscRenderer {
     // 4. Aros de estamina de los jugadores (capa inferior a los discos de jugadores)
     for (const disc of discs) {
       if (disc.team !== 0) {
-        const isRemote = disc.id !== localDiscId;
-        const renderD = this.getRenderDisc(disc, isRemote);
+        const renderD = this.getRenderDisc(disc, true);
         this.renderStaminaBar(ctx, renderD);
       }
     }
@@ -227,8 +231,7 @@ export class DiscRenderer {
     // 5. Discos de los jugadores y sus dorsales/avatares
     for (const disc of discs) {
       if (disc.team !== 0) {
-        const isRemote = disc.id !== localDiscId;
-        const renderD = this.getRenderDisc(disc, isRemote);
+        const renderD = this.getRenderDisc(disc, true);
         this.renderPlayer(ctx, renderD, disc.id === localDiscId, false);
       }
     }
@@ -236,8 +239,7 @@ export class DiscRenderer {
     // 6. Balón físico, textura y su resplandor/sombra (RENDERIZADO POR ENCIMA DE LOS DISCOS Y AROS)
     for (const disc of discs) {
       if (disc.team === 0) {
-        const isLocallyControlled = this.isBallControlledLocally(disc, discs, localDiscId);
-        const renderD = this.getRenderDisc(disc, !isLocallyControlled);
+        const renderD = this.getRenderDisc(disc, true);
         this.renderBall(ctx, renderD);
       }
     }
