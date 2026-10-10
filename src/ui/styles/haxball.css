@@ -2392,6 +2392,127 @@ select:focus-visible {
   }
 }
 
+/* ==========================================================================
+   SISTEMA DE PANELES DESLIZABLES (SLIDING PANELS: ESTADÍSTICAS & MENÚ/LOBBY)
+   ========================================================================== */
+
+.sliding-panels-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10005;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sliding-panel {
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
+}
+
+.sliding-panel.panel-center,
+.menu-modal-card.panel-center {
+  transform: translate(0, 0);
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+}
+
+.sliding-panel.panel-left,
+.menu-modal-card.panel-left {
+  transform: translateX(-120vw);
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.sliding-panel.panel-right,
+.menu-modal-card.panel-right {
+  transform: translateX(120vw);
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.menu-modal-card {
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
+}
+
+.sliding-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(14, 165, 233, 0.2);
+  color: #38BDF8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.sliding-tab-btn:hover {
+  background: rgba(14, 165, 233, 0.35);
+  color: #FFFFFF;
+  border-color: #38BDF8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+
+.accordion-toggle-btn {
+  background: none;
+  border: none;
+  color: #38BDF8;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: transform 0.2s ease, background 0.15s ease;
+}
+
+.accordion-toggle-btn:hover {
+  background: rgba(56, 189, 248, 0.15);
+  color: #FFFFFF;
+}
+
+.player-breakdown-panel {
+  background: rgba(15, 23, 42, 0.65);
+  border-top: 1px dashed rgba(56, 189, 248, 0.25);
+  padding: 10px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px 14px;
+  font-size: 0.78rem;
+  color: #CBD5E1;
+}
+
+.breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 4px;
+}
+
+.breakdown-label {
+  color: #94A3B8;
+}
+
+.breakdown-val {
+  font-weight: 700;
+  color: #F8FAFC;
+}
+
+.breakdown-pts {
+  color: #FDE047;
+  font-weight: 800;
+  margin-left: 4px;
+}
+
+
 
 
 

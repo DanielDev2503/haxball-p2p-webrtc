@@ -42,6 +42,12 @@ export class GameEngine {
   public activePlayTicks: number = 0;
   public redScore: number = 0;
   public blueScore: number = 0;
+
+  // Marcador de equipo desacoplado
+  public get scores(): { red: number; blue: number } {
+    return { red: this.redScore, blue: this.blueScore };
+  }
+
   public matchTimerSeconds: number = 180;
   public config: MatchConfig;
   public gameplayConfig: GameplayConfig;
@@ -57,6 +63,7 @@ export class GameEngine {
   public lastPlayerTouchTick: Map<string, number> = new Map();
 
   // Event callbacks
+  public onScoreEvent?: (playerId: string, text: string, points: number, x: number, y: number) => void;
   public onGoal?: (scoringTeam: 'red' | 'blue', redScore: number, blueScore: number) => void;
   public onKick?: (playerDisc: Disc, ball: Disc) => void;
   public onPostHit?: (ball: Disc, post: Disc) => void;
@@ -164,7 +171,12 @@ export class GameEngine {
         saves: 0,
         shots: 0,
         touches: 0,
-        hasHattrickBonus: false
+        hasHattrickBonus: false,
+        shotsNormal: 0,
+        shotsPowerCurve: 0,
+        assistsNormal: 0,
+        assistsCurve: 0,
+        hattrickBonus: 0
       };
       this.matchStats.set(playerId, stats);
     }
@@ -176,6 +188,11 @@ export class GameEngine {
     if (stats.goals >= 3 || stats.assists >= 3 || stats.saves >= 3) {
       stats.hasHattrickBonus = true;
       stats.points += 100;
+      stats.hattrickBonus = 100;
+      const disc = this.playerDiscs.get(stats.playerId);
+      const posX = disc ? disc.pos.x : 0;
+      const posY = disc ? disc.pos.y : 0;
+      this.onScoreEvent?.(stats.playerId, '¡Hattrick Bonus +100!', 100, posX, posY);
     }
   }
 
@@ -204,6 +221,10 @@ export class GameEngine {
       const stats = this.getOrCreatePlayerStats(playerId);
       stats.touches++;
       stats.points += 2; // +2 pts por toque de balón
+      const disc = this.playerDiscs.get(playerId);
+      const px = disc ? disc.pos.x : this.ball.pos.x;
+      const py = disc ? disc.pos.y : this.ball.pos.y;
+      this.onScoreEvent?.(playerId, 'Toque +2', 2, px, py);
 
       // Pase Completado (+10 pts):
       // Contacto de Jugador A seguido por contacto de Jugador B del mismo equipo, sin toques rivales intermedios
@@ -213,6 +234,10 @@ export class GameEngine {
           const passerStats = this.getOrCreatePlayerStats(lastTouch.playerId);
           passerStats.passes++;
           passerStats.points += 10;
+          const pDisc = this.playerDiscs.get(lastTouch.playerId);
+          const ppx = pDisc ? pDisc.pos.x : px;
+          const ppy = pDisc ? pDisc.pos.y : py;
+          this.onScoreEvent?.(lastTouch.playerId, 'Pase completado +10', 10, ppx, ppy);
         }
       }
 
@@ -229,6 +254,7 @@ export class GameEngine {
         if (inOwnHalf) {
           stats.saves++;
           stats.points += 100;
+          this.onScoreEvent?.(playerId, 'Atajada +100', 100, px, py);
           this.checkHattrickBonus(stats);
         }
         this.pendingShot = null;
@@ -294,10 +320,17 @@ export class GameEngine {
       const shooterStats = this.getOrCreatePlayerStats(player.id);
       shooterStats.shots++;
       const isPowerOrCurve = Boolean(this.ball.isPowerShot || this.ball.spin !== 0 || this.ball.isCurving);
+      const shooterDisc = this.playerDiscs.get(player.id);
+      const sx = shooterDisc ? shooterDisc.pos.x : this.ball.pos.x;
+      const sy = shooterDisc ? shooterDisc.pos.y : this.ball.pos.y;
       if (isPowerOrCurve) {
+        shooterStats.shotsPowerCurve = (shooterStats.shotsPowerCurve || 0) + 1;
         shooterStats.points += 30; // +20 base + 10 bonificación por potencia o curva
+        this.onScoreEvent?.(player.id, 'Tiro con efecto +30', 30, sx, sy);
       } else {
+        shooterStats.shotsNormal = (shooterStats.shotsNormal || 0) + 1;
         shooterStats.points += 20; // +20 base
+        this.onScoreEvent?.(player.id, 'Tiro a portería +20', 20, sx, sy);
       }
       this.pendingShot = {
         shooterId: player.id,
@@ -386,6 +419,10 @@ export class GameEngine {
     if (!player) return;
 
     player.team = team;
+    const stats = this.matchStats.get(playerId);
+    if (stats) {
+      stats.team = team;
+    }
     const existingDisc = this.playerDiscs.get(playerId);
 
     if (team === 'spec') {
@@ -409,6 +446,12 @@ export class GameEngine {
         existingDisc.prevPos.set(goalSpawnX, goalSpawnY);
         existingDisc.vel.set(0, 0);
       }
+    }
+
+    // Los marcadores de equipo se mantienen intactos y el jugador conserva sus puntos acumulados.
+    // Evaluación continua autoritativa del límite de goles:
+    if (this.fsm.currentState === MatchPhase.PLAYING) {
+      this.checkMatchConclusion();
     }
   }
 
@@ -964,6 +1007,10 @@ export class GameEngine {
             const scorerStats = this.getOrCreatePlayerStats(scorerPlayerId);
             scorerStats.goals++;
             scorerStats.points += 100;
+            const scDisc = this.playerDiscs.get(scorerPlayerId);
+            const scX = scDisc ? scDisc.pos.x : this.ball.pos.x;
+            const scY = scDisc ? scDisc.pos.y : this.ball.pos.y;
+            this.onScoreEvent?.(scorerPlayerId, '¡Gol! +100', 100, scX, scY);
             this.checkHattrickBonus(scorerStats);
             break;
           }
@@ -986,10 +1033,17 @@ export class GameEngine {
                 assisterPlayerName = ap?.name ?? assisterPlayerId;
                 const assisterStats = this.getOrCreatePlayerStats(assisterPlayerId);
                 assisterStats.assists++;
+                const asDisc = this.playerDiscs.get(assisterPlayerId);
+                const asX = asDisc ? asDisc.pos.x : this.ball.pos.x;
+                const asY = asDisc ? asDisc.pos.y : this.ball.pos.y;
                 if (touch.wasCurve) {
+                  assisterStats.assistsCurve = (assisterStats.assistsCurve || 0) + 1;
                   assisterStats.points += 70; // +50 asistencia + 20 bonificación por curva
+                  this.onScoreEvent?.(assisterPlayerId, 'Asistencia con efecto +70', 70, asX, asY);
                 } else {
+                  assisterStats.assistsNormal = (assisterStats.assistsNormal || 0) + 1;
                   assisterStats.points += 50;
+                  this.onScoreEvent?.(assisterPlayerId, 'Asistencia +50', 50, asX, asY);
                 }
                 this.checkHattrickBonus(assisterStats);
               }
@@ -1063,7 +1117,7 @@ export class GameEngine {
     }
   }
 
-  private checkMatchConclusion(): boolean {
+  public checkMatchConclusion(): boolean {
     if (this.config.scoreLimit > 0) {
       if (this.redScore >= this.config.scoreLimit) {
         this.fsm.startVictoryCelebration('red', 300);

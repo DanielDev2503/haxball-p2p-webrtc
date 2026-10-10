@@ -4,6 +4,8 @@ import { Player, INPUT_KICK } from '../../src/core/game/Player';
 import { MatchPhase } from '../../src/core/game/GameFSM';
 import { POWER_SHOT_SPEED_THRESHOLD } from '../../src/core/entities/Disc';
 import { MatchStatsModal } from '../../src/ui/components/MatchStatsModal';
+import { DiscRenderer } from '../../src/render/DiscRenderer';
+import { DiscSnapshot } from '../../src/core/game/GameState';
 
 describe('Game Scoring Engine & Ball Kinematics (Phase 1)', () => {
   let engine: GameEngine;
@@ -392,4 +394,142 @@ describe('Game Scoring Engine & Ball Kinematics (Phase 1)', () => {
       (globalThis as any).document = originalDoc;
     });
   });
+
+  describe('5. Phase 1 Enhancements & Quality Assurance', () => {
+    it('mid-match team switch maintains team scores and allows concluding when scoreLimit is reached', () => {
+      const engine = new GameEngine({ scoreLimit: 2, timeLimitSeconds: 180 });
+      const p1 = new Player({ id: 'p1', name: 'Player1', team: 'red' });
+      const p2 = new Player({ id: 'p2', name: 'Player2', team: 'blue' });
+      engine.addPlayer(p1);
+      engine.addPlayer(p2);
+      engine.startMatch();
+
+      for (let i = 0; i < 180; i++) engine.tick(new Map());
+      expect(engine.fsm.currentState).toBe(MatchPhase.PLAYING);
+
+      // Red scores a goal
+      engine.redScore = 1;
+      const initialStats = engine.getOrCreatePlayerStats('p1');
+      initialStats.points = 100;
+      initialStats.goals = 1;
+
+      expect(engine.scores.red).toBe(1);
+      expect(engine.scores.blue).toBe(0);
+
+      // Player 1 switches to blue mid-match
+      engine.setPlayerTeam('p1', 'blue');
+
+      // Team scores must remain identical!
+      expect(engine.scores.red).toBe(1);
+      expect(engine.scores.blue).toBe(0);
+
+      // Player retains their individual points and stats
+      const p1Stats = engine.getOrCreatePlayerStats('p1');
+      expect(p1Stats.points).toBe(100);
+      expect(p1Stats.goals).toBe(1);
+      expect(p1Stats.team).toBe('blue');
+
+      // Red scores 2nd goal reaching scoreLimit (2)
+      engine.ball.pos.set(engine.stadium.halfWidth + 20, 0); // Goal in blue net = Red scores
+      engine.tick(new Map());
+
+      expect(engine.scores.red).toBe(2);
+      expect(engine.fsm.currentState).toBe(MatchPhase.VICTORY_CELEBRATION);
+      expect(engine.fsm.winningTeam).toBe('red');
+    });
+
+    it('3D ball rolling coordinates match the negative velocity vector sign', () => {
+      const renderer = new DiscRenderer();
+      const mockCtx: any = {
+        save: () => {},
+        restore: () => {},
+        beginPath: () => {},
+        moveTo: () => {},
+        lineTo: () => {},
+        arc: () => {},
+        fill: () => {},
+        stroke: () => {},
+        clip: () => {},
+        fillRect: () => {},
+        createRadialGradient: () => ({ addColorStop: () => {} }),
+        createLinearGradient: () => ({ addColorStop: () => {} }),
+      };
+
+      renderer.setBallRollAngles(0, 0);
+      const radius = 10;
+      const vx = 100;
+      const vy = 50;
+      const dt = 1 / 60;
+
+      const ballDisc: DiscSnapshot = {
+        id: 0,
+        team: 0,
+        x: 0,
+        y: 0,
+        vx,
+        vy,
+        radius,
+        kicking: false,
+        avatar: ''
+      };
+
+      renderer.draw(mockCtx, [ballDisc]);
+
+      const angles = renderer.getBallRollAngles();
+      const expectedRollX = -(vx * dt) / radius;
+      const expectedRollY = -(vy * dt) / radius;
+
+      expect(angles.x).toBeCloseTo(expectedRollX, 4);
+      expect(angles.y).toBeCloseTo(expectedRollY, 4);
+      expect(angles.x).toBeLessThan(0);
+      expect(angles.y).toBeLessThan(0);
+    });
+
+    it('points breakdown sums with 100% mathematical precision to the player total', () => {
+      const engine = new GameEngine();
+      const p = new Player({ id: 'p_math', name: 'Mathematician', team: 'red' });
+      engine.addPlayer(p);
+
+      const stats = engine.getOrCreatePlayerStats('p_math');
+      stats.touches = 15; // 15 * 2 = 30
+      stats.passes = 4;   // 4 * 10 = 40
+      stats.shotsNormal = 2; // 2 * 20 = 40
+      stats.shotsPowerCurve = 1; // 1 * 30 = 30
+      stats.shots = 3;
+      stats.assistsNormal = 1; // 1 * 50 = 50
+      stats.assistsCurve = 1; // 1 * 70 = 70
+      stats.assists = 2;
+      stats.saves = 2; // 2 * 100 = 200
+      stats.goals = 3; // 3 * 100 = 300
+      stats.hasHattrickBonus = true; // 100
+      stats.hattrickBonus = 100;
+
+      stats.points = (stats.touches * 2) +
+                     (stats.passes * 10) +
+                     (stats.shotsNormal * 20) +
+                     (stats.shotsPowerCurve * 30) +
+                     (stats.assistsNormal * 50) +
+                     (stats.assistsCurve * 70) +
+                     (stats.saves * 100) +
+                     (stats.goals * 100) +
+                     (stats.hasHattrickBonus ? 100 : 0);
+
+      const expectedTotal = 30 + 40 + 40 + 30 + 50 + 70 + 200 + 300 + 100;
+      expect(stats.points).toBe(expectedTotal);
+      expect(stats.points).toBe(860);
+
+      const calculatedSum = (stats.touches * 2) +
+                            (stats.passes * 10) +
+                            ((stats.shotsNormal ?? 0) * 20) +
+                            ((stats.shotsPowerCurve ?? 0) * 30) +
+                            ((stats.assistsNormal ?? 0) * 50) +
+                            ((stats.assistsCurve ?? 0) * 70) +
+                            (stats.saves * 100) +
+                            (stats.goals * 100) +
+                            (stats.hasHattrickBonus ? 100 : 0);
+
+      expect(calculatedSum).toBe(stats.points);
+    });
+  });
 });
+

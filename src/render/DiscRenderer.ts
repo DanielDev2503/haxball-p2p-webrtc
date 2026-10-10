@@ -535,11 +535,26 @@ export class DiscRenderer {
     const r = Math.max(1, radius);
 
     // Integración angular en ejes X e Y para rodamiento 3D procedural en tiempo real:
-    // Δθx = (vx · dt) / r, Δθy = (vy · dt) / r
-    this.ballRollAngleX += (vx * dt) / r;
-    this.ballRollAngleY += (vy * dt) / r;
+    // Inversión angular de traslación para concordancia esférica hacia adelante:
+    // Δθx = -(vx · dt) / r, Δθy = -(vy · dt) / r
+    this.ballRollAngleX -= (vx * dt) / r;
+    this.ballRollAngleY -= (vy * dt) / r;
 
     ctx.save();
+
+    // Resplandor de Tiro con Potencia anclado estrictamente a las coordenadas de mundo del balón
+    if (disc.isPowerShot) {
+      ctx.save();
+      const auraGrad = ctx.createRadialGradient(x, y, radius * 0.2, x, y, radius * 2.8);
+      auraGrad.addColorStop(0, 'rgba(255, 140, 0, 0.6)');
+      auraGrad.addColorStop(0.4, 'rgba(255, 69, 0, 0.25)');
+      auraGrad.addColorStop(1, 'rgba(255, 0, 0, 0)');
+      ctx.fillStyle = auraGrad;
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 2.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
 
     // 1. Sombra Difusa Proyectada en el suelo
     ctx.fillStyle = 'rgba(15, 23, 42, 0.28)';
@@ -971,7 +986,30 @@ export class DiscRenderer {
     ctx.restore();
   }
 
+  public getBallRollAngles(): { x: number; y: number } {
+    return { x: this.ballRollAngleX, y: this.ballRollAngleY };
+  }
+
+  public setBallRollAngles(x: number, y: number): void {
+    this.ballRollAngleX = x;
+    this.ballRollAngleY = y;
+  }
+
+  public resetBallTrails(): void {
+    this.ballTrailCount = 0;
+    this.powerTrailCount = 0;
+    this.ballRollAngleX = 0;
+    this.ballRollAngleY = 0;
+  }
+
   private recordBallTrailPoint(x: number, y: number, spinIntensity: number): void {
+    if (this.ballTrailCount === 0) {
+      for (let i = 0; i < DiscRenderer.BALL_TRAIL_CAPACITY; i++) {
+        this.ballTrailX[i] = x;
+        this.ballTrailY[i] = y;
+        this.ballTrailSpin[i] = spinIntensity;
+      }
+    }
     this.ballTrailHead = (this.ballTrailHead + 1) & (DiscRenderer.BALL_TRAIL_CAPACITY - 1);
     this.ballTrailX[this.ballTrailHead] = x;
     this.ballTrailY[this.ballTrailHead] = y;
@@ -1001,10 +1039,10 @@ export class DiscRenderer {
       if (alpha <= 0.01) continue;
 
       ctx.save();
-      // Color de estela según sentido de giro (Z izquierda = cian neón, C derecha = magenta/neón)
-      const color = spin < 0 ? `rgba(0, 229, 255, ${alpha})` : `rgba(255, 0, 85, ${alpha})`;
+      // Color unificado de estela Magnus: cian brillante #00e5ff con desvanecimiento alfa
+      const color = `rgba(0, 229, 255, ${alpha})`;
       ctx.fillStyle = color;
-      ctx.shadowColor = spin < 0 ? '#00E5FF' : '#FF0055';
+      ctx.shadowColor = '#00E5FF';
       ctx.shadowBlur = 8 * taper;
 
       ctx.beginPath();
@@ -1017,6 +1055,12 @@ export class DiscRenderer {
   }
 
   private recordPowerTrailPoint(x: number, y: number): void {
+    if (this.powerTrailCount === 0) {
+      for (let i = 0; i < DiscRenderer.POWER_TRAIL_CAPACITY; i++) {
+        this.powerTrailX[i] = x;
+        this.powerTrailY[i] = y;
+      }
+    }
     this.powerTrailHead = (this.powerTrailHead + 1) & (DiscRenderer.POWER_TRAIL_CAPACITY - 1);
     this.powerTrailX[this.powerTrailHead] = x;
     this.powerTrailY[this.powerTrailHead] = y;
@@ -1031,10 +1075,18 @@ export class DiscRenderer {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
 
+    const currentHeadX = this.powerTrailX[this.powerTrailHead];
+    const currentHeadY = this.powerTrailY[this.powerTrailHead];
+
     for (let i = 0; i < this.powerTrailCount; i++) {
       const idx = (this.powerTrailHead - i + DiscRenderer.POWER_TRAIL_CAPACITY) & (DiscRenderer.POWER_TRAIL_CAPACITY - 1);
       const px = this.powerTrailX[idx];
       const py = this.powerTrailY[idx];
+
+      // Evitar pintar coordenadas (0,0) no inicializadas si el balón no está en el origen
+      if (px === 0 && py === 0 && (currentHeadX !== 0 || currentHeadY !== 0)) {
+        continue;
+      }
 
       const taper = Math.max(0, 1 - i / this.powerTrailCount);
       const alpha = taper * 0.85;

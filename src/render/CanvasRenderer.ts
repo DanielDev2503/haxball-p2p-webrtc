@@ -11,6 +11,16 @@ import { $theme } from '../ui/stores/gameStore';
 import gsap from 'gsap';
 import confetti from 'canvas-confetti';
 
+export interface FloatingScoreText {
+  text: string;
+  x: number;
+  y: number;
+  startY: number;
+  life: number;
+  maxLife: number;
+  active: boolean;
+}
+
 export class CanvasRenderer {
   public canvas: HTMLCanvasElement;
   public ctx: CanvasRenderingContext2D;
@@ -20,6 +30,8 @@ export class CanvasRenderer {
   public camera: Camera;
   public offscreenRenderer: OffscreenIndicatorRenderer;
   public minimapRenderer: MinimapRenderer;
+
+  public floatingScores: FloatingScoreText[] = [];
 
   public goalNets?: GoalNet[] | null = null;
   private localGoalNets: GoalNet[] = [];
@@ -322,6 +334,7 @@ export class CanvasRenderer {
       this.discRenderer.draw(ctx, snapshot.discs, localDiscId);
     }
     this.pitchRenderer.renderPosts(ctx, this.stadium);
+    this.renderFloatingScores(ctx, 1 / 60);
     ctx.restore();
 
     // 3. Render Match Status Banners estáticos en centro de pantalla
@@ -627,6 +640,53 @@ export class CanvasRenderer {
     ctx.fillText(subtitle, 0, yOffset + 24);
 
     ctx.restore();
+  }
+
+  public addFloatingScore(text: string, x: number, y: number): void {
+    let slot = this.floatingScores.find(f => !f.active);
+    if (!slot) {
+      if (this.floatingScores.length < 32) {
+        slot = { text, x, y, startY: y, life: 1.2, maxLife: 1.2, active: true };
+        this.floatingScores.push(slot);
+        return;
+      }
+      slot = this.floatingScores[0];
+    }
+    slot.text = text;
+    slot.x = x;
+    slot.y = y;
+    slot.startY = y;
+    slot.life = 1.2;
+    slot.maxLife = 1.2;
+    slot.active = true;
+  }
+
+  public renderFloatingScores(ctx: CanvasRenderingContext2D, dt: number = 1 / 60): void {
+    for (let i = 0; i < this.floatingScores.length; i++) {
+      const ft = this.floatingScores[i];
+      if (!ft.active) continue;
+
+      ft.life -= dt;
+      if (ft.life <= 0) {
+        ft.active = false;
+        continue;
+      }
+
+      const progress = 1 - (ft.life / ft.maxLife); // 0 a 1
+      const currentY = ft.startY - progress * 24; // Ascenso suave de 24px
+      const alpha = Math.max(0, ft.life / ft.maxLife); // Desvanecimiento en 1.2s
+
+      ctx.save();
+      ctx.font = '700 13px "Inter", "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      // Dorado #ffd700 con sutil resplandor, sin cajas ni bordes ni fondos opacos
+      ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
+      ctx.shadowColor = `rgba(255, 215, 0, ${alpha * 0.75})`;
+      ctx.shadowBlur = 6;
+      ctx.fillText(ft.text, ft.x, currentY);
+      ctx.restore();
+    }
   }
 }
 

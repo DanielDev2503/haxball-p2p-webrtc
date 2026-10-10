@@ -229,7 +229,18 @@ export class GameApp {
     );
     this.settingsModal = new SettingsModal(this.inputManager, this.audioManager);
     this.keybindModal = this.settingsModal;
-    this.matchStatsModal = new MatchStatsModal();
+    this.matchStatsModal = new MatchStatsModal({
+      onSlideToMenu: () => {
+        this.matchStatsModal.slideToLeft();
+        this.teamSelect.setSlideToStatsVisible(true);
+        this.teamSelect.slideToCenter();
+      }
+    });
+
+    this.teamSelect.onSlideToStats = () => {
+      this.teamSelect.slideToRight();
+      this.matchStatsModal.slideToCenter();
+    };
 
     // Physics Engine por defecto
     this.engine = new GameEngine({
@@ -1139,6 +1150,10 @@ export class GameApp {
       this.audioManager.playKick();
     };
 
+    engine.onScoreEvent = (_playerId, text, _pts, x, y) => {
+      this.canvasRenderer?.addFloatingScore(text, x, y);
+    };
+
     engine.onPostHit = () => {
       this.audioManager.playPostHit();
       this.canvasRenderer.triggerPostHitShake();
@@ -1151,6 +1166,9 @@ export class GameApp {
         outcomeText = `¡Gol de Oro! Victoria del Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}`;
       }
       this.enforceMenuState(MatchPhase.STOPPED, outcomeText);
+      this.teamSelect.setSlideToStatsVisible(true);
+      this.teamSelect.slideToRight();
+
       const stats = Array.from(engine.matchStats.values());
       const mvp = engine.getMVP();
       this.matchStatsModal.show(stats, mvp?.playerId ?? null);
@@ -1161,6 +1179,10 @@ export class GameApp {
 
     engine.onStateChange = (state) => {
       this.enforceMenuState(state);
+      if (state === MatchPhase.COUNTDOWN || state === MatchPhase.PLAYING) {
+        this.teamSelect.setSlideToStatsVisible(false);
+        this.matchStatsModal.close();
+      }
       if (state === MatchPhase.COUNTDOWN) {
         this.audioManager.playCountdown(false);
       } else if (state === MatchPhase.PLAYING) {

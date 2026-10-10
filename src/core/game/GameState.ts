@@ -45,6 +45,11 @@ export interface PlayerMatchStats {
   shots: number;
   touches: number;
   hasHattrickBonus: boolean;
+  shotsNormal?: number;
+  shotsPowerCurve?: number;
+  assistsNormal?: number;
+  assistsCurve?: number;
+  hattrickBonus?: number;
 }
 
 export interface GoalInfo {

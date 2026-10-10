@@ -25,6 +25,7 @@ export class TeamSelectModal {
   private currentMatchState: MatchPhase = MatchPhase.STOPPED;
   private currentRoomId: string = '';
   private unsubs: Array<() => void> = [];
+  private slideToStatsBtn: HTMLButtonElement | null = null;
 
   public uiStateMachine?: UIStateMachine | undefined;
   public gameApp?: any;
@@ -38,12 +39,21 @@ export class TeamSelectModal {
   public onMapChange?: (stadiumId: string) => void;
   public onCopyLink?: () => void;
   public onVisibilityChange?: (isOpen: boolean) => void;
+  public onSlideToStats?: () => void;
 
   constructor(uiStateMachine?: UIStateMachine) {
     this.uiStateMachine = uiStateMachine;
     this.menuEl = document.getElementById('ingame-menu');
     this.closeBtn = document.getElementById('menu-close-btn') || document.getElementById('btn-close-modal');
     this.returnGameBtn = document.getElementById('btn-return-game') || document.getElementById('btn-back');
+    this.slideToStatsBtn = document.getElementById('btn-slide-to-stats') as HTMLButtonElement | null;
+    if (this.slideToStatsBtn) {
+      this.slideToStatsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.slideToRight();
+        this.onSlideToStats?.();
+      });
+    }
 
     this.redListEl = document.getElementById('redPlayersList');
     if (!this.redListEl) console.warn('[TeamSelectModal] Element "#redPlayersList" was not found in DOM.');
@@ -569,6 +579,41 @@ export class TeamSelectModal {
     this.updateMatchControlButton(currentPhase, this.isUserAdmin, this.isUserHost);
     this.updateMatchToggleButton(currentPhase);
     this.onVisibilityChange?.(true);
+  }
+
+  public setSlideToStatsVisible(visible: boolean): void {
+    if (this.slideToStatsBtn) {
+      this.slideToStatsBtn.style.display = visible ? 'inline-flex' : 'none';
+    }
+  }
+
+  public slideToCenter(): void {
+    const card = this.menuEl?.querySelector('.menu-modal-card') as HTMLElement | null;
+    if (card) {
+      card.classList.remove('panel-left', 'panel-right');
+      card.classList.add('panel-center');
+    }
+    if (this.menuEl) {
+      this.menuEl.classList.remove('hidden', 'u-hidden');
+      this.menuEl.style.display = 'flex';
+      this.menuEl.style.pointerEvents = 'auto';
+    }
+  }
+
+  public slideToRight(): void {
+    const card = this.menuEl?.querySelector('.menu-modal-card') as HTMLElement | null;
+    if (card) {
+      card.classList.remove('panel-center', 'panel-left');
+      card.classList.add('panel-right');
+    }
+  }
+
+  public slideToLeft(): void {
+    const card = this.menuEl?.querySelector('.menu-modal-card') as HTMLElement | null;
+    if (card) {
+      card.classList.remove('panel-center', 'panel-right');
+      card.classList.add('panel-left');
+    }
   }
 
   public close(force: boolean = false): void {
