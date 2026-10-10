@@ -408,8 +408,21 @@ export class CanvasRenderer {
     // Renderizado gobernado estrictamente por el estado del snapshot
     switch (currentPhase) {
       case MatchPhase.GOAL_CELEBRATION: {
-        const teamSuffix = targetTeam === 1 ? ' - EQUIPO ROJO' : (targetTeam === 2 ? ' - EQUIPO AZUL' : '');
-        this.drawCenterBanner(ctx, `¡GOL!${teamSuffix}`, targetTeamColor);
+        const lastGoal = snapshot.lastGoal;
+        let title: string;
+        let subText: string | undefined;
+
+        if (lastGoal) {
+          const scorer = lastGoal.scorerName || 'Jugador';
+          const assisterText = lastGoal.assisterName ? `Asistencia: ${lastGoal.assisterName}` : 'Sin asistencia';
+          title = `¡GOL DE ${scorer.toUpperCase()}!`;
+          subText = `(${assisterText})`;
+        } else {
+          const teamSuffix = targetTeam === 1 ? ' - EQUIPO ROJO' : (targetTeam === 2 ? ' - EQUIPO AZUL' : '');
+          title = `¡GOL!${teamSuffix}`;
+        }
+
+        this.drawCenterBanner(ctx, title, targetTeamColor, subText);
         break;
       }
       case MatchPhase.COUNTDOWN:

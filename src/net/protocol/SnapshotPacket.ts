@@ -56,6 +56,7 @@ export class SnapshotPacket {
       if (disc.team === 0) {
         if (disc.isSpinActive || (disc.spin !== undefined && disc.spin !== 0)) flags |= 1 << 1;
         if (disc.isCurvingAllowed) flags |= 1 << 2;
+        if (disc.isPowerShot) flags |= 1 << 3;
       } else {
         if (disc.isDashing) flags |= 1 << 1;
         if (disc.isTurbo) flags |= 1 << 2;
@@ -145,6 +146,7 @@ export class SnapshotPacket {
       const isTyping = team !== 0 && (flags & (1 << 3)) !== 0;
       const isSpinActive = team === 0 && (flags & (1 << 1)) !== 0;
       const isCurvingAllowed = team === 0 && (flags & (1 << 2)) !== 0;
+      const isPowerShot = team === 0 && (flags & (1 << 3)) !== 0;
 
       const x = view.getFloat32(offset + 4, false);
       const y = view.getFloat32(offset + 8, false);
@@ -192,6 +194,7 @@ export class SnapshotPacket {
         isTyping: team !== 0 ? isTyping : undefined,
         isSpinActive: team === 0 ? isSpinActive : undefined,
         isCurvingAllowed: team === 0 ? isCurvingAllowed : undefined,
+        isPowerShot: team === 0 ? isPowerShot : undefined,
         lastKickerId: team === 0 ? lastKickerId : undefined,
         curveFactor: team === 0 ? curveFactor : undefined,
         spin: team === 0 ? (curveFactor / 10) : undefined

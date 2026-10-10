@@ -24,6 +24,7 @@ import { UIStateMachine, UIState } from '../ui/UIStateMachine';
 import { GameplayConfig, DEFAULT_GAMEPLAY_CONFIG } from '../core/game/GameConfig';
 import { GameplayModifierModal } from '../ui/components/GameplayModifierModal';
 import { SettingsModal, KeybindModal } from '../ui/components/SettingsModal';
+import { MatchStatsModal } from '../ui/components/MatchStatsModal';
 import { $matchPhase, $gameConfig } from '../ui/stores/gameStore';
 import { resolveGoalAndPitchBoundaries, resolvePredictivePlayerCollision, resolvePredictiveBallCollision } from '../core/physics/Collision';
 import { StadiumRegistry } from '../core/stadiums/StadiumRegistry';
@@ -167,6 +168,7 @@ export class GameApp {
   public modifierModal: GameplayModifierModal;
   public keybindModal: KeybindModal;
   public settingsModal: SettingsModal;
+  public matchStatsModal: MatchStatsModal;
   private clientPrevDashState: boolean = false;
   private btnOpenPhysicsModifiers: HTMLButtonElement | null = null;
 
@@ -227,6 +229,7 @@ export class GameApp {
     );
     this.settingsModal = new SettingsModal(this.inputManager, this.audioManager);
     this.keybindModal = this.settingsModal;
+    this.matchStatsModal = new MatchStatsModal();
 
     // Physics Engine por defecto
     this.engine = new GameEngine({
@@ -1119,6 +1122,15 @@ export class GameApp {
   private setupEngineCallbacks(engine: GameEngine): void {
     engine.onGoal = (_scoringTeam, _redScore, _blueScore) => {
       this.audioManager.playGoalWhistle();
+      if (engine.lastGoalInfo) {
+        const scorer = engine.lastGoalInfo.scorerName;
+        const assister = engine.lastGoalInfo.assisterName;
+        const goalText = assister
+          ? `¡GOL DE ${scorer}! (Asistencia: ${assister})`
+          : `¡GOL DE ${scorer}! (Sin asistencia)`;
+        this.hud.showGoalNotification(scorer, assister);
+        this.chat.addMessage({ author: 'Árbitro', text: goalText, team: 'sys' });
+      }
       this.broadcastMatchStateSync();
       this.broadcastSnapshot();
     };
@@ -1139,6 +1151,9 @@ export class GameApp {
         outcomeText = `¡Gol de Oro! Victoria del Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}`;
       }
       this.enforceMenuState(MatchPhase.STOPPED, outcomeText);
+      const stats = Array.from(engine.matchStats.values());
+      const mvp = engine.getMVP();
+      this.matchStatsModal.show(stats, mvp?.playerId ?? null);
       this.broadcastMatchStateSync();
       this.broadcastSnapshot();
       this.updateAdminControlsUI();
@@ -2793,16 +2808,31 @@ export class GameApp {
 
               if (currentPhase === MatchPhase.GOAL_CELEBRATION) {
                 this.audioManager.playGoalWhistle();
+                if (activeSnapshot.lastGoal) {
+                  const scorer = activeSnapshot.lastGoal.scorerName;
+                  const assister = activeSnapshot.lastGoal.assisterName;
+                  const goalText = assister
+                    ? `¡GOL DE ${scorer}! (Asistencia: ${assister})`
+                    : `¡GOL DE ${scorer}! (Sin asistencia)`;
+                  this.hud.showGoalNotification(scorer, assister);
+                  this.chat.addMessage({ author: 'Árbitro', text: goalText, team: 'sys' });
+                }
               } else if (currentPhase === MatchPhase.COUNTDOWN) {
                 this.audioManager.playCountdown(false);
               } else if (currentPhase === MatchPhase.PLAYING) {
                 this.audioManager.playCountdown(true);
               } else if (currentPhase === MatchPhase.VICTORY_CELEBRATION || currentPhase === MatchPhase.MATCH_ENDED) {
                 this.audioManager.playGoalWhistle();
+                if (activeSnapshot.matchStats) {
+                  this.matchStatsModal.show(activeSnapshot.matchStats, activeSnapshot.mvpPlayerId ?? null);
+                }
               }
 
               let outcomeText: string | undefined = undefined;
               if (currentPhase === MatchPhase.STOPPED) {
+                if (activeSnapshot.matchStats && !this.matchStatsModal.isOpen()) {
+                  this.matchStatsModal.show(activeSnapshot.matchStats, activeSnapshot.mvpPlayerId ?? null);
+                }
                 const red = activeSnapshot.scoreRed ?? activeSnapshot.redScore;
                 const blue = activeSnapshot.scoreBlue ?? activeSnapshot.blueScore;
                 if (activeSnapshot.isGoldenGoal && red !== blue) {

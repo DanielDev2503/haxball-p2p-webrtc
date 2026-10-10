@@ -2,7 +2,7 @@ import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Stadium } from '../entities/Stadium';
 import { GoalNet } from '../entities/GoalNet';
 import { createStadium } from '../stadiums/StadiumRegistry';
-import { Disc, COLLISION_GROUP_BALL, COLLISION_GROUP_RED, COLLISION_GROUP_BLUE } from '../entities/Disc';
+import { Disc, COLLISION_GROUP_BALL, COLLISION_GROUP_RED, COLLISION_GROUP_BLUE, POWER_SHOT_SPEED_THRESHOLD } from '../entities/Disc';
 import {
   Player,
   INPUT_UP,
@@ -17,7 +17,7 @@ import {
   INPUT_TYPING
 } from './Player';
 import { GameFSM, MatchPhase } from './GameFSM';
-import { GameSnapshot, DiscSnapshot, MatchConfig, KickoffState } from './GameState';
+import { GameSnapshot, DiscSnapshot, MatchConfig, KickoffState, TouchHistoryEntry, PlayerMatchStats, GoalInfo } from './GameState';
 import { SOUND_KICK, SOUND_POST_HIT, SOUND_GOAL } from '../../net/protocol/BinaryProtocol';
 import { GameplayConfig, sanitizeGameplayConfig, defaultStadium } from './GameConfig';
 import { Vec2 } from '../math/Vec2';
@@ -48,6 +48,13 @@ export class GameEngine {
   public lastScoringTeam: 'red' | 'blue' | null = null;
   public soundMask: number = 0;
   public isGoldenGoal: boolean = false;
+
+  // Sistema de Puntuación Acumulativa, Historial de Contactos y Atribución
+  public touchHistory: TouchHistoryEntry[] = [];
+  public matchStats: Map<string, PlayerMatchStats> = new Map();
+  public lastGoalInfo: GoalInfo | null = null;
+  public pendingShot: { shooterId: string; shooterTeam: 'red' | 'blue'; tick: number; isPower: boolean; isCurve: boolean } | null = null;
+  public lastPlayerTouchTick: Map<string, number> = new Map();
 
   // Event callbacks
   public onGoal?: (scoringTeam: 'red' | 'blue', redScore: number, blueScore: number) => void;
@@ -107,19 +114,26 @@ export class GameEngine {
       this.applyKickoffBarriers();
     };
 
-    // Collision listener for post hits and kickoff ball contact
+    // Collision listener for post hits, player contact and kickoff ball contact
     this.physicsWorld.onCollision = (event) => {
       if (event.type === 'disc-disc' && event.discB) {
         const isBall = event.discA === this.ball || event.discB === this.ball;
         if (isBall) {
-          if (this.kickoffState.active) {
-            const playerDisc = event.discA === this.ball ? event.discB : event.discA;
-            for (const [_, player] of this.players.entries()) {
-              if (this.playerDiscs.get(player.id) === playerDisc) {
+          const otherDisc = event.discA === this.ball ? event.discB : event.discA;
+
+          // Registro de toque de balón por contacto físico
+          for (const [_, player] of this.players.entries()) {
+            if (this.playerDiscs.get(player.id) === otherDisc) {
+              const bSpeed = Math.hypot(this.ball.vel.x, this.ball.vel.y);
+              if (bSpeed >= POWER_SHOT_SPEED_THRESHOLD) {
+                this.ball.isPowerShot = true;
+              }
+              this.registerBallTouch(player.id, true);
+              if (this.kickoffState.active) {
                 this.kickoffState.active = false;
                 this.updatePhysicsKickoffContext();
-                break;
               }
+              break;
             }
           }
 
@@ -133,6 +147,166 @@ export class GameEngine {
         }
       }
     };
+  }
+
+  public getOrCreatePlayerStats(playerId: string): PlayerMatchStats {
+    let stats = this.matchStats.get(playerId);
+    if (!stats) {
+      const player = this.players.get(playerId);
+      stats = {
+        playerId,
+        playerName: player?.name ?? playerId,
+        team: (player?.team ?? 'spec') as 'red' | 'blue' | 'spec',
+        points: 0,
+        goals: 0,
+        assists: 0,
+        passes: 0,
+        saves: 0,
+        shots: 0,
+        touches: 0,
+        hasHattrickBonus: false
+      };
+      this.matchStats.set(playerId, stats);
+    }
+    return stats;
+  }
+
+  public checkHattrickBonus(stats: PlayerMatchStats): void {
+    if (stats.hasHattrickBonus) return;
+    if (stats.goals >= 3 || stats.assists >= 3 || stats.saves >= 3) {
+      stats.hasHattrickBonus = true;
+      stats.points += 100;
+    }
+  }
+
+  public getMVP(): PlayerMatchStats | null {
+    let mvp: PlayerMatchStats | null = null;
+    for (const stats of this.matchStats.values()) {
+      if (stats.team === 'spec') continue;
+      if (!mvp || stats.points > mvp.points) {
+        mvp = stats;
+      }
+    }
+    return mvp;
+  }
+
+  public registerBallTouch(playerId: string, isShotOrPhysical: boolean = false): void {
+    const player = this.players.get(playerId);
+    if (!player || player.team === 'spec') return;
+
+    const playerTeam = player.team as 'red' | 'blue';
+    const lastTouchTick = this.lastPlayerTouchTick.get(playerId) ?? -999;
+    // Cooldown mínimo de 0.25 s (15 ticks a 60 Hz) por jugador para evitar spam por arrastre
+    const hasCooldownPassed = (this.tickCount - lastTouchTick) >= 15;
+
+    if (hasCooldownPassed) {
+      this.lastPlayerTouchTick.set(playerId, this.tickCount);
+      const stats = this.getOrCreatePlayerStats(playerId);
+      stats.touches++;
+      stats.points += 2; // +2 pts por toque de balón
+
+      // Pase Completado (+10 pts):
+      // Contacto de Jugador A seguido por contacto de Jugador B del mismo equipo, sin toques rivales intermedios
+      if (this.touchHistory.length > 0) {
+        const lastTouch = this.touchHistory[this.touchHistory.length - 1];
+        if (lastTouch.team === playerTeam && lastTouch.playerId !== playerId) {
+          const passerStats = this.getOrCreatePlayerStats(lastTouch.playerId);
+          passerStats.passes++;
+          passerStats.points += 10;
+        }
+      }
+
+      // Atajada (+100 pts):
+      // Se concede si un jugador bloquea o desvía un balón que llevaba trayectoria de gol hacia su arco,
+      // con la condición estricta de que el impacto ocurra en su propio campo
+      // (detrás de la línea media: x <= 0 para defensores del arco izquierdo, x >= 0 para defensores del arco derecho)
+      if (this.pendingShot && this.pendingShot.shooterTeam !== playerTeam) {
+        const ballX = this.ball.pos.x;
+        const isRedDefendingLeft = playerTeam === 'red'; // Arco izquierdo en x <= 0
+        const isBlueDefendingRight = playerTeam === 'blue'; // Arco derecho en x >= 0
+        const inOwnHalf = (isRedDefendingLeft && ballX <= 0) || (isBlueDefendingRight && ballX >= 0);
+
+        if (inOwnHalf) {
+          stats.saves++;
+          stats.points += 100;
+          this.checkHattrickBonus(stats);
+        }
+        this.pendingShot = null;
+      }
+    }
+
+    // Registrar en historial de contactos
+    const currentSpeed = Math.hypot(this.ball.vel.x, this.ball.vel.y);
+    if (currentSpeed >= POWER_SHOT_SPEED_THRESHOLD) {
+      this.ball.isPowerShot = true;
+    }
+
+    if (isShotOrPhysical) {
+      this.checkShotTrajectory(player);
+    }
+
+    const wasCurve = Boolean(this.ball.isCurving || this.ball.spin !== 0 || this.ball.curvePerp !== 0);
+    const wasPower = Boolean(this.ball.isPowerShot);
+    this.touchHistory.push({
+      playerId,
+      team: playerTeam,
+      timestamp: Date.now(),
+      wasCurve,
+      wasPower,
+      tick: this.tickCount
+    });
+    if (this.touchHistory.length > 60) {
+      this.touchHistory.shift();
+    }
+
+    // Otorgar control Magnus al jugador que golpea el balón:
+    this.ball.magnusControllerId = player.id;
+    this.ball.magnusPressesRemaining = 2;
+    this.ball.magnusTimer = 3.0;
+    this.ball.lastCurveDir = 0;
+    this.ball.isCurvingAllowed = true;
+    this.ball.lastKickerId = player.id;
+  }
+
+  public checkShotTrajectory(player: Player): void {
+    const hw = this.stadium.halfWidth;
+    const gh = this.stadium.goalHalfHeight;
+    let isShotOnGoal = false;
+
+    // Team 'red' ataca hacia arco derecho (+halfWidth)
+    if (player.team === 'red' && this.ball.vel.x > 50 && this.ball.pos.x < hw) {
+      const t = (hw - this.ball.pos.x) / this.ball.vel.x;
+      const yPred = this.ball.pos.y + this.ball.vel.y * t;
+      if (Math.abs(yPred) <= gh + 5) {
+        isShotOnGoal = true;
+      }
+    }
+    // Team 'blue' ataca hacia arco izquierdo (-halfWidth)
+    else if (player.team === 'blue' && this.ball.vel.x < -50 && this.ball.pos.x > -hw) {
+      const t = (-hw - this.ball.pos.x) / this.ball.vel.x;
+      const yPred = this.ball.pos.y + this.ball.vel.y * t;
+      if (Math.abs(yPred) <= gh + 5) {
+        isShotOnGoal = true;
+      }
+    }
+
+    if (isShotOnGoal) {
+      const shooterStats = this.getOrCreatePlayerStats(player.id);
+      shooterStats.shots++;
+      const isPowerOrCurve = Boolean(this.ball.isPowerShot || this.ball.spin !== 0 || this.ball.isCurving);
+      if (isPowerOrCurve) {
+        shooterStats.points += 30; // +20 base + 10 bonificación por potencia o curva
+      } else {
+        shooterStats.points += 20; // +20 base
+      }
+      this.pendingShot = {
+        shooterId: player.id,
+        shooterTeam: player.team as 'red' | 'blue',
+        tick: this.tickCount,
+        isPower: this.ball.isPowerShot,
+        isCurve: isPowerOrCurve
+      };
+    }
   }
 
   public addPlayer(player: Player): void {
@@ -266,6 +440,11 @@ export class GameEngine {
     this.blueScore = 0;
     this.lastScoringTeam = null;
     this.isGoldenGoal = false;
+    this.touchHistory = [];
+    this.matchStats.clear();
+    this.lastGoalInfo = null;
+    this.pendingShot = null;
+    this.lastPlayerTouchTick.clear();
     this.kickoffState = {
       active: true,
       mode: 'NEUTRAL',
@@ -286,6 +465,11 @@ export class GameEngine {
     this.blueScore = 0;
     this.lastScoringTeam = null;
     this.isGoldenGoal = false;
+    this.touchHistory = [];
+    this.matchStats.clear();
+    this.lastGoalInfo = null;
+    this.pendingShot = null;
+    this.lastPlayerTouchTick.clear();
     this.kickoffState = {
       active: false,
       mode: 'NEUTRAL',
@@ -581,6 +765,9 @@ export class GameEngine {
           this.ball.vel.x += kickDirX * effectiveKickStrength;
           this.ball.vel.y += kickDirY * effectiveKickStrength;
 
+          const bSpeedAfterKick = Math.hypot(this.ball.vel.x, this.ball.vel.y);
+          this.ball.isPowerShot = bSpeedAfterKick >= POWER_SHOT_SPEED_THRESHOLD;
+
           // Registro de autoría y vector perpendicular de referencia para Magnus
           this.ball.lastKickerId = player.id;
           this.ball.lastKickerDiscId = disc.id;
@@ -596,11 +783,15 @@ export class GameEngine {
           this.ball.curvePerp = 0;
           this.ball.curveBrake = 0;
 
+          // Registrar contacto para scoring y Magnus
+          this.registerBallTouch(player.id, false);
+          this.checkShotTrajectory(player);
+
           // Iniciación o compatibilidad de Efecto Magnus con inputs inmediatos
           let ex = player.curveX;
           let ey = player.curveY;
           if (player.curveInput === 1 || Boolean(player.inputMask & INPUT_MAGNUS_LEFT)) ex = -1;
-          else if (player.curveInput === 2 || Boolean(player.inputMask & INPUT_MAGNUS_RIGHT)) ex = 1;
+          else if (player.curveInput === 2 || player.curveInput === -1 || Boolean(player.inputMask & INPUT_MAGNUS_RIGHT)) ex = 1;
 
           if (ex !== 0 || ey !== 0) {
             const eLen = Math.hypot(ex, ey);
@@ -629,39 +820,78 @@ export class GameEngine {
       }
     }
 
-    // Integración continua del Efecto Magnus Dirigido (Z / C / Flechas post-disparo)
-    // Regla estricta: se aplica única y exclusivamente con magnusEnabled activo y tecla presionada activa
-    const canMagnus = this.gameplayConfig.magnusEnabled !== false;
-    if (canMagnus && this.ball.isCurvingAllowed && this.ball.lastKickerId) {
-      const kicker = this.players.get(this.ball.lastKickerId);
-      const bSpeed = Math.hypot(this.ball.vel.x, this.ball.vel.y);
-      if (bSpeed > 0.05 && kicker) {
-        const kMagnus = this.gameplayConfig.magnusCurveStrength ?? 1.05;
-        const hasZ = kicker.curveInput === 1 || Boolean(kicker.inputMask & INPUT_MAGNUS_LEFT) || (kicker.curveX === -1);
-        const hasC = kicker.curveInput === 2 || Boolean(kicker.inputMask & INPUT_MAGNUS_RIGHT) || (kicker.curveX === 1);
-
-        if (hasZ && !hasC) {
-          this.ball.applyMagnusCurve(true, false, kMagnus);
-        } else if (hasC && !hasZ) {
-          this.ball.applyMagnusCurve(false, true, kMagnus);
-        } else {
-          // Soltar tecla => aceleración lateral exactamente cero
-          this.ball.isCurving = false;
-          this.ball.curvePerp = 0;
-        }
-
-        if (this.ball.curveBrake > 0) {
-          const ux = this.ball.vel.x / bSpeed;
-          const uy = this.ball.vel.y / bSpeed;
-          const aBrake = 1.8 * this.ball.curveBrake * bSpeed;
-          this.ball.vel.x -= aBrake * ux * dt;
-          this.ball.vel.y -= aBrake * uy * dt;
-        }
-      } else if (bSpeed <= 0.05) {
-        this.ball.resetCurve();
+    // Descontar temporizador aerodinámico Magnus en cada tick (60 Hz)
+    if (this.ball.magnusTimer > 0) {
+      this.ball.magnusTimer -= dt;
+      if (this.ball.magnusTimer <= 0) {
+        this.ball.magnusTimer = 0;
+        this.ball.isCurvingAllowed = false;
+        this.ball.isCurving = false;
+        this.ball.curvePerp = 0;
+        this.ball.spin = 0;
       }
-    } else if (this.ball.isCurving) {
-      this.ball.resetCurve();
+    }
+
+    // Integración continua del Efecto Magnus Dirigido (Z / C / Flechas post-disparo)
+    // Regla estricta: se aplica única y exclusivamente con magnusEnabled activo, magnusTimer > 0 y teclas activas
+    const canMagnus = this.gameplayConfig.magnusEnabled !== false;
+    const controllerId = this.ball.magnusControllerId ?? this.ball.lastKickerId;
+    const kicker = controllerId ? this.players.get(controllerId) : null;
+    const bSpeed = Math.hypot(this.ball.vel.x, this.ball.vel.y);
+
+    if (canMagnus && this.ball.isCurvingAllowed && kicker && bSpeed > 0.05 && this.ball.magnusTimer > 0) {
+      const kMagnus = this.gameplayConfig.magnusCurveStrength ?? 1.05;
+      const hasZ = kicker.curveInput === 1 || Boolean(kicker.inputMask & INPUT_MAGNUS_LEFT) || (kicker.curveX === -1);
+      const hasC = kicker.curveInput === 2 || kicker.curveInput === -1 || Boolean(kicker.inputMask & INPUT_MAGNUS_RIGHT) || (kicker.curveX === 1);
+
+      let desiredDir = 0;
+      if (hasZ && !hasC) desiredDir = -1;
+      else if (hasC && !hasZ) desiredDir = 1;
+
+      if (desiredDir !== 0) {
+        // Nueva pulsación o cambio de dirección de giro consume 1 uso
+        if (desiredDir !== this.ball.lastCurveDir) {
+          if (this.ball.magnusPressesRemaining > 0 && this.ball.magnusTimer > 0) {
+            this.ball.magnusPressesRemaining--;
+            this.ball.lastCurveDir = desiredDir;
+          } else {
+            desiredDir = 0; // Bloqueado: sin usos restantes
+          }
+        }
+      } else {
+        this.ball.lastCurveDir = 0;
+      }
+
+      if (desiredDir === -1 && this.ball.magnusTimer > 0) {
+        this.ball.applyMagnusCurve(true, false, kMagnus);
+      } else if (desiredDir === 1 && this.ball.magnusTimer > 0) {
+        this.ball.applyMagnusCurve(false, true, kMagnus);
+      } else {
+        // Soltar tecla => aceleración lateral exactamente cero
+        this.ball.isCurving = false;
+        this.ball.curvePerp = 0;
+        this.ball.spin = 0;
+      }
+
+      if (this.ball.curveBrake > 0) {
+        const ux = this.ball.vel.x / bSpeed;
+        const uy = this.ball.vel.y / bSpeed;
+        const aBrake = 1.8 * this.ball.curveBrake * bSpeed;
+        this.ball.vel.x -= aBrake * ux * dt;
+        this.ball.vel.y -= aBrake * uy * dt;
+      }
+    } else {
+      if (bSpeed <= 0.05 && this.ball.isCurvingAllowed) {
+        this.ball.resetCurve();
+      } else if (this.ball.isCurving) {
+        this.ball.isCurving = false;
+        this.ball.curvePerp = 0;
+        this.ball.spin = 0;
+      }
+    }
+
+    if (this.ball.isPowerShot && bSpeed < 250) {
+      this.ball.isPowerShot = false;
     }
 
     // Step physics simulation (activa en PLAYING y GOAL_CELEBRATION)
@@ -715,6 +945,68 @@ export class GameEngine {
           this.blueScore++;
           this.lastScoringTeam = 'blue';
         }
+
+        // Atribución de Goles y Asistencias
+        const now = Date.now();
+        let scorerPlayerId: string | null = null;
+        let scorerPlayerName: string = '';
+        let assisterPlayerId: string | null = null;
+        let assisterPlayerName: string | null = null;
+
+        // 1. Gol Anotado (+100 pts adicionales)
+        let scorerIndex = -1;
+        for (let i = this.touchHistory.length - 1; i >= 0; i--) {
+          if (this.touchHistory[i].team === goalScored) {
+            scorerIndex = i;
+            scorerPlayerId = this.touchHistory[i].playerId;
+            const p = this.players.get(scorerPlayerId);
+            scorerPlayerName = p?.name ?? scorerPlayerId;
+            const scorerStats = this.getOrCreatePlayerStats(scorerPlayerId);
+            scorerStats.goals++;
+            scorerStats.points += 100;
+            this.checkHattrickBonus(scorerStats);
+            break;
+          }
+        }
+
+        // 2. Asistencia (+50 pts, o +70 si fue con curva)
+        if (scorerIndex > 0) {
+          for (let i = scorerIndex - 1; i >= 0; i--) {
+            const touch = this.touchHistory[i];
+            if (touch.team !== goalScored) {
+              // Intervención rival intermedia => posesión perdida, sin asistencia
+              break;
+            }
+            if (touch.playerId !== scorerPlayerId && touch.team === goalScored) {
+              const dtMs = now - touch.timestamp;
+              const dtTicks = this.tickCount - touch.tick;
+              if (dtMs <= 7000 || dtTicks <= 420) {
+                assisterPlayerId = touch.playerId;
+                const ap = this.players.get(assisterPlayerId);
+                assisterPlayerName = ap?.name ?? assisterPlayerId;
+                const assisterStats = this.getOrCreatePlayerStats(assisterPlayerId);
+                assisterStats.assists++;
+                if (touch.wasCurve) {
+                  assisterStats.points += 70; // +50 asistencia + 20 bonificación por curva
+                } else {
+                  assisterStats.points += 50;
+                }
+                this.checkHattrickBonus(assisterStats);
+              }
+              break;
+            }
+          }
+        }
+
+        this.lastGoalInfo = {
+          scorerId: scorerPlayerId ?? '',
+          scorerName: scorerPlayerName || (goalScored === 'red' ? 'Equipo Rojo' : 'Equipo Azul'),
+          assisterId: assisterPlayerId,
+          assisterName: assisterPlayerName,
+          team: goalScored
+        };
+
+        this.pendingShot = null;
 
         this.soundMask |= SOUND_GOAL;
         if (this.onGoal) {
@@ -823,6 +1115,7 @@ export class GameEngine {
       avatar: '',
       isSpinActive: this.ball.isCurving,
       isCurvingAllowed: this.ball.isCurvingAllowed,
+      isPowerShot: this.ball.isPowerShot,
       lastKickerId: kickerDiscId,
       curveFactor: Math.round(this.ball.curvePerp * 10),
       spin: this.ball.spin || this.ball.curvePerp
@@ -873,6 +1166,9 @@ export class GameEngine {
       possessingTeam: this.kickoffState.possessingTeam,
       isGoldenGoal: this.isGoldenGoal,
       discs: discSnapshots,
+      lastGoal: this.lastGoalInfo,
+      matchStats: Array.from(this.matchStats.values()),
+      mvpPlayerId: this.getMVP()?.playerId ?? null,
 
       // Compatibilidad
       matchState: this.fsm.currentState,

@@ -8,6 +8,8 @@ export const COLLISION_GROUP_RED_GOAL = 1 << 4;
 export const COLLISION_GROUP_BLUE_GOAL = 1 << 5;
 export const COLLISION_GROUP_ALL = 0xFFFFFFFF;
 
+export const POWER_SHOT_SPEED_THRESHOLD = 700;
+
 export interface DiscOptions {
   id: number;
   x?: number;
@@ -49,6 +51,11 @@ export class Disc {
   public lastKickerId: string | null = null;
   public lastKickerDiscId: number = -1;
   public kickerHeading: Vec2 | null = null;
+  public magnusControllerId: string | null = null;
+  public magnusPressesRemaining: number = 0;
+  public magnusTimer: number = 0; // en segundos
+  public lastCurveDir: number = 0;
+  public isPowerShot: boolean = false;
 
   // Mecánicas de Jugador (escalares para colisiones y snapshots)
   public stamina: number = 100;
@@ -96,6 +103,11 @@ export class Disc {
     this.lastKickerId = null;
     this.lastKickerDiscId = -1;
     this.kickerHeading = null;
+    this.magnusControllerId = null;
+    this.magnusPressesRemaining = 0;
+    this.magnusTimer = 0;
+    this.lastCurveDir = 0;
+    this.isPowerShot = false;
   }
 
   /**

@@ -32,7 +32,38 @@ interface PlayerTurboBuffer {
   count: number;
 }
 
+const PHI = (1 + Math.sqrt(5)) / 2;
+const INV_NORM = 1 / Math.sqrt(1 + PHI * PHI);
+
 export class DiscRenderer {
+  public static readonly ICOSA_X = new Float32Array([
+    -1 * INV_NORM,  1 * INV_NORM, -1 * INV_NORM,  1 * INV_NORM,
+     0,             0,             0,             0,
+    -PHI * INV_NORM, PHI * INV_NORM, -PHI * INV_NORM, PHI * INV_NORM
+  ]);
+  public static readonly ICOSA_Y = new Float32Array([
+    -PHI * INV_NORM, -PHI * INV_NORM,  PHI * INV_NORM,  PHI * INV_NORM,
+    -1 * INV_NORM,   1 * INV_NORM, -1 * INV_NORM,   1 * INV_NORM,
+     0,              0,             0,              0
+  ]);
+  public static readonly ICOSA_Z = new Float32Array([
+     0,              0,             0,              0,
+    -PHI * INV_NORM, -PHI * INV_NORM,  PHI * INV_NORM,  PHI * INV_NORM,
+    -1 * INV_NORM,  -1 * INV_NORM,  1 * INV_NORM,   1 * INV_NORM
+  ]);
+
+  // Skin y Cinemática 3D de Rodamiento del Balón
+  public ballSkin: 'classic' | 'retro' | 'neon' = 'classic';
+  private ballRollAngleX: number = 0;
+  private ballRollAngleY: number = 0;
+
+  // Buffers circulares prealocados para estela de Tiro con Potencia (Power Shot)
+  private static readonly POWER_TRAIL_CAPACITY = 20;
+  private powerTrailX: Float32Array = new Float32Array(20);
+  private powerTrailY: Float32Array = new Float32Array(20);
+  private powerTrailHead: number = 0;
+  private powerTrailCount: number = 0;
+
   private ghostMap: Map<number, GhostSlot[]> = new Map();
   private turboParticles: TurboParticle[] = [];
   private nextParticleIdx: number = 0;
@@ -156,6 +187,13 @@ export class DiscRenderer {
   }
 
   constructor() {
+    if (typeof localStorage !== 'undefined') {
+      const savedSkin = localStorage.getItem('haxball_ball_skin');
+      if (savedSkin === 'classic' || savedSkin === 'retro' || savedSkin === 'neon') {
+        this.ballSkin = savedSkin;
+      }
+    }
+
     // Pre-alocación fija del pool de partículas de turbo (Zero GC en bucle de render)
     for (let i = 0; i < 120; i++) {
       this.turboParticles.push({
@@ -200,7 +238,7 @@ export class DiscRenderer {
       }
     }
 
-    // 2. Procesar y registrar posiciones para la estela Magnus del balón (Tarea 6)
+    // 2. Procesar y registrar posiciones para la estela Magnus y Power Shot del balón
     const ballDisc = discs.find(d => d.team === 0);
     if (ballDisc) {
       const spinVal = ballDisc.spin ?? (ballDisc.curveFactor ? ballDisc.curveFactor / 10 : 0);
@@ -210,6 +248,12 @@ export class DiscRenderer {
       } else if (this.ballTrailCount > 0) {
         this.ballTrailCount--;
       }
+
+      if (ballDisc.isPowerShot) {
+        this.recordPowerTrailPoint(ballDisc.x, ballDisc.y);
+      } else if (this.powerTrailCount > 0) {
+        this.powerTrailCount--;
+      }
     }
 
     // 3. Renderizar estelas de movimiento (Ribbon trails, partículas y siluetas fantasma)
@@ -218,6 +262,7 @@ export class DiscRenderer {
     this.renderDashGhosts(ctx);
     if (ballDisc) {
       this.renderBallMagnusTrail(ctx, ballDisc.radius || 5.8);
+      this.renderBallPowerTrail(ctx, ballDisc.radius || 5.8);
     }
 
     // 4. Aros de estamina de los jugadores (capa inferior a los discos de jugadores)
@@ -482,14 +527,22 @@ export class DiscRenderer {
   }
 
   private renderBall(ctx: CanvasRenderingContext2D, disc: DiscSnapshot): void {
-    // Balón:
-    const radius = disc.radius; // No usar constantes estáticas
+    const radius = disc.radius;
     const { x, y } = disc;
+    const vx = disc.vx || 0;
+    const vy = disc.vy || 0;
+    const dt = 1 / 60;
+    const r = Math.max(1, radius);
+
+    // Integración angular en ejes X e Y para rodamiento 3D procedural en tiempo real:
+    // Δθx = (vx · dt) / r, Δθy = (vy · dt) / r
+    this.ballRollAngleX += (vx * dt) / r;
+    this.ballRollAngleY += (vy * dt) / r;
 
     ctx.save();
 
-    // 1. Sombra Difusa Proyectada
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.22)';
+    // 1. Sombra Difusa Proyectada en el suelo
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.28)';
     ctx.beginPath();
     if (typeof (ctx as any).ellipse === 'function') {
       ctx.ellipse(x + 1.5, y + radius * 0.45, radius * 0.95, radius * 0.55, 0, 0, Math.PI * 2);
@@ -498,28 +551,207 @@ export class DiscRenderer {
     }
     ctx.fill();
 
-    // 2. Esfera Perlada Blanca con Gradiente Radial Analítico
-    const grad = ctx.createRadialGradient(
-      x - radius * 0.35,
-      y - radius * 0.35,
-      radius * 0.08,
-      x,
-      y,
-      radius
-    );
-    grad.addColorStop(0, '#FFFFFF');
-    grad.addColorStop(0.35, '#F8FAFC');
-    grad.addColorStop(0.7, '#CBD5E1');
-    grad.addColorStop(1, '#94A3B8');
-
-    ctx.fillStyle = grad;
+    // 2. Base esférica recortada (Clip perimétrico del disco)
+    ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
+    if (typeof ctx.clip === 'function') {
+      ctx.clip();
+    }
 
-    // 3. Contorno Técnico Aero Nítido
-    ctx.strokeStyle = '#0284C7';
+    const skin = this.ballSkin || 'classic';
+    const rotX = this.ballRollAngleX;
+    const rotY = this.ballRollAngleY;
+    const cosX = Math.cos(rotX);
+    const sinX = Math.sin(rotX);
+    const cosY = Math.cos(rotY);
+    const sinY = Math.sin(rotY);
+
+    if (skin === 'retro') {
+      // Skin Retro: Cuero marrón clásico cosido
+      const baseGrad = ctx.createRadialGradient(
+        x - radius * 0.35, y - radius * 0.35, radius * 0.05,
+        x, y, radius
+      );
+      baseGrad.addColorStop(0, '#D97706'); // Highlight ámbar cuero
+      baseGrad.addColorStop(0.3, '#B45309');
+      baseGrad.addColorStop(0.7, '#78350F');
+      baseGrad.addColorStop(1, '#451A03'); // Borde cuero oscuro
+      ctx.fillStyle = baseGrad;
+      ctx.fill();
+
+      // Costuras longitudinales clásicas en 3D (3 meridianos esféricos rotados)
+      ctx.strokeStyle = '#291507';
+      ctx.lineWidth = Math.max(1.1, radius * 0.09);
+      ctx.lineCap = 'round';
+
+      for (let m = 0; m < 3; m++) {
+        const phi = (m * Math.PI) / 3;
+        ctx.beginPath();
+        let started = false;
+        for (let s = -Math.PI; s <= Math.PI; s += 0.2) {
+          const pX0 = Math.sin(s) * Math.cos(phi);
+          const pY0 = Math.cos(s);
+          const pZ0 = Math.sin(s) * Math.sin(phi);
+
+          const pX1 = pX0 * cosX + pZ0 * sinX;
+          const pY1 = pY0;
+          const pZ1 = -pX0 * sinX + pZ0 * cosX;
+
+          const pX2 = pX1;
+          const pY2 = pY1 * cosY - pZ1 * sinY;
+          const pZ2 = pY1 * sinY + pZ1 * cosY;
+
+          if (pZ2 >= -0.15) {
+            const sx = x + pX2 * radius;
+            const sy = y + pY2 * radius;
+            if (!started) {
+              ctx.moveTo(sx, sy);
+              started = true;
+            } else {
+              ctx.lineTo(sx, sy);
+            }
+          } else {
+            started = false;
+          }
+        }
+        ctx.stroke();
+      }
+    } else if (skin === 'neon') {
+      // Skin Neón: Amarillo/naranja fluorescente de alta visibilidad
+      const baseGrad = ctx.createRadialGradient(
+        x - radius * 0.35, y - radius * 0.35, radius * 0.05,
+        x, y, radius
+      );
+      baseGrad.addColorStop(0, '#FEF08A'); // Amarillo fluo
+      baseGrad.addColorStop(0.35, '#FACC15');
+      baseGrad.addColorStop(0.7, '#FB923C'); // Naranja transición
+      baseGrad.addColorStop(1, '#EA580C'); // Naranja intenso
+      ctx.fillStyle = baseGrad;
+      ctx.fill();
+
+      // Paneles y ranuras aerodinámicas neón rotando en 3D
+      ctx.strokeStyle = '#C2410C';
+      ctx.lineWidth = Math.max(1.2, radius * 0.1);
+      for (let m = 0; m < 4; m++) {
+        const phi = (m * Math.PI) / 4;
+        ctx.beginPath();
+        let started = false;
+        for (let s = -Math.PI; s <= Math.PI; s += 0.25) {
+          const pX0 = Math.sin(s) * Math.cos(phi);
+          const pY0 = Math.cos(s);
+          const pZ0 = Math.sin(s) * Math.sin(phi);
+
+          const pX1 = pX0 * cosX + pZ0 * sinX;
+          const pZ1 = -pX0 * sinX + pZ0 * cosX;
+          const pX2 = pX1;
+          const pY2 = pY0 * cosY - pZ1 * sinY;
+          const pZ2 = pY0 * sinY + pZ1 * cosY;
+
+          if (pZ2 >= -0.1) {
+            const sx = x + pX2 * radius;
+            const sy = y + pY2 * radius;
+            if (!started) {
+              ctx.moveTo(sx, sy);
+              started = true;
+            } else {
+              ctx.lineTo(sx, sy);
+            }
+          } else {
+            started = false;
+          }
+        }
+        ctx.stroke();
+      }
+    } else {
+      // Skin Classic: Balón de gajos blancos y negros clásico
+      const baseGrad = ctx.createRadialGradient(
+        x - radius * 0.35, y - radius * 0.35, radius * 0.05,
+        x, y, radius
+      );
+      baseGrad.addColorStop(0, '#FFFFFF');
+      baseGrad.addColorStop(0.35, '#F8FAFC');
+      baseGrad.addColorStop(0.7, '#CBD5E1');
+      baseGrad.addColorStop(1, '#94A3B8');
+      ctx.fillStyle = baseGrad;
+      ctx.fill();
+
+      // Proyección 3D de costuras y parches pentagonales negros
+      ctx.fillStyle = '#0F172A';
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = Math.max(1.0, radius * 0.08);
+
+      for (let k = 0; k < 12; k++) {
+        const vX0 = DiscRenderer.ICOSA_X[k];
+        const vY0 = DiscRenderer.ICOSA_Y[k];
+        const vZ0 = DiscRenderer.ICOSA_Z[k];
+
+        // Rotación 3D
+        const vX1 = vX0 * cosX + vZ0 * sinX;
+        const vY1 = vY0;
+        const vZ1 = -vX0 * sinX + vZ0 * cosX;
+
+        const vX2 = vX1;
+        const vY2 = vY1 * cosY - vZ1 * sinY;
+        const vZ2 = vY1 * sinY + vZ1 * cosY;
+
+        if (vZ2 > 0.05) {
+          const px = x + vX2 * radius;
+          const py = y + vY2 * radius;
+          const patchR = radius * 0.28 * Math.sqrt(vZ2);
+
+          ctx.beginPath();
+          ctx.arc(px, py, patchR, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Costuras conectando vértices visibles
+      for (let a = 0; a < 12; a++) {
+        for (let b = a + 1; b < 12; b++) {
+          const dx = DiscRenderer.ICOSA_X[a] - DiscRenderer.ICOSA_X[b];
+          const dy = DiscRenderer.ICOSA_Y[a] - DiscRenderer.ICOSA_Y[b];
+          const dz = DiscRenderer.ICOSA_Z[a] - DiscRenderer.ICOSA_Z[b];
+          if (dx * dx + dy * dy + dz * dz < 1.15) {
+            const vX1a = DiscRenderer.ICOSA_X[a] * cosX + DiscRenderer.ICOSA_Z[a] * sinX;
+            const vZ1a = -DiscRenderer.ICOSA_X[a] * sinX + DiscRenderer.ICOSA_Z[a] * cosX;
+            const vY2a = DiscRenderer.ICOSA_Y[a] * cosY - vZ1a * sinY;
+            const vZ2a = DiscRenderer.ICOSA_Y[a] * sinY + vZ1a * cosY;
+
+            const vX1b = DiscRenderer.ICOSA_X[b] * cosX + DiscRenderer.ICOSA_Z[b] * sinX;
+            const vZ1b = -DiscRenderer.ICOSA_X[b] * sinX + DiscRenderer.ICOSA_Z[b] * cosX;
+            const vY2b = DiscRenderer.ICOSA_Y[b] * cosY - vZ1b * sinY;
+            const vZ2b = DiscRenderer.ICOSA_Y[b] * sinY + vZ1b * cosY;
+
+            if (vZ2a > -0.1 && vZ2b > -0.1) {
+              ctx.beginPath();
+              ctx.moveTo(x + vX1a * radius, y + vY2a * radius);
+              ctx.lineTo(x + vX1b * radius, y + vY2b * radius);
+              ctx.stroke();
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Brillo y sombreado esférico 3D superior (iluminación cenital)
+    const highlightGrad = ctx.createRadialGradient(
+      x - radius * 0.35, y - radius * 0.35, 0,
+      x, y, radius
+    );
+    highlightGrad.addColorStop(0, 'rgba(255, 255, 255, 0.45)');
+    highlightGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+    highlightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+    ctx.fillStyle = highlightGrad;
+    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+
+    ctx.restore(); // Termina clip esférico
+
+    // 4. Contorno perimetral aero
+    ctx.strokeStyle = skin === 'neon' ? '#EA580C' : (skin === 'retro' ? '#451A03' : '#0284C7');
     ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.stroke();
 
     ctx.restore();
@@ -778,6 +1010,55 @@ export class DiscRenderer {
       ctx.beginPath();
       ctx.arc(px, py, r, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  private recordPowerTrailPoint(x: number, y: number): void {
+    this.powerTrailHead = (this.powerTrailHead + 1) & (DiscRenderer.POWER_TRAIL_CAPACITY - 1);
+    this.powerTrailX[this.powerTrailHead] = x;
+    this.powerTrailY[this.powerTrailHead] = y;
+    if (this.powerTrailCount < DiscRenderer.POWER_TRAIL_CAPACITY) {
+      this.powerTrailCount++;
+    }
+  }
+
+  private renderBallPowerTrail(ctx: CanvasRenderingContext2D, ballRadius: number): void {
+    if (this.powerTrailCount < 2) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (let i = 0; i < this.powerTrailCount; i++) {
+      const idx = (this.powerTrailHead - i + DiscRenderer.POWER_TRAIL_CAPACITY) & (DiscRenderer.POWER_TRAIL_CAPACITY - 1);
+      const px = this.powerTrailX[idx];
+      const py = this.powerTrailY[idx];
+
+      const taper = Math.max(0, 1 - i / this.powerTrailCount);
+      const alpha = taper * 0.85;
+      const r = ballRadius * (0.35 + 0.75 * taper);
+
+      if (alpha <= 0.01) continue;
+
+      ctx.save();
+      // Estela fuego / resplandor naranja cinético con desvanecimiento alfa
+      ctx.fillStyle = `rgba(255, ${Math.round(80 + 120 * taper)}, 0, ${alpha})`;
+      ctx.shadowColor = '#FF4500';
+      ctx.shadowBlur = 14 * taper;
+
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Núcleo brillante incandescente
+      if (taper > 0.4) {
+        ctx.fillStyle = `rgba(255, 255, 220, ${alpha * 0.9})`;
+        ctx.beginPath();
+        ctx.arc(px, py, r * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.restore();
     }
 

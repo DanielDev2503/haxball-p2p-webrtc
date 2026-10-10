@@ -32,6 +32,7 @@ export interface AppSettings {
   // Video
   cameraZoom: number; // 0.75 a 1.50
   chatBgOpacity: number; // 0.1 a 1.0 (10% a 100%)
+  ballSkin: 'classic' | 'retro' | 'neon';
   ballTrailEnabled: boolean;
   playerGlowEnabled: boolean;
   netDeformationEnabled: boolean;
@@ -58,6 +59,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   cameraZoom: 1.0,
   chatBgOpacity: 0.85,
+  ballSkin: 'classic',
   ballTrailEnabled: true,
   playerGlowEnabled: true,
   netDeformationEnabled: true,
@@ -159,24 +161,30 @@ export class SettingsModal {
 
   private loadSettings(): AppSettings {
     if (typeof localStorage === 'undefined') return { ...DEFAULT_SETTINGS };
+    let loaded: AppSettings = { ...DEFAULT_SETTINGS };
     try {
       let data = localStorage.getItem(SETTINGS_STORAGE_KEY);
       if (!data) {
         data = localStorage.getItem('haxball_settings');
       }
       if (data) {
-        return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
+        loaded = { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
+      }
+      const savedSkin = localStorage.getItem('haxball_ball_skin');
+      if (savedSkin === 'classic' || savedSkin === 'retro' || savedSkin === 'neon') {
+        loaded.ballSkin = savedSkin;
       }
     } catch {
       // Fallback
     }
-    return { ...DEFAULT_SETTINGS };
+    return loaded;
   }
 
   public saveSettings(): void {
     if (typeof localStorage === 'undefined') return;
     try {
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(this.settings));
+      localStorage.setItem('haxball_ball_skin', this.settings.ballSkin);
     } catch {
       // Ignore
     }
@@ -203,6 +211,7 @@ export class SettingsModal {
       if (this.canvasRenderer.discRenderer) {
         this.canvasRenderer.discRenderer.ballTrailEnabled = this.settings.ballTrailEnabled;
         this.canvasRenderer.discRenderer.playerGlowEnabled = this.settings.playerGlowEnabled;
+        this.canvasRenderer.discRenderer.ballSkin = this.settings.ballSkin;
       }
       this.canvasRenderer.netDeformationEnabled = this.settings.netDeformationEnabled;
       this.canvasRenderer.offscreenIndicatorsEnabled = this.settings.offscreenIndicatorsEnabled;
@@ -352,6 +361,19 @@ export class SettingsModal {
               <span>💥 Sacudida de Pantalla en Gol / Postes</span>
               <input type="checkbox" id="chkGoalShake" class="settings-toggle" style="width: 18px; height: 18px; cursor: pointer;" />
             </label>
+          </div>
+
+          <!-- Ball Skin Selector -->
+          <div style="display: flex; flex-direction: column; gap: 4px; border-top: 1px solid rgba(14, 165, 233, 0.15); padding-top: 6px;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.82rem; font-weight: 700;">
+              <span>⚽ Skin / Diseño del Balón</span>
+              <span id="txtBallSkin">Clásico (Blanco y Negro)</span>
+            </div>
+            <select id="selBallSkin" class="settings-select" style="padding: 6px 10px; font-size: 0.82rem; border-radius: 8px; background: rgba(15, 23, 42, 0.85); color: #fff; border: 1.5px solid rgba(14, 165, 233, 0.3); cursor: pointer;">
+              <option value="classic">Clásico (Blanco y Negro)</option>
+              <option value="retro">Retro (Cuero Marrón)</option>
+              <option value="neon">Neón (Alta Visibilidad)</option>
+            </select>
           </div>
 
           <!-- Minimapa / Radar Section -->
@@ -533,6 +555,19 @@ export class SettingsModal {
       this.saveSettings();
     });
 
+    // Ball skin input
+    const selBallSkin = document.getElementById('selBallSkin') as HTMLSelectElement | null;
+    const txtBallSkin = document.getElementById('txtBallSkin');
+
+    selBallSkin?.addEventListener('change', () => {
+      const val = (selBallSkin.value as 'classic' | 'retro' | 'neon') || 'classic';
+      this.settings.ballSkin = val;
+      if (txtBallSkin) {
+        txtBallSkin.textContent = val === 'retro' ? 'Retro (Cuero Marrón)' : (val === 'neon' ? 'Neón (Alta Visibilidad)' : 'Clásico (Blanco y Negro)');
+      }
+      this.saveSettings();
+    });
+
     // Minimap inputs
     const chkMinimapEnabled = document.getElementById('chkMinimapEnabled') as HTMLInputElement | null;
     const rngMinimapOpacity = document.getElementById('rngMinimapOpacity') as HTMLInputElement | null;
@@ -632,6 +667,15 @@ export class SettingsModal {
     if (chkNetDeformation) chkNetDeformation.checked = this.settings.netDeformationEnabled;
     if (chkOffscreenIndicators) chkOffscreenIndicators.checked = this.settings.offscreenIndicatorsEnabled;
     if (chkGoalShake) chkGoalShake.checked = this.settings.goalShakeEnabled;
+
+    // Ball skin
+    const selBallSkin = document.getElementById('selBallSkin') as HTMLSelectElement | null;
+    const txtBallSkin = document.getElementById('txtBallSkin');
+    if (selBallSkin) selBallSkin.value = this.settings.ballSkin;
+    if (txtBallSkin) {
+      const skinVal = this.settings.ballSkin;
+      txtBallSkin.textContent = skinVal === 'retro' ? 'Retro (Cuero Marrón)' : (skinVal === 'neon' ? 'Neón (Alta Visibilidad)' : 'Clásico (Blanco y Negro)');
+    }
 
     // Minimap
     const chkMinimapEnabled = document.getElementById('chkMinimapEnabled') as HTMLInputElement | null;

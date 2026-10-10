@@ -19,6 +19,40 @@ export interface DiscSnapshot {
   lastKickerId?: string | number | null | undefined;
   curveFactor?: number | undefined;
   spin?: number | undefined;
+  isPowerShot?: boolean | undefined;
+}
+
+export interface TouchHistoryEntry {
+  playerId: string;
+  team: 'red' | 'blue';
+  timestamp: number;
+  wasCurve: boolean;
+  wasPower: boolean;
+  tick: number;
+}
+
+export interface PlayerMatchStats {
+  playerId: string;
+  playerName: string;
+  nickname?: string;
+  team: 'red' | 'blue' | 'spec';
+  points: number;
+  totalPoints?: number;
+  goals: number;
+  assists: number;
+  passes: number;
+  saves: number;
+  shots: number;
+  touches: number;
+  hasHattrickBonus: boolean;
+}
+
+export interface GoalInfo {
+  scorerId: string;
+  scorerName: string;
+  assisterId: string | null;
+  assisterName: string | null;
+  team: 'red' | 'blue';
 }
 
 export interface KickoffState {
@@ -41,6 +75,9 @@ export interface GameSnapshot {
   possessingTeam?: 'red' | 'blue' | null;
   isGoldenGoal?: boolean;
   discs: DiscSnapshot[];
+  lastGoal?: GoalInfo | null;
+  matchStats?: PlayerMatchStats[];
+  mvpPlayerId?: string | null;
 
   // Compatibilidad hacia atrás
   matchState: MatchState;
@@ -55,3 +92,4 @@ export interface MatchConfig {
   scoreLimit: number;
   timeLimitSeconds: number;
 }
+

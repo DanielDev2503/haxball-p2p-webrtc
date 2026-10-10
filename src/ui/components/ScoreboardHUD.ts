@@ -18,6 +18,8 @@ export class ScoreboardHUD {
   private matchClockContainerEl: HTMLElement | null = null;
   private clockSlot: HTMLElement | null = null;
   private wifiSlot: HTMLElement | null = null;
+  private goalBannerEl: HTMLElement | null = null;
+  private goalBannerTimeout: any = null;
   public onMenuToggle?: () => void;
   public gameApp?: any = null;
   public uiStateMachine?: UIStateMachine | null = null;
@@ -28,6 +30,22 @@ export class ScoreboardHUD {
     this.matchClockContainerEl = document.querySelector('.match-clock-container') as HTMLElement | null;
     this.clockSlot = document.getElementById('clockIconSlot');
     this.wifiSlot = document.getElementById('wifiIconSlot');
+    this.goalBannerEl = document.getElementById('hudGoalBanner');
+    if (!this.goalBannerEl && typeof document !== 'undefined' && document.body) {
+      this.goalBannerEl = document.createElement('div');
+      this.goalBannerEl.id = 'hudGoalBanner';
+      this.goalBannerEl.className = 'hud-goal-banner';
+      this.goalBannerEl.style.position = 'fixed';
+      this.goalBannerEl.style.top = '60px';
+      this.goalBannerEl.style.left = '50%';
+      this.goalBannerEl.style.transform = 'translateX(-50%)';
+      this.goalBannerEl.style.zIndex = '999';
+      this.goalBannerEl.style.pointerEvents = 'none';
+      this.goalBannerEl.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      this.goalBannerEl.style.opacity = '0';
+      this.goalBannerEl.style.display = 'none';
+      document.body.appendChild(this.goalBannerEl);
+    }
 
     this.redScoreEl = document.getElementById('redScore');
     if (!this.redScoreEl) {
@@ -233,7 +251,37 @@ export class ScoreboardHUD {
     this.updatePingDot(pingMs);
   }
 
+  public showGoalNotification(scorer: string, assister: string | null = null): void {
+    if (!this.goalBannerEl) return;
+    const assistText = assister ? `(Asistencia: ${assister})` : '(Sin asistencia)';
+    this.goalBannerEl.innerHTML = `
+      <div style="background: rgba(15, 23, 42, 0.9); border: 2px solid #00E5FF; box-shadow: 0 0 20px rgba(0, 229, 255, 0.4); border-radius: 12px; padding: 10px 24px; text-align: center; color: #fff; font-family: 'Zen Dots', 'Inter', sans-serif;">
+        <div style="font-size: 1.25rem; font-weight: 900; color: #00E5FF; text-shadow: 0 0 10px #00E5FF;">¡GOL DE ${scorer.toUpperCase()}!</div>
+        <div style="font-size: 0.85rem; color: #94A3B8; margin-top: 4px;">${assistText}</div>
+      </div>
+    `;
+    this.goalBannerEl.style.display = 'block';
+    this.goalBannerEl.style.opacity = '1';
+    this.goalBannerEl.style.transform = 'translateX(-50%) translateY(0)';
+    if (this.goalBannerTimeout) clearTimeout(this.goalBannerTimeout);
+    this.goalBannerTimeout = setTimeout(() => {
+      if (this.goalBannerEl) {
+        this.goalBannerEl.style.opacity = '0';
+        this.goalBannerEl.style.transform = 'translateX(-50%) translateY(-10px)';
+        setTimeout(() => {
+          if (this.goalBannerEl) this.goalBannerEl.style.display = 'none';
+        }, 300);
+      }
+    }, 3500);
+  }
+
   public destroy(): void {
+    if (this.goalBannerTimeout) {
+      clearTimeout(this.goalBannerTimeout);
+    }
+    if (this.goalBannerEl && this.goalBannerEl.parentNode) {
+      this.goalBannerEl.parentNode.removeChild(this.goalBannerEl);
+    }
     for (const unsub of this.unsubs) {
       unsub();
     }
