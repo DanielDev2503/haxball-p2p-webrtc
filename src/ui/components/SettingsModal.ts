@@ -37,9 +37,15 @@ export interface AppSettings {
   netDeformationEnabled: boolean;
   offscreenIndicatorsEnabled: boolean;
   goalShakeEnabled: boolean;
+
+  // Minimapa / Radar
+  minimapEnabled: boolean;
+  minimapOpacity: number; // 0.20 a 1.00 (20% a 100%)
+  minimapSize: number; // 160 | 200 | 240
+  minimapCameraFrustum: boolean;
 }
 
-export const SETTINGS_STORAGE_KEY = 'haxball_settings';
+export const SETTINGS_STORAGE_KEY = 'haxball_settings_v1';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   soundChat: true,
@@ -56,7 +62,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   playerGlowEnabled: true,
   netDeformationEnabled: true,
   offscreenIndicatorsEnabled: true,
-  goalShakeEnabled: true
+  goalShakeEnabled: true,
+
+  minimapEnabled: true,
+  minimapOpacity: 0.6,
+  minimapSize: 200,
+  minimapCameraFrustum: true
 };
 
 export class SettingsModal {
@@ -88,15 +99,17 @@ export class SettingsModal {
 
     this.settings = this.loadSettings();
 
-    this.modalEl = document.getElementById('settingsModal');
-    if (this.modalEl) {
-      this.modalEl.classList.add('modal-backdrop', 'modal-overlay');
-      const content = this.modalEl.querySelector('.modal-content') as HTMLElement | null;
-      if (content) {
-        content.classList.add('settings-modal', 'modal-container');
-        content.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 90px)';
-        content.style.overflowY = 'auto';
-        content.style.boxSizing = 'border-box';
+    if (typeof document !== 'undefined') {
+      this.modalEl = document.getElementById('settingsModal');
+      if (this.modalEl) {
+        this.modalEl.classList.add('modal-backdrop', 'modal-overlay');
+        const content = this.modalEl.querySelector('.modal-content') as HTMLElement | null;
+        if (content) {
+          content.classList.add('settings-modal', 'modal-container');
+          content.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 90px)';
+          content.style.overflowY = 'auto';
+          content.style.boxSizing = 'border-box';
+        }
       }
     }
 
@@ -147,7 +160,10 @@ export class SettingsModal {
   private loadSettings(): AppSettings {
     if (typeof localStorage === 'undefined') return { ...DEFAULT_SETTINGS };
     try {
-      const data = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      let data = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (!data) {
+        data = localStorage.getItem('haxball_settings');
+      }
       if (data) {
         return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
       }
@@ -191,6 +207,20 @@ export class SettingsModal {
       this.canvasRenderer.netDeformationEnabled = this.settings.netDeformationEnabled;
       this.canvasRenderer.offscreenIndicatorsEnabled = this.settings.offscreenIndicatorsEnabled;
       this.canvasRenderer.goalShakeEnabled = this.settings.goalShakeEnabled;
+
+      // Minimapa
+      this.canvasRenderer.minimapEnabled = this.settings.minimapEnabled;
+      this.canvasRenderer.minimapOpacity = this.settings.minimapOpacity;
+      this.canvasRenderer.minimapSize = this.settings.minimapSize;
+      this.canvasRenderer.minimapCameraFrustum = this.settings.minimapCameraFrustum;
+      if (this.canvasRenderer.minimapRenderer) {
+        this.canvasRenderer.minimapRenderer.setSettings({
+          minimapEnabled: this.settings.minimapEnabled,
+          minimapOpacity: this.settings.minimapOpacity,
+          minimapSize: this.settings.minimapSize,
+          minimapCameraFrustum: this.settings.minimapCameraFrustum
+        });
+      }
     }
 
     // 3. Chat Opacity CSS Variable
@@ -321,6 +351,40 @@ export class SettingsModal {
             <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; font-weight: 600;">
               <span>💥 Sacudida de Pantalla en Gol / Postes</span>
               <input type="checkbox" id="chkGoalShake" class="settings-toggle" style="width: 18px; height: 18px; cursor: pointer;" />
+            </label>
+          </div>
+
+          <!-- Minimapa / Radar Section -->
+          <div style="display: flex; flex-direction: column; gap: 6px; border-top: 1px solid rgba(14, 165, 233, 0.15); padding-top: 6px;">
+            <div style="font-size: 0.82rem; font-weight: 700; margin-bottom: 2px; display: flex; align-items: center; gap: 6px;">
+              <span>🗺️</span> Minimapa / Radar
+            </div>
+            <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; font-weight: 600;">
+              <span>Activar Minimapa</span>
+              <input type="checkbox" id="chkMinimapEnabled" class="settings-toggle" style="width: 18px; height: 18px; cursor: pointer;" />
+            </label>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.82rem; font-weight: 700;">
+                <span>Opacidad del Minimapa</span>
+                <span id="txtMinimapOpacity">60%</span>
+              </div>
+              <input type="range" id="rngMinimapOpacity" min="0.20" max="1.00" step="0.05" style="width: 100%; cursor: pointer;" />
+              <span style="font-size: 0.72rem; color: var(--text-secondary);">Translúcido (20%) a Opaco (100%)</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.82rem; font-weight: 700;">
+                <span>Tamaño del Minimapa</span>
+                <span id="txtMinimapSize">Mediano (200px)</span>
+              </div>
+              <select id="selMinimapSize" class="settings-select" style="padding: 6px 10px; font-size: 0.82rem; border-radius: 8px; background: rgba(15, 23, 42, 0.85); color: #fff; border: 1.5px solid rgba(14, 165, 233, 0.3); cursor: pointer;">
+                <option value="160">Pequeño (160px)</option>
+                <option value="200">Mediano (200px)</option>
+                <option value="240">Grande (240px)</option>
+              </select>
+            </div>
+            <label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; font-weight: 600;">
+              <span>Mostrar visión de cámara</span>
+              <input type="checkbox" id="chkMinimapCameraFrustum" class="settings-toggle" style="width: 18px; height: 18px; cursor: pointer;" />
             </label>
           </div>
         </div>
@@ -468,6 +532,39 @@ export class SettingsModal {
       this.settings.goalShakeEnabled = chkGoalShake.checked;
       this.saveSettings();
     });
+
+    // Minimap inputs
+    const chkMinimapEnabled = document.getElementById('chkMinimapEnabled') as HTMLInputElement | null;
+    const rngMinimapOpacity = document.getElementById('rngMinimapOpacity') as HTMLInputElement | null;
+    const txtMinimapOpacity = document.getElementById('txtMinimapOpacity');
+    const selMinimapSize = document.getElementById('selMinimapSize') as HTMLSelectElement | null;
+    const txtMinimapSize = document.getElementById('txtMinimapSize');
+    const chkMinimapCameraFrustum = document.getElementById('chkMinimapCameraFrustum') as HTMLInputElement | null;
+
+    chkMinimapEnabled?.addEventListener('change', () => {
+      this.settings.minimapEnabled = chkMinimapEnabled.checked;
+      this.saveSettings();
+    });
+
+    rngMinimapOpacity?.addEventListener('input', () => {
+      const val = parseFloat(rngMinimapOpacity.value);
+      this.settings.minimapOpacity = val;
+      if (txtMinimapOpacity) txtMinimapOpacity.textContent = `${Math.round(val * 100)}%`;
+      this.saveSettings();
+    });
+
+    selMinimapSize?.addEventListener('change', () => {
+      const val = parseInt(selMinimapSize.value, 10) || 200;
+      this.settings.minimapSize = val;
+      const sizeLabel = val === 160 ? 'Pequeño (160px)' : (val === 240 ? 'Grande (240px)' : 'Mediano (200px)');
+      if (txtMinimapSize) txtMinimapSize.textContent = sizeLabel;
+      this.saveSettings();
+    });
+
+    chkMinimapCameraFrustum?.addEventListener('change', () => {
+      this.settings.minimapCameraFrustum = chkMinimapCameraFrustum.checked;
+      this.saveSettings();
+    });
   }
 
   public switchTab(tab: 'controls' | 'sounds' | 'video'): void {
@@ -535,6 +632,24 @@ export class SettingsModal {
     if (chkNetDeformation) chkNetDeformation.checked = this.settings.netDeformationEnabled;
     if (chkOffscreenIndicators) chkOffscreenIndicators.checked = this.settings.offscreenIndicatorsEnabled;
     if (chkGoalShake) chkGoalShake.checked = this.settings.goalShakeEnabled;
+
+    // Minimap
+    const chkMinimapEnabled = document.getElementById('chkMinimapEnabled') as HTMLInputElement | null;
+    const rngMinimapOpacity = document.getElementById('rngMinimapOpacity') as HTMLInputElement | null;
+    const txtMinimapOpacity = document.getElementById('txtMinimapOpacity');
+    const selMinimapSize = document.getElementById('selMinimapSize') as HTMLSelectElement | null;
+    const txtMinimapSize = document.getElementById('txtMinimapSize');
+    const chkMinimapCameraFrustum = document.getElementById('chkMinimapCameraFrustum') as HTMLInputElement | null;
+
+    if (chkMinimapEnabled) chkMinimapEnabled.checked = this.settings.minimapEnabled;
+    if (rngMinimapOpacity) rngMinimapOpacity.value = this.settings.minimapOpacity.toString();
+    if (txtMinimapOpacity) txtMinimapOpacity.textContent = `${Math.round(this.settings.minimapOpacity * 100)}%`;
+    if (selMinimapSize) selMinimapSize.value = this.settings.minimapSize.toString();
+    if (txtMinimapSize) {
+      const sizeVal = this.settings.minimapSize;
+      txtMinimapSize.textContent = sizeVal === 160 ? 'Pequeño (160px)' : (sizeVal === 240 ? 'Grande (240px)' : 'Mediano (200px)');
+    }
+    if (chkMinimapCameraFrustum) chkMinimapCameraFrustum.checked = this.settings.minimapCameraFrustum;
   }
 
   public renderKeybinds(): void {

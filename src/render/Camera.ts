@@ -128,4 +128,56 @@ export class Camera {
     this.targetX = x;
     this.targetY = y;
   }
+
+  private scratchViewportBounds: CameraViewportBounds = {
+    minX: 0,
+    maxX: 0,
+    minY: 0,
+    maxY: 0,
+    width: 0,
+    height: 0
+  };
+
+  /**
+   * Calcula los límites del viewport visible de la cámara en coordenadas del mundo (Frustum).
+   * @param vWidth Ancho del viewport visible en pantalla (CSS px)
+   * @param vHeight Alto del viewport visible en pantalla (CSS px)
+   * @param offsetX Desplazamiento horizontal de centrado (por defecto vWidth / 2)
+   * @param offsetY Desplazamiento vertical de centrado (por defecto vHeight / 2)
+   * @param out Objeto de salida reutilizable para Zero-GC
+   */
+  public getViewportBounds(
+    vWidth: number,
+    vHeight: number,
+    offsetX?: number,
+    offsetY?: number,
+    out?: CameraViewportBounds
+  ): CameraViewportBounds {
+    const z = Math.max(0.1, this.zoom || 1.0);
+    const ox = offsetX !== undefined ? offsetX : vWidth / 2;
+    const oy = offsetY !== undefined ? offsetY : vHeight / 2;
+
+    const minX = this.x - ox / z;
+    const maxX = this.x + (vWidth - ox) / z;
+    const minY = this.y - oy / z;
+    const maxY = this.y + (vHeight - oy) / z;
+
+    const target = out || this.scratchViewportBounds;
+    target.minX = minX;
+    target.maxX = maxX;
+    target.minY = minY;
+    target.maxY = maxY;
+    target.width = maxX - minX;
+    target.height = maxY - minY;
+    return target;
+  }
+}
+
+export interface CameraViewportBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  width: number;
+  height: number;
 }

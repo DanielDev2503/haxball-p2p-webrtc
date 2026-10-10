@@ -5,6 +5,7 @@ import { PitchRenderer } from './PitchRenderer';
 import { DiscRenderer } from './DiscRenderer';
 import { Camera } from './Camera';
 import { OffscreenIndicatorRenderer } from './OffscreenIndicatorRenderer';
+import { MinimapRenderer, MinimapSettings } from './MinimapRenderer';
 import { GoalNet } from '../core/entities/GoalNet';
 import { $theme } from '../ui/stores/gameStore';
 import gsap from 'gsap';
@@ -18,6 +19,7 @@ export class CanvasRenderer {
   public discRenderer: DiscRenderer;
   public camera: Camera;
   public offscreenRenderer: OffscreenIndicatorRenderer;
+  public minimapRenderer: MinimapRenderer;
 
   public goalNets?: GoalNet[] | null = null;
   private localGoalNets: GoalNet[] = [];
@@ -33,6 +35,12 @@ export class CanvasRenderer {
   public netDeformationEnabled: boolean = true;
   public offscreenIndicatorsEnabled: boolean = true;
   public goalShakeEnabled: boolean = true;
+
+  // Minimap toggles and settings
+  public minimapEnabled: boolean = true;
+  public minimapOpacity: number = 0.6;
+  public minimapSize: number = 200;
+  public minimapCameraFrustum: boolean = true;
 
   // Transformación de cámara y sacudón elástico con GSAP
   public cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
@@ -53,6 +61,7 @@ export class CanvasRenderer {
     this.discRenderer.setStadiumBounds(this.stadium.bounds);
     this.camera = new Camera();
     this.offscreenRenderer = new OffscreenIndicatorRenderer();
+    this.minimapRenderer = new MinimapRenderer(this.stadium);
 
     this.initLocalGoalNets();
     this.handleResize();
@@ -154,6 +163,7 @@ export class CanvasRenderer {
   public setStadium(stadium: Stadium): void {
     this.stadium = stadium;
     this.discRenderer.setStadiumBounds(stadium.bounds);
+    this.minimapRenderer.setStadium(stadium);
     this.initLocalGoalNets();
     this.handleResize();
   }
@@ -221,7 +231,7 @@ export class CanvasRenderer {
     }
   }
 
-  public render(snapshot: GameSnapshot, localDiscId?: number | null): void {
+  public render(snapshot: GameSnapshot, localDiscId?: number | null, settings?: Partial<MinimapSettings>): void {
     const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
     const ctx = this.ctx;
 
@@ -334,6 +344,31 @@ export class CanvasRenderer {
         vWidth,
         vHeight,
         this.chatHeight
+      );
+      ctx.restore();
+    }
+
+    // 5. Render Minimapa / Radar en tiempo real (estilo FIFA/PES en esquina inferior derecha)
+    const effectiveMinimapEnabled = settings?.minimapEnabled !== undefined
+      ? settings.minimapEnabled
+      : this.minimapEnabled;
+
+    if (effectiveMinimapEnabled !== false) {
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      this.minimapRenderer.render(
+        ctx,
+        snapshot,
+        this.camera,
+        localDiscId,
+        {
+          minimapEnabled: effectiveMinimapEnabled,
+          minimapOpacity: settings?.minimapOpacity ?? this.minimapOpacity,
+          minimapSize: settings?.minimapSize ?? this.minimapSize,
+          minimapCameraFrustum: settings?.minimapCameraFrustum ?? this.minimapCameraFrustum
+        },
+        vWidth,
+        vHeight
       );
       ctx.restore();
     }

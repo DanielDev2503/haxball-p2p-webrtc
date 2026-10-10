@@ -81,6 +81,20 @@ export class Stadium {
     };
   }
 
+  /**
+   * Límites rectangulares de la cancha reglamentaria para minimapa y proyecciones
+   */
+  public get pitchBounds(): { minX: number; maxX: number; minY: number; maxY: number; width: number; height: number } {
+    return {
+      minX: -this.halfWidth,
+      maxX: this.halfWidth,
+      minY: -this.halfHeight,
+      maxY: this.halfHeight,
+      width: this.width,
+      height: this.height
+    };
+  }
+
   public segments: Segment[] = [];
   public posts: Disc[] = [];
   public goals: GoalDefinition[] = [];
