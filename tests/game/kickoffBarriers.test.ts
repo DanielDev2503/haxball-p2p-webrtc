@@ -256,7 +256,7 @@ describe('Regulatory Kickoff Barriers & Contact Deactivation', () => {
     expect(engine.kickoffState.active).toBe(true);
   });
 
-  it('blocks possessing team from crossing midfield line outside center circle (|y| >= R - r)', () => {
+  it('blocks possessing team from crossing midfield line outside center circle (|y| >= Y_seam)', () => {
     engine.startMatch();
     for (let i = 0; i < 180; i++) engine.tick(new Map());
 
@@ -269,13 +269,14 @@ describe('Regulatory Kickoff Barriers & Contact Deactivation', () => {
     expect(engine.kickoffState.possessingTeam).toBe('blue');
     const blueDisc = engine.playerDiscs.get(pBlue.id)!;
 
-    // Blue attempts to cross into Red territory (x < 0) at y = 70 (|y| = 70 >= 65)
+    // R = 80, r = 15 -> R_inner = 65, Y_seam = sqrt(65^2 - 15^2) = sqrt(4000) approx 63.25
+    // Blue attempts to cross into Red territory (x < 0) at y = 70 (|y| = 70 >= Y_seam)
     blueDisc.pos.set(-10, 70);
     blueDisc.vel.set(-50, 0);
     engine.tick(new Map());
 
-    // Must be clamped to pos.x = 0 and negative vx nullified
-    expect(blueDisc.pos.x).toBeGreaterThanOrEqual(0);
+    // Must be clamped to pos.x = r (15) and negative vx nullified, preventing any midline body bleed
+    expect(blueDisc.pos.x).toBeGreaterThanOrEqual(15);
     expect(blueDisc.vel.x).toBeGreaterThanOrEqual(0);
 
     // Goal scored by Blue -> Red gets kickoff
@@ -287,14 +288,45 @@ describe('Regulatory Kickoff Barriers & Contact Deactivation', () => {
     expect(engine.kickoffState.possessingTeam).toBe('red');
     const redDisc = engine.playerDiscs.get(pRed.id)!;
 
-    // Red attempts to cross into Blue territory (x > 0) at y = 70
+    // Red attempts to cross into Blue territory (x > 0) at y = 70 (|y| >= Y_seam)
     redDisc.pos.set(10, 70);
     redDisc.vel.set(50, 0);
     engine.tick(new Map());
 
-    // Must be clamped to pos.x = 0 and positive vx nullified
-    expect(redDisc.pos.x).toBeLessThanOrEqual(0);
+    // Must be clamped to pos.x = -r (-15) and positive vx nullified, preventing midline body bleed
+    expect(redDisc.pos.x).toBeLessThanOrEqual(-15);
     expect(redDisc.vel.x).toBeLessThanOrEqual(0);
+  });
+
+  it('verifies mathematical continuity at Y_seam between vertical line and circular arc', () => {
+    engine.startMatch();
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+
+    // Blue scores -> Red gets kickoff
+    engine.ball.pos.set(-engine.stadium.halfWidth - 20, 0);
+    engine.tick(new Map());
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+
+    expect(engine.kickoffState.possessingTeam).toBe('red');
+    const redDisc = engine.playerDiscs.get(pRed.id)!;
+
+    // Y_seam = sqrt(65^2 - 15^2) approx 63.24555
+    const ySeam = Math.sqrt(65 * 65 - 15 * 15);
+
+    // 1. Exactly at y = ySeam, outside boundary clamps to x = -r (-15)
+    redDisc.pos.set(0, ySeam);
+    redDisc.vel.set(20, 0);
+    engine.tick(new Map());
+    expect(redDisc.pos.x).toBeCloseTo(-15, 0);
+    expect(redDisc.vel.x).toBeLessThanOrEqual(0);
+
+    // 2. Just inside y = ySeam - 0.5 (within circle), disc attempting to cross beyond circle is projected to arc
+    redDisc.pos.set(50, ySeam - 0.5);
+    redDisc.vel.set(50, 0);
+    engine.tick(new Map());
+    const dist = Math.hypot(redDisc.pos.x, redDisc.pos.y);
+    expect(dist).toBeLessThanOrEqual(65.01);
   });
 
   it('allows possessing team completely free movement in own half without spurious projections or teleport', () => {

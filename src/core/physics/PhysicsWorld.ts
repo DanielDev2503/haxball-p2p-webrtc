@@ -297,27 +297,36 @@ export class PhysicsWorld {
 
   /**
    * Aplica la regla física de barreras de saque para el equipo con posesión:
-   * - Acceso total al círculo central (R_inner = R - r).
-   * - En campo propio (x <= 0 para Red, x >= 0 para Blue): movimiento totalmente libre.
-   * - En campo rival:
-   *   - Si |pos.y| >= R_inner: clampear pos.x = 0, anular avance hacia rival.
-   *   - Si |pos.y| < R_inner y dist > R_inner: proyección radial a R_inner y anulación de velocidad saliente.
+   * - Sea R = centerRadius, r = player.radius.
+   * - R_inner = R - r.
+   * - Altura de intersección geométrica exacta (seam):
+   *   Y_seam = Math.sqrt(Math.max(0, R_inner * R_inner - r * r)).
+   * - Equipo Rojo (campo base x <= 0):
+   *   - Zona fuera del círculo (|pos.y| >= Y_seam): límite exterior estricto x = -r (ningún píxel cruza x = 0).
+   *   - Zona frente/dentro del círculo (|pos.y| < Y_seam): libre si pos.x <= -r, proyectar a R_inner si dist > R_inner.
+   * - Equipo Azul (campo base x >= 0):
+   *   - Zona fuera del círculo (|pos.y| >= Y_seam): límite exterior estricto x = +r.
+   *   - Zona frente/dentro del círculo (|pos.y| < Y_seam): libre si pos.x >= r, proyectar a R_inner si dist > R_inner.
    */
   public enforceKickoffPossessionBarrier(disc: Disc, team: 'red' | 'blue', centerRadius: number): void {
     const r = disc.radius;
     const rInner = centerRadius - r;
     if (rInner <= 0) return;
+    const ySeam = Math.sqrt(Math.max(0, rInner * rInner - r * r));
+    const absY = Math.abs(disc.pos.y);
 
     if (team === 'red') {
       // Semicampo base propio es X <= 0:
-      // Caso 1: En campo propio (pos.x <= 0): libre, sin restricciones
-      if (disc.pos.x > 0) {
-        // Caso 2: En campo rival (pos.x > 0):
-        const absY = Math.abs(disc.pos.y);
-        if (absY >= rInner) {
-          disc.pos.x = 0;
+      if (absY >= ySeam) {
+        // Zona fuera del círculo: el límite exterior de la línea media es x = -r
+        if (disc.pos.x > -r) {
+          disc.pos.x = -r;
           if (disc.vel.x > 0) disc.vel.x = 0;
-        } else {
+        }
+      } else {
+        // Zona frente/dentro del círculo (|pos.y| < Y_seam):
+        // Si pos.x <= -r: libre en propio campo
+        if (disc.pos.x > -r) {
           const dist = Math.hypot(disc.pos.x, disc.pos.y);
           if (dist > rInner) {
             const factor = rInner / dist;
@@ -336,14 +345,16 @@ export class PhysicsWorld {
       }
     } else if (team === 'blue') {
       // Semicampo base propio es X >= 0:
-      // Caso 1: En campo propio (pos.x >= 0): libre, sin restricciones
-      if (disc.pos.x < 0) {
-        // Caso 2: En campo rival (pos.x < 0):
-        const absY = Math.abs(disc.pos.y);
-        if (absY >= rInner) {
-          disc.pos.x = 0;
+      if (absY >= ySeam) {
+        // Zona fuera del círculo: el límite exterior de la línea media es x = +r
+        if (disc.pos.x < r) {
+          disc.pos.x = r;
           if (disc.vel.x < 0) disc.vel.x = 0;
-        } else {
+        }
+      } else {
+        // Zona frente/dentro del círculo (|pos.y| < Y_seam):
+        // Si pos.x >= r: libre en propio campo
+        if (disc.pos.x < r) {
           const dist = Math.hypot(disc.pos.x, disc.pos.y);
           if (dist > rInner) {
             const factor = rInner / dist;
