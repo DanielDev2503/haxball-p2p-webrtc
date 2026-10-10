@@ -924,7 +924,7 @@ export class GameEngine {
 
     this.updatePhysicsKickoffContext();
 
-    const centerR = this.stadium.centerRadius ?? 80;
+    const centerR = (this.stadium as any).kickoffResetRadius ?? this.stadium.centerRadius ?? 80;
 
     for (const [playerId, player] of this.players.entries()) {
       if (player.team === 'spec') continue;
@@ -939,9 +939,8 @@ export class GameEngine {
 
         if (isPossessing) {
           // Equipo con posesión del saque:
-          // Restricción estricta de línea media: NO cruzar la línea media bajo ninguna circunstancia.
-          // Línea recta infinita X = 0, sin cálculos de arcos ni esquinas en (0, ±R), deslizamiento continuo.
-          this.physicsWorld.enforceMidfieldBarrier(disc, player.team as 'red' | 'blue');
+          // Acceso total al círculo central (R_inner = R - r) sin invasión del resto del campo rival
+          this.physicsWorld.enforceKickoffPossessionBarrier(disc, player.team as 'red' | 'blue', centerR);
         } else {
           // Equipo rival (defensa sin cambios):
           // 1. No pueden traspasar su línea media (X = 0)

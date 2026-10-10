@@ -294,4 +294,72 @@ export class PhysicsWorld {
       }
     }
   }
+
+  /**
+   * Aplica la regla física de barreras de saque para el equipo con posesión:
+   * - Acceso total al círculo central (R_inner = R - r).
+   * - En campo propio (x <= 0 para Red, x >= 0 para Blue): movimiento totalmente libre.
+   * - En campo rival:
+   *   - Si |pos.y| >= R_inner: clampear pos.x = 0, anular avance hacia rival.
+   *   - Si |pos.y| < R_inner y dist > R_inner: proyección radial a R_inner y anulación de velocidad saliente.
+   */
+  public enforceKickoffPossessionBarrier(disc: Disc, team: 'red' | 'blue', centerRadius: number): void {
+    const r = disc.radius;
+    const rInner = centerRadius - r;
+    if (rInner <= 0) return;
+
+    if (team === 'red') {
+      // Semicampo base propio es X <= 0:
+      // Caso 1: En campo propio (pos.x <= 0): libre, sin restricciones
+      if (disc.pos.x > 0) {
+        // Caso 2: En campo rival (pos.x > 0):
+        const absY = Math.abs(disc.pos.y);
+        if (absY >= rInner) {
+          disc.pos.x = 0;
+          if (disc.vel.x > 0) disc.vel.x = 0;
+        } else {
+          const dist = Math.hypot(disc.pos.x, disc.pos.y);
+          if (dist > rInner) {
+            const factor = rInner / dist;
+            disc.pos.x *= factor;
+            disc.pos.y *= factor;
+            // Eliminar componente de velocidad saliente
+            const nx = disc.pos.x / rInner;
+            const ny = disc.pos.y / rInner;
+            const vDotN = disc.vel.x * nx + disc.vel.y * ny;
+            if (vDotN > 0) {
+              disc.vel.x -= vDotN * nx;
+              disc.vel.y -= vDotN * ny;
+            }
+          }
+        }
+      }
+    } else if (team === 'blue') {
+      // Semicampo base propio es X >= 0:
+      // Caso 1: En campo propio (pos.x >= 0): libre, sin restricciones
+      if (disc.pos.x < 0) {
+        // Caso 2: En campo rival (pos.x < 0):
+        const absY = Math.abs(disc.pos.y);
+        if (absY >= rInner) {
+          disc.pos.x = 0;
+          if (disc.vel.x < 0) disc.vel.x = 0;
+        } else {
+          const dist = Math.hypot(disc.pos.x, disc.pos.y);
+          if (dist > rInner) {
+            const factor = rInner / dist;
+            disc.pos.x *= factor;
+            disc.pos.y *= factor;
+            // Eliminar componente de velocidad saliente
+            const nx = disc.pos.x / rInner;
+            const ny = disc.pos.y / rInner;
+            const vDotN = disc.vel.x * nx + disc.vel.y * ny;
+            if (vDotN > 0) {
+              disc.vel.x -= vDotN * nx;
+              disc.vel.y -= vDotN * ny;
+            }
+          }
+        }
+      }
+    }
+  }
 }
