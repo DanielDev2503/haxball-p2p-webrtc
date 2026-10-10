@@ -172,7 +172,7 @@ describe('Regulatory Kickoff Barriers & Contact Deactivation', () => {
     expect(engine.matchTimerSeconds).toBeLessThan(180);
   });
 
-  it('confines possessing team to own half plus center circle (cannot exit circle into opponent half)', () => {
+  it('strictly enforces midfield line X = 0 for possessing team (cannot cross into rival half under any condition)', () => {
     engine.startMatch();
     for (let i = 0; i < 180; i++) engine.tick(new Map());
 
@@ -185,20 +185,24 @@ describe('Regulatory Kickoff Barriers & Contact Deactivation', () => {
     expect(engine.kickoffState.possessingTeam).toBe('blue');
     const blueDisc = engine.playerDiscs.get(pBlue.id)!;
 
-    // 1. Blue can be inside the circle in Red's half (x < 0, inside circle r=80, radius 15 -> r <= 65)
-    blueDisc.pos.set(-30, 0);
-    blueDisc.vel.set(0, 0);
-    engine.tick(new Map());
-    expect(blueDisc.pos.x).toBeCloseTo(-30, 0);
-
-    // 2. Blue attempts to leave the circle deeper into Red territory (x = -80)
-    blueDisc.pos.set(-75, 0);
+    // 1. Blue attempts to cross into Red territory (x < 0) inside the central circle (x = -30, y = 40) away from ball
+    blueDisc.pos.set(-30, 40);
     blueDisc.vel.set(-50, 0);
     engine.tick(new Map());
 
-    // Blue should be restricted by the circle boundary in Red territory (distance <= 80 - 15 = 65)
-    const dist = Math.hypot(blueDisc.pos.x, blueDisc.pos.y);
-    expect(dist).toBeLessThanOrEqual(65.01);
+    // Blue MUST be strictly bounded to x >= r (15) and negative vx nullified
+    expect(blueDisc.pos.x).toBeGreaterThanOrEqual(15);
+    expect(blueDisc.vel.x).toBeGreaterThanOrEqual(0);
+    expect(engine.kickoffState.active).toBe(true);
+
+    // 2. Blue attempts to enter deeper into Red territory (x = -75, y = 40)
+    blueDisc.pos.set(-75, 40);
+    blueDisc.vel.set(-100, 0);
+    engine.tick(new Map());
+
+    expect(blueDisc.pos.x).toBeGreaterThanOrEqual(15);
+    expect(blueDisc.vel.x).toBeGreaterThanOrEqual(0);
+    expect(engine.kickoffState.active).toBe(true);
   });
 
   it('allows possessing team free movement in own half without clamping or radial force', () => {
@@ -214,17 +218,17 @@ describe('Regulatory Kickoff Barriers & Contact Deactivation', () => {
     expect(engine.kickoffState.possessingTeam).toBe('blue');
     const blueDisc = engine.playerDiscs.get(pBlue.id)!;
 
-    // Blue (base half X >= 0) is at x = 5, y = 70 (where |y| = 70 > R - r = 65)
-    blueDisc.pos.set(5, 70);
+    // Blue (base half X >= 0) is in own territory at x = 30, y = 70
+    blueDisc.pos.set(30, 70);
     blueDisc.vel.set(-10, 5);
     engine.tick(new Map());
 
-    // Blue in own half (x >= 0) must NOT suffer any clamping, radial projection, or halfway barrier
-    expect(blueDisc.pos.x).toBeGreaterThanOrEqual(0);
+    // Blue in own half (x >= 15) must NOT suffer any clamping, radial projection, or halfway barrier
+    expect(blueDisc.pos.x).toBeGreaterThanOrEqual(15);
     expect(blueDisc.pos.y).toBeCloseTo(70.08, 1);
   });
 
-  it('strictly blocks possessing team in rival half outside central circle (|y| >= R)', () => {
+  it('strictly blocks possessing team everywhere along the midfield line (both inside and outside circle radius)', () => {
     engine.startMatch();
     for (let i = 0; i < 180; i++) engine.tick(new Map());
 
@@ -242,9 +246,49 @@ describe('Regulatory Kickoff Barriers & Contact Deactivation', () => {
     blueDisc.vel.set(-50, 0);
     engine.tick(new Map());
 
-    // Must be clamped to x >= 0 with negative vx nullified
-    expect(blueDisc.pos.x).toBeGreaterThanOrEqual(0);
+    // Must be clamped to x >= 15 with negative vx nullified
+    expect(blueDisc.pos.x).toBeGreaterThanOrEqual(15);
     expect(blueDisc.vel.x).toBeGreaterThanOrEqual(0);
+
+    // Blue attempts to cross into Red territory at y = 30 (|y| < centerR = 80) away from ball
+    blueDisc.pos.set(-10, 30);
+    blueDisc.vel.set(-50, 0);
+    engine.tick(new Map());
+
+    // Must also be clamped to x >= 15 with negative vx nullified
+    expect(blueDisc.pos.x).toBeGreaterThanOrEqual(15);
+    expect(blueDisc.vel.x).toBeGreaterThanOrEqual(0);
+  });
+
+  it('strictly enforces midfield line X = 0 for possessing Red team (x <= -r everywhere, linear sliding)', () => {
+    engine.startMatch();
+    for (let i = 0; i < 180; i++) engine.tick(new Map());
+
+    // Goal scored by Blue -> Red gets kickoff
+    engine.ball.pos.set(-engine.stadium.halfWidth - 20, 0);
+    engine.tick(new Map());
+    for (let i = 0; i < 180; i++) engine.tick(new Map()); // Celebration
+    for (let i = 0; i < 180; i++) engine.tick(new Map()); // Countdown
+
+    expect(engine.kickoffState.possessingTeam).toBe('red');
+    const redDisc = engine.playerDiscs.get(pRed.id)!;
+
+    // 1. Red attempts to cross into Blue territory (x > 0) inside circle away from ball (y = 40)
+    redDisc.pos.set(20, 40);
+    redDisc.vel.set(50, 20);
+    engine.tick(new Map());
+
+    // Red MUST be strictly bounded to x <= -r (-15) and positive vx nullified, vy preserved for sliding
+    expect(redDisc.pos.x).toBeLessThanOrEqual(-15);
+    expect(redDisc.vel.x).toBeLessThanOrEqual(0);
+
+    // 2. Red attempts to cross into Blue territory outside circle (y = 85)
+    redDisc.pos.set(10, 85);
+    redDisc.vel.set(30, 0);
+    engine.tick(new Map());
+
+    expect(redDisc.pos.x).toBeLessThanOrEqual(-15);
+    expect(redDisc.vel.x).toBeLessThanOrEqual(0);
   });
 
   it('eliminates spurious vertex impulses at (0, ±R_circle) for possessing kickoff team', async () => {

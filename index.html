@@ -65,8 +65,8 @@
       </div>
 
       <!-- In-Game Collapsible Room Menu (Classic Haxball Room Window) -->
-      <div id="ingame-menu" class="ingame-menu-overlay modal-overlay modal-backdrop hidden">
-        <div class="menu-modal-card modal-container custom-scrollbar">
+      <div id="ingame-menu" class="ingame-menu-overlay modal-overlay modal-backdrop room-lobby-container hidden">
+        <div class="menu-modal-card room-lobby-modal modal-container custom-scrollbar">
           <!-- Room Window Header: [Room Name] on left, 🔗 Link & 🚪 Leave on right -->
           <div class="menu-header">
             <div class="room-title-area">
@@ -270,7 +270,7 @@
 
   <!-- Room Lobby Modal Overlay (Futurism Aero White Glass) -->
   <div id="lobbyModal" class="modal-overlay modal-backdrop lobby-container room-lobby-container u-hidden" style="z-index: 250;">
-    <div class="modal-content room-lobby-modal modal-container custom-scrollbar" style="position: relative; width: 480px;">
+    <div class="modal-content room-lobby-modal modal-container custom-scrollbar" style="position: relative; width: min(94vw, 860px); max-width: 860px;">
       <button id="lobbyThemeToggleBtn" class="icon-btn theme-toggle-btn" style="position: absolute; top: 14px; right: 14px;" type="button" title="Alternar tema"></button>
       <h2 class="modal-title" style="margin-bottom: 2px;">Haxball P2P Arena</h2>
 

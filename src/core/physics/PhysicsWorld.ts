@@ -272,4 +272,26 @@ export class PhysicsWorld {
       this.goalNets[i].step(dt);
     }
   }
+
+  /**
+   * Restricción estricta de línea media en el saque (plano vertical X = 0).
+   * - Si saca el equipo Rojo (campo izquierdo, x <= 0): su posición se acota a x <= -r.
+   *   Si x + r > 0, corrige su posición a x = -r y anula la velocidad horizontal positiva (vx = min(vx, 0)).
+   * - Si saca el equipo Azul (campo derecho, x >= 0): su posición se acota a x >= r.
+   *   Si x - r < 0, corrige su posición a x = r y anula la velocidad horizontal negativa (vx = max(vx, 0)).
+   */
+  public enforceMidfieldBarrier(disc: Disc, team: 'red' | 'blue'): void {
+    const r = disc.radius;
+    if (team === 'red') {
+      if (disc.pos.x + r > 0) {
+        disc.pos.x = -r;
+        if (disc.vel.x > 0) disc.vel.x = 0;
+      }
+    } else if (team === 'blue') {
+      if (disc.pos.x - r < 0) {
+        disc.pos.x = r;
+        if (disc.vel.x < 0) disc.vel.x = 0;
+      }
+    }
+  }
 }

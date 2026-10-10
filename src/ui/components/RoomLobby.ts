@@ -64,6 +64,8 @@ export class RoomLobby {
       const content = this.overlayEl.querySelector('.modal-content') as HTMLElement | null;
       if (content) {
         content.classList.add('room-lobby-modal', 'modal-container');
+        content.style.width = 'min(94vw, 860px)';
+        content.style.maxWidth = '860px';
         content.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 90px)';
         content.style.overflowY = 'auto';
         content.style.boxSizing = 'border-box';
