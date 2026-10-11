@@ -20,8 +20,8 @@ describe('Directed 2D Magnus Effect', () => {
   it('applies aggressive lateral curvature while curve key is actively held, and extinguishes immediately when released', () => {
     const disc = engine.playerDiscs.get('p1')!;
     // Place player right behind the ball at (-25, 0) kicking forward (+X)
-    disc.pos.set(-25, 0);
-    disc.prevPos.set(-25, 0);
+    disc.pos.set(-24, 0);
+    disc.prevPos.set(-24, 0);
     disc.vel.set(0, 0);
 
     engine.ball.pos.set(0, 0);
@@ -66,8 +66,8 @@ describe('Directed 2D Magnus Effect', () => {
 
   it('applies braking when curve input opposes velocity direction (c_parallel < 0)', () => {
     const disc = engine.playerDiscs.get('p1')!;
-    disc.pos.set(-25, 0);
-    disc.prevPos.set(-25, 0);
+    disc.pos.set(-24, 0);
+    disc.prevPos.set(-24, 0);
 
     engine.ball.pos.set(0, 0);
     engine.ball.vel.set(0, 0);

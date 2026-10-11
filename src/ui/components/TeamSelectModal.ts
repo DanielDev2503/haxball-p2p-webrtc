@@ -606,6 +606,9 @@ export class TeamSelectModal {
       card.classList.remove('panel-center', 'panel-left');
       card.classList.add('panel-right');
     }
+    if (this.menuEl) {
+      this.menuEl.style.pointerEvents = 'none';
+    }
   }
 
   public slideToLeft(): void {
@@ -613,6 +616,9 @@ export class TeamSelectModal {
     if (card) {
       card.classList.remove('panel-center', 'panel-right');
       card.classList.add('panel-left');
+    }
+    if (this.menuEl) {
+      this.menuEl.style.pointerEvents = 'none';
     }
   }
 

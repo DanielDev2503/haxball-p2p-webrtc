@@ -2413,26 +2413,26 @@ select:focus-visible {
 
 .sliding-panel.panel-center,
 .menu-modal-card.panel-center {
-  transform: translate(0, 0);
+  transform: translate3d(0, 0, 0);
   opacity: 1;
-  pointer-events: auto;
-  visibility: visible;
+  pointer-events: auto !important;
+  visibility: visible !important;
 }
 
 .sliding-panel.panel-left,
 .menu-modal-card.panel-left {
-  transform: translateX(-120vw);
+  transform: translate3d(-120vw, 0, 0);
   opacity: 0;
-  pointer-events: none;
-  visibility: hidden;
+  pointer-events: none !important;
+  visibility: hidden !important;
 }
 
 .sliding-panel.panel-right,
 .menu-modal-card.panel-right {
-  transform: translateX(120vw);
+  transform: translate3d(120vw, 0, 0);
   opacity: 0;
-  pointer-events: none;
-  visibility: hidden;
+  pointer-events: none !important;
+  visibility: hidden !important;
 }
 
 .menu-modal-card {

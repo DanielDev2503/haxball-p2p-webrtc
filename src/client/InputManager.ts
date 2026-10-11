@@ -46,12 +46,14 @@ export const DEFAULT_KEYBINDS: KeyBinds = {
 export const KEYBIND_STORAGE_KEY = 'haxball_keybinds';
 
 export class InputManager {
-  private keyStates: Map<string, boolean> = new Map();
+  private keyStates: Record<string, boolean> = Object.create(null);
   public currentMask: number = 0;
   public onInputChanged?: (mask: number) => void;
+  public onKickImmediate?: () => void;
   public keyBinds: KeyBinds;
   public isEnabled: boolean = false;
   private dashTriggered: boolean = false;
+  private curveVec = { x: 0, y: 0 };
 
   public chatInput: HTMLElement | null = null;
   public gameApp?: any = null;
@@ -136,7 +138,7 @@ export class InputManager {
     if (typeof window === 'undefined') return;
 
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Escape' || e.key === 'Escape' || this.isActionKey('menu', e.code)) {
+      if (e.code === 'Escape' || this.isActionKey('menu', e.code)) {
         if (this.uiStateMachine && this.uiStateMachine.getState() !== 'STATE_IN_GAME') return;
         e.preventDefault();
         // Si el chat tiene el foco, desenfocar y no abrir/cerrar menús
@@ -169,7 +171,7 @@ export class InputManager {
       if (!this.isEnabled) return;
       if (e.repeat) return; // Edge-trigger estricto: descartar auto-repeticiones del sistema operativo
 
-      // Requerimiento 4: Evitar que el gestor global bloquee combinaciones estándar del OS (Ctrl+C, Cmd+C, etc.)
+      // Evitar que el gestor global bloquee combinaciones estándar del OS (Ctrl+C, Cmd+C, etc.)
       if (e.ctrlKey || e.metaKey || e.altKey) {
         return;
       }
@@ -190,17 +192,23 @@ export class InputManager {
         this.dashTriggered = true;
       }
 
-      if (!this.keyStates.get(e.code)) {
-        this.keyStates.set(e.code, true);
+      const wasPressed = Boolean(this.keyStates[e.code]);
+      if (!wasPressed) {
+        this.keyStates[e.code] = true;
         this.updateMask();
+
+        // Minimizar latencia de pateo: disparo inmediato por RTCDataChannel
+        if (this.isActionKey('kick', e.code)) {
+          this.onKickImmediate?.();
+        }
       }
     });
 
     window.addEventListener('keyup', (e) => {
       if (!this.isEnabled) return;
 
-      if (this.keyStates.get(e.code)) {
-        this.keyStates.set(e.code, false);
+      if (this.keyStates[e.code]) {
+        this.keyStates[e.code] = false;
         this.updateMask();
       }
     });
@@ -222,7 +230,9 @@ export class InputManager {
   }
 
   public resetMovement(): void {
-    this.keyStates.clear();
+    for (const key in this.keyStates) {
+      this.keyStates[key] = false;
+    }
     this.dashTriggered = false;
     if (this.currentMask !== 0) {
       this.currentMask = 0;
@@ -232,37 +242,25 @@ export class InputManager {
     }
   }
 
+  private isAnyCodePressed(codes?: string[]): boolean {
+    if (!codes) return false;
+    for (let i = 0; i < codes.length; i++) {
+      if (this.keyStates[codes[i]]) return true;
+    }
+    return false;
+  }
+
   private updateMask(): void {
     let mask = 0;
-    let up = false;
-    let down = false;
-    let left = false;
-    let right = false;
-    let kick = false;
-    let turbo = false;
-    let curveLeft = false;
-    let curveRight = false;
 
-    for (const [code, isPressed] of this.keyStates.entries()) {
-      if (!isPressed) continue;
-      if (this.keyBinds.up.includes(code)) up = true;
-      if (this.keyBinds.down.includes(code)) down = true;
-      if (this.keyBinds.left.includes(code)) left = true;
-      if (this.keyBinds.right.includes(code)) right = true;
-      if (this.keyBinds.kick.includes(code)) kick = true;
-      if (this.keyBinds.turbo?.includes(code)) turbo = true;
-      if (this.keyBinds.curveLeft?.includes(code)) curveLeft = true;
-      if (this.keyBinds.curveRight?.includes(code)) curveRight = true;
-    }
-
-    if (up) mask |= INPUT_UP;
-    if (down) mask |= INPUT_DOWN;
-    if (left) mask |= INPUT_LEFT;
-    if (right) mask |= INPUT_RIGHT;
-    if (kick) mask |= INPUT_KICK;
-    if (turbo) mask |= INPUT_TURBO;
-    if (curveLeft) mask |= INPUT_MAGNUS_LEFT;
-    if (curveRight) mask |= INPUT_MAGNUS_RIGHT;
+    if (this.isAnyCodePressed(this.keyBinds.up)) mask |= INPUT_UP;
+    if (this.isAnyCodePressed(this.keyBinds.down)) mask |= INPUT_DOWN;
+    if (this.isAnyCodePressed(this.keyBinds.left)) mask |= INPUT_LEFT;
+    if (this.isAnyCodePressed(this.keyBinds.right)) mask |= INPUT_RIGHT;
+    if (this.isAnyCodePressed(this.keyBinds.kick)) mask |= INPUT_KICK;
+    if (this.isAnyCodePressed(this.keyBinds.turbo)) mask |= INPUT_TURBO;
+    if (this.isAnyCodePressed(this.keyBinds.curveLeft)) mask |= INPUT_MAGNUS_LEFT;
+    if (this.isAnyCodePressed(this.keyBinds.curveRight)) mask |= INPUT_MAGNUS_RIGHT;
 
     if (mask !== this.currentMask) {
       this.currentMask = mask;
@@ -282,12 +280,11 @@ export class InputManager {
 
   public getCurveVector(): { x: number; y: number } {
     let cx = 0;
-    for (const [code, isPressed] of this.keyStates.entries()) {
-      if (!isPressed) continue;
-      if (this.keyBinds.curveLeft?.includes(code)) cx -= 1;
-      if (this.keyBinds.curveRight?.includes(code)) cx += 1;
-    }
-    return { x: cx, y: 0 };
+    if (this.isAnyCodePressed(this.keyBinds.curveLeft)) cx -= 1;
+    if (this.isAnyCodePressed(this.keyBinds.curveRight)) cx += 1;
+    this.curveVec.x = cx;
+    this.curveVec.y = 0;
+    return this.curveVec;
   }
 
   /**
@@ -297,23 +294,15 @@ export class InputManager {
    * 10 (2): C / Tecla Derecha
    */
   public getCurveInput(): number {
-    let left = false;
-    let right = false;
-    for (const [code, isPressed] of this.keyStates.entries()) {
-      if (!isPressed) continue;
-      if (code === 'KeyZ' || this.keyBinds.curveLeft?.includes(code)) left = true;
-      if (code === 'KeyC' || this.keyBinds.curveRight?.includes(code)) right = true;
-    }
+    const left = this.isAnyCodePressed(this.keyBinds.curveLeft) || Boolean(this.keyStates['KeyZ']);
+    const right = this.isAnyCodePressed(this.keyBinds.curveRight) || Boolean(this.keyStates['KeyC']);
     if (left && !right) return 1; // 01: Left (Z)
     if (right && !left) return 2; // 10: Right (C)
     return 0; // 00: Ninguno
   }
 
   public isTurboActive(): boolean {
-    for (const [code, isPressed] of this.keyStates.entries()) {
-      if (isPressed && this.keyBinds.turbo?.includes(code)) return true;
-    }
-    return false;
+    return this.isAnyCodePressed(this.keyBinds.turbo);
   }
 
   public consumeDashTrigger(): boolean {

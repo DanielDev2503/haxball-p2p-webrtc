@@ -4,6 +4,7 @@ export interface GameplayConfig {
   playerMaxSpeed: number;       // min: 0.7, max: 11.2, def: 2.8 (px/tick, 0.25x - 4.0x)
   playerAcceleration: number;   // min: 0.03, max: 0.55, def: 0.11 (0.25x - 5.0x)
   kickStrength: number;         // min: 0.9, max: 18.2, def: 4.545 (0.2x - 4.0x)
+  kickMargin: number;           // min: 0.0, max: 15.0, def: 4.0 (px)
   playerRadius: number;         // min: 8.0, max: 30.0, def: 15.0 (px)
   ballRadius: number;           // min: 3.0, max: 16.0, def: 5.8 (px)
   ballRestitution: number;      // min: 0.0, max: 1.8, def: 0.5 (bCoef)
@@ -59,6 +60,15 @@ export const GAMEPLAY_CONFIG_LIMITS: Record<
     default: 4.545,
     label: 'Fuerza de Patada',
     description: 'Escala 0.2x - 4.0x sobre el impulso cinemático de tiro.'
+  },
+  kickMargin: {
+    min: 0.0,
+    max: 15.0,
+    step: 0.5,
+    default: 4.0,
+    label: 'Distancia de Pateo',
+    unit: 'px',
+    description: 'Margen de distancia extra para patear sobre el contacto físico (0 = contacto exacto).'
   },
   playerRadius: {
     min: 8.0,
@@ -167,6 +177,7 @@ export const DEFAULT_GAMEPLAY_CONFIG: Readonly<GameplayConfig> = Object.freeze({
   playerMaxSpeed: 2.8,
   playerAcceleration: 0.11,
   kickStrength: 4.545,
+  kickMargin: 4.0,
   playerRadius: 15.0,
   ballRadius: 5.8,
   ballRestitution: 0.5,

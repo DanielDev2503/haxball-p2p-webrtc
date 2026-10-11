@@ -8,7 +8,7 @@ export const COLLISION_GROUP_RED_GOAL = 1 << 4;
 export const COLLISION_GROUP_BLUE_GOAL = 1 << 5;
 export const COLLISION_GROUP_ALL = 0xFFFFFFFF;
 
-export const POWER_SHOT_SPEED_THRESHOLD = 700;
+export const POWER_SHOT_SPEED_THRESHOLD = 950;
 
 export interface DiscOptions {
   id: number;

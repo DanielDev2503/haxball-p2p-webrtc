@@ -18,8 +18,9 @@ import { SnapshotPacket } from '../net/protocol/SnapshotPacket';
 import { SOUND_POST_HIT, SOUND_KICK } from '../net/protocol/BinaryProtocol';
 import { JitterBuffer } from '../net/transport/JitterBuffer';
 import { PhysicsTicker } from '../core/physics/PhysicsTicker';
+import { PhysicsWorld } from '../core/physics/PhysicsWorld';
 import { RoomConfig } from '../server/signalingServer';
-import { MatchStatePayload } from '../net/protocol/ControlMessages';
+import { MatchStatePayload, ScoreEventPacket, MatchEndStatsPacket } from '../net/protocol/ControlMessages';
 import { UIStateMachine, UIState } from '../ui/UIStateMachine';
 import { GameplayConfig, DEFAULT_GAMEPLAY_CONFIG } from '../core/game/GameConfig';
 import { GameplayModifierModal } from '../ui/components/GameplayModifierModal';
@@ -213,6 +214,7 @@ export class GameApp {
     this.currentHostId = this.localPlayer.id;
 
     this.inputManager = new InputManager();
+    this.inputManager.onKickImmediate = () => this.sendClientInputImmediate();
     this.audioManager = new AudioManager();
     this.hud = new ScoreboardHUD();
     this.chat = new ChatBox();
@@ -1150,8 +1152,20 @@ export class GameApp {
       this.audioManager.playKick();
     };
 
-    engine.onScoreEvent = (_playerId, text, _pts, x, y) => {
-      this.canvasRenderer?.addFloatingScore(text, x, y);
+    engine.onScoreEvent = (playerId, text, pts, x, y, color) => {
+      this.canvasRenderer?.addFloatingScore(text, x, y, color);
+      if (this.mode === 'host') {
+        const scorePacket: ScoreEventPacket = {
+          type: 'SCORE_EVENT',
+          playerId,
+          text,
+          points: pts,
+          x,
+          y,
+          color
+        };
+        this.network.sendReliable(scorePacket);
+      }
     };
 
     engine.onPostHit = () => {
@@ -1175,6 +1189,17 @@ export class GameApp {
       this.broadcastMatchStateSync();
       this.broadcastSnapshot();
       this.updateAdminControlsUI();
+
+      if (this.mode === 'host') {
+        const statsPacket: MatchEndStatsPacket = {
+          type: 'MATCH_END_STATS',
+          stats,
+          mvpPlayerId: mvp?.playerId ?? null,
+          winner,
+          outcomeText
+        };
+        this.network.sendReliable(statsPacket);
+      }
     };
 
     engine.onStateChange = (state) => {
@@ -1653,6 +1678,16 @@ export class GameApp {
         } else if (msg.type === 'kicked') {
           alert('Has sido expulsado de la sala.');
           this.leaveCurrentRoom();
+        } else if (msg.type === 'SCORE_EVENT') {
+          this.canvasRenderer?.addFloatingScore(msg.text, msg.x, msg.y, msg.color);
+        } else if (msg.type === 'MATCH_END_STATS') {
+          this.audioManager.playGoalWhistle();
+          const outcome = msg.outcomeText || (msg.winner ? `¡Victoria del Equipo ${msg.winner === 'red' ? 'Rojo' : 'Azul'}!` : '¡Empate!');
+          this.enforceMenuState(MatchPhase.STOPPED, outcome);
+          this.teamSelect.setSlideToStatsVisible(true);
+          this.teamSelect.slideToRight();
+          this.matchStatsModal.show(msg.stats, msg.mvpPlayerId ?? null);
+          this.updateAdminControlsUI();
         } else if (msg.type === 'banned') {
           alert('Has sido baneado de esta sala.');
           this.leaveCurrentRoom();
@@ -2284,6 +2319,34 @@ export class GameApp {
   }
 
   /**
+   * Envío inmediato de entrada al host por RTCDataChannel ante evento de patada (cero latencia adicional).
+   */
+  private sendClientInputImmediate(): void {
+    if (this.mode !== 'client' || !this.hostPeer || !this.hostPeer.isReady) return;
+    let mask = this.inputManager.getMask();
+    if (this.chat?.isTyping) {
+      mask |= INPUT_TYPING;
+    }
+    const curve = this.inputManager.getCurveVector();
+    const curveInput = this.inputManager.getCurveInput();
+    const isTurbo = this.inputManager.isTurboActive();
+    const triggerDash = this.inputManager.consumeDashTrigger();
+
+    GameApp.clientInputData.sequence = this.clientInputSequence;
+    GameApp.clientInputData.inputMask = mask;
+    GameApp.clientInputData.clientTimestamp = Math.round(performance.now()) & 0xffff;
+    GameApp.clientInputData.curveInput = curveInput;
+    GameApp.clientInputData.curveX = curve.x;
+    GameApp.clientInputData.curveY = curve.y;
+    GameApp.clientInputData.isTurbo = isTurbo;
+    GameApp.clientInputData.triggerDash = triggerDash;
+    GameApp.clientInputData.isTyping = this.chat?.isTyping ?? false;
+
+    const inputBuf = InputPacket.encode(GameApp.clientInputData, GameApp.clientInputBuf);
+    this.hostPeer.sendUnreliable(inputBuf);
+  }
+
+  /**
    * Predicción cinemática inmediata a 60 Hz para el jugador local en cliente (cero input lag).
    * p_local(t + dt) = p_local(t) + v_local * dt
    */
@@ -2419,39 +2482,53 @@ export class GameApp {
     );
 
     // 2. Barreras de saque reglamentario en predicción local
-    if (this.currentKickoffActive) {
+    if (this.currentKickoffActive && (this.localPlayer.team === 'red' || this.localPlayer.team === 'blue')) {
       const r = 15;
-      if (this.localPlayer.team === 'red') {
-        if (this.predictedPos.x > -r) {
-          this.predictedPos.x = -r;
-          if (this.predictedVel.x > 0) this.predictedVel.x = 0;
-        }
-      } else if (this.localPlayer.team === 'blue') {
-        if (this.predictedPos.x < r) {
-          this.predictedPos.x = r;
-          if (this.predictedVel.x < 0) this.predictedVel.x = 0;
-        }
-      }
+      const team = this.localPlayer.team;
+      const centerR = (stadium as any)?.kickoffResetRadius ?? stadium?.centerRadius ?? 80;
 
-      if (this.currentKickoffMode === 'TEAM_KICKOFF' && this.localPlayer.team !== this.currentKickoffPossessingTeam) {
-        const limitR = 80 + r;
-        const px = this.predictedPos.x;
-        const py = this.predictedPos.y;
-        const distSq = px * px + py * py;
-        if (distSq < limitR * limitR) {
-          const dist = Math.sqrt(distSq);
-          if (dist > 1e-6) {
-            const nx = px / dist;
-            const ny = py / dist;
-            this.predictedPos.x = nx * limitR;
-            this.predictedPos.y = ny * limitR;
-            const vDotN = this.predictedVel.x * nx + this.predictedVel.y * ny;
-            if (vDotN < 0) {
-              this.predictedVel.x -= vDotN * nx;
-              this.predictedVel.y -= vDotN * ny;
+      if (this.currentKickoffMode === 'TEAM_KICKOFF' && this.currentKickoffPossessingTeam) {
+        if (team === this.currentKickoffPossessingTeam) {
+          PhysicsWorld.enforceKickoffPossessionBarrierStatic(
+            this.predictedPos,
+            this.predictedVel,
+            r,
+            team,
+            centerR
+          );
+        } else {
+          PhysicsWorld.enforceMidfieldBarrierStatic(
+            this.predictedPos,
+            this.predictedVel,
+            r,
+            team
+          );
+          const limitR = centerR + r;
+          const px = this.predictedPos.x;
+          const py = this.predictedPos.y;
+          const distSq = px * px + py * py;
+          if (distSq < limitR * limitR) {
+            const dist = Math.sqrt(distSq);
+            if (dist > 1e-6) {
+              const nx = px / dist;
+              const ny = py / dist;
+              this.predictedPos.x = nx * limitR;
+              this.predictedPos.y = ny * limitR;
+              const vDotN = this.predictedVel.x * nx + this.predictedVel.y * ny;
+              if (vDotN < 0) {
+                this.predictedVel.x -= vDotN * nx;
+                this.predictedVel.y -= vDotN * ny;
+              }
             }
           }
         }
+      } else {
+        PhysicsWorld.enforceMidfieldBarrierStatic(
+          this.predictedPos,
+          this.predictedVel,
+          r,
+          team
+        );
       }
     }
 

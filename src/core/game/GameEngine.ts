@@ -63,7 +63,7 @@ export class GameEngine {
   public lastPlayerTouchTick: Map<string, number> = new Map();
 
   // Event callbacks
-  public onScoreEvent?: (playerId: string, text: string, points: number, x: number, y: number) => void;
+  public onScoreEvent?: (playerId: string, text: string, points: number, x: number, y: number, color?: string) => void;
   public onGoal?: (scoringTeam: 'red' | 'blue', redScore: number, blueScore: number) => void;
   public onKick?: (playerDisc: Disc, ball: Disc) => void;
   public onPostHit?: (ball: Disc, post: Disc) => void;
@@ -84,7 +84,7 @@ export class GameEngine {
     this.matchTimerSeconds = this.config.timeLimitSeconds;
     this.gameplayConfig = sanitizeGameplayConfig(gameplayConfig);
 
-    this.physicsWorld = new PhysicsWorld({ fixedDt: 1 / 60, maxSubsteps: 8 });
+    this.physicsWorld = new PhysicsWorld({ fixedDt: 1 / 60, maxSubsteps: 8, kickMargin: this.gameplayConfig.kickMargin ?? 4.0 });
     this.stadium = typeof stadiumOrId === 'string' ? createStadium(stadiumOrId) : stadiumOrId;
     this.fsm = new GameFSM();
     this.fsm.onStateChange = (state) => {
@@ -220,11 +220,10 @@ export class GameEngine {
       this.lastPlayerTouchTick.set(playerId, this.tickCount);
       const stats = this.getOrCreatePlayerStats(playerId);
       stats.touches++;
-      stats.points += 2; // +2 pts por toque de balón
+      stats.points += 2; // +2 pts por toque de balón (sin texto flotante para no saturar la vista)
       const disc = this.playerDiscs.get(playerId);
       const px = disc ? disc.pos.x : this.ball.pos.x;
       const py = disc ? disc.pos.y : this.ball.pos.y;
-      this.onScoreEvent?.(playerId, 'Toque +2', 2, px, py);
 
       // Pase Completado (+10 pts):
       // Contacto de Jugador A seguido por contacto de Jugador B del mismo equipo, sin toques rivales intermedios
@@ -319,25 +318,18 @@ export class GameEngine {
     if (isShotOnGoal) {
       const shooterStats = this.getOrCreatePlayerStats(player.id);
       shooterStats.shots++;
-      const isPowerOrCurve = Boolean(this.ball.isPowerShot || this.ball.spin !== 0 || this.ball.isCurving);
+      shooterStats.shotsNormal = (shooterStats.shotsNormal || 0) + 1;
+      shooterStats.points += 20; // +20 base (bonificación de curva eliminada en tiro para evitar spam)
       const shooterDisc = this.playerDiscs.get(player.id);
       const sx = shooterDisc ? shooterDisc.pos.x : this.ball.pos.x;
       const sy = shooterDisc ? shooterDisc.pos.y : this.ball.pos.y;
-      if (isPowerOrCurve) {
-        shooterStats.shotsPowerCurve = (shooterStats.shotsPowerCurve || 0) + 1;
-        shooterStats.points += 30; // +20 base + 10 bonificación por potencia o curva
-        this.onScoreEvent?.(player.id, 'Tiro con efecto +30', 30, sx, sy);
-      } else {
-        shooterStats.shotsNormal = (shooterStats.shotsNormal || 0) + 1;
-        shooterStats.points += 20; // +20 base
-        this.onScoreEvent?.(player.id, 'Tiro a portería +20', 20, sx, sy);
-      }
+      this.onScoreEvent?.(player.id, 'Tiro a portería +20', 20, sx, sy);
       this.pendingShot = {
         shooterId: player.id,
         shooterTeam: player.team as 'red' | 'blue',
         tick: this.tickCount,
         isPower: this.ball.isPowerShot,
-        isCurve: isPowerOrCurve
+        isCurve: false
       };
     }
   }
@@ -389,6 +381,7 @@ export class GameEngine {
         disc.damping = this.gameplayConfig.playerFriction;
       }
     }
+    this.physicsWorld.kickMargin = this.gameplayConfig.kickMargin ?? 4.0;
   }
 
   public setupGoalNets(): void {
@@ -458,11 +451,12 @@ export class GameEngine {
   private spawnPlayerDisc(player: Player, spawnX?: number, spawnY?: number): Disc {
     const isRed = player.team === 'red';
     const discId = this.nextDiscId++;
-    const defaultX = isRed ? -this.stadium.halfWidth : this.stadium.halfWidth;
+    const spawnDist = this.stadium.spawnDistance ?? 180;
+    const defaultX = isRed ? -spawnDist : spawnDist;
     const disc = new Disc({
       id: discId,
       x: spawnX ?? defaultX,
-      y: spawnY ?? 0,
+      y: spawnY ?? (isRed ? -60 : 60),
       radius: this.gameplayConfig.playerRadius,
       mass: this.gameplayConfig.playerMass ?? 2,
       damping: this.gameplayConfig.playerFriction ?? 0.96,
@@ -663,7 +657,7 @@ export class GameEngine {
     const dt = 1 / 60;
     const accel = (this.gameplayConfig.playerAcceleration / 0.11) * 7.5;
     const kickStrength = (this.gameplayConfig.kickStrength / 4.545) * 320.0;
-    const kickReach = this.gameplayConfig.playerRadius + this.gameplayConfig.ballRadius + 9.0;
+    const kickMargin = this.gameplayConfig.kickMargin ?? 4.0;
 
     for (const [playerId, player] of this.players.entries()) {
       const disc = this.playerDiscs.get(playerId);
@@ -793,6 +787,7 @@ export class GameEngine {
         const diffY = this.ball.pos.y - disc.pos.y;
         const distSq = diffX * diffX + diffY * diffY;
 
+        const kickReach = disc.radius + this.ball.radius + kickMargin;
         if (distSq <= kickReach * kickReach) {
           const dist = Math.sqrt(distSq);
           const kickDirX = dist > 1e-6 ? diffX / dist : 1;
@@ -995,66 +990,104 @@ export class GameEngine {
         let scorerPlayerName: string = '';
         let assisterPlayerId: string | null = null;
         let assisterPlayerName: string | null = null;
+        let isOwnGoal = false;
 
-        // 1. Gol Anotado (+100 pts adicionales)
-        let scorerIndex = -1;
-        for (let i = this.touchHistory.length - 1; i >= 0; i--) {
-          if (this.touchHistory[i].team === goalScored) {
-            scorerIndex = i;
-            scorerPlayerId = this.touchHistory[i].playerId;
-            const p = this.players.get(scorerPlayerId);
-            scorerPlayerName = p?.name ?? scorerPlayerId;
-            const scorerStats = this.getOrCreatePlayerStats(scorerPlayerId);
-            scorerStats.goals++;
-            scorerStats.points += 100;
-            const scDisc = this.playerDiscs.get(scorerPlayerId);
-            const scX = scDisc ? scDisc.pos.x : this.ball.pos.x;
-            const scY = scDisc ? scDisc.pos.y : this.ball.pos.y;
-            this.onScoreEvent?.(scorerPlayerId, '¡Gol! +100', 100, scX, scY);
-            this.checkHattrickBonus(scorerStats);
-            break;
-          }
-        }
+        const concedingTeam = goalScored === 'red' ? 'blue' : 'red';
+        const lastTouch = this.touchHistory.length > 0 ? this.touchHistory[this.touchHistory.length - 1] : null;
 
-        // 2. Asistencia (+50 pts, o +70 si fue con curva)
-        if (scorerIndex > 0) {
-          for (let i = scorerIndex - 1; i >= 0; i--) {
-            const touch = this.touchHistory[i];
-            if (touch.team !== goalScored) {
-              // Intervención rival intermedia => posesión perdida, sin asistencia
+        if (lastTouch && lastTouch.team === concedingTeam) {
+          // Penalización por Autogol (-50 pts):
+          // Si el último jugador en tocar el balón antes de cruzar la línea de meta pertenece al equipo que recibe el gol, regístralo como Autogol.
+          // Aplica una deducción de 50 puntos a su marcador individual (score -= 50).
+          // Muestra el texto flotante Autogol -50 en color rojo carmesí (#ff4757).
+          isOwnGoal = true;
+          scorerPlayerId = lastTouch.playerId;
+          const p = this.players.get(scorerPlayerId);
+          scorerPlayerName = p?.name ?? scorerPlayerId;
+          const scorerStats = this.getOrCreatePlayerStats(scorerPlayerId);
+          scorerStats.points -= 50;
+
+          const scDisc = this.playerDiscs.get(scorerPlayerId);
+          const scX = scDisc ? scDisc.pos.x : this.ball.pos.x;
+          const scY = scDisc ? scDisc.pos.y : this.ball.pos.y;
+          this.onScoreEvent?.(scorerPlayerId, 'Autogol -50', -50, scX, scY, '#ff4757');
+        } else {
+          // 1. Gol Anotado
+          let scorerIndex = -1;
+          for (let i = this.touchHistory.length - 1; i >= 0; i--) {
+            if (this.touchHistory[i].team === goalScored) {
+              scorerIndex = i;
+              scorerPlayerId = this.touchHistory[i].playerId;
+              const p = this.players.get(scorerPlayerId);
+              scorerPlayerName = p?.name ?? scorerPlayerId;
+              const scorerStats = this.getOrCreatePlayerStats(scorerPlayerId);
+              scorerStats.goals++;
+
+              // Si un gol se anota habiéndose aplicado efecto Magnus activo (spin !== 0),
+              // otorga +20 pts adicionales al gol (acumulando +140 pts en total entre tiro base +20, gol +100 y curva +20).
+              const isMagnusActive = (this.ball.spin !== undefined && this.ball.spin !== 0) ||
+                                     this.ball.isCurving ||
+                                     this.touchHistory[i].wasCurve;
+
+              const scDisc = this.playerDiscs.get(scorerPlayerId);
+              const scX = scDisc ? scDisc.pos.x : this.ball.pos.x;
+              const scY = scDisc ? scDisc.pos.y : this.ball.pos.y;
+
+              if (isMagnusActive) {
+                scorerStats.points += 120; // +100 base + 20 gol con curva
+                this.onScoreEvent?.(scorerPlayerId, '¡Gol con efecto! +120', 120, scX, scY);
+              } else {
+                scorerStats.points += 100;
+                this.onScoreEvent?.(scorerPlayerId, '¡Gol! +100', 100, scX, scY);
+              }
+
+              this.checkHattrickBonus(scorerStats);
               break;
             }
-            if (touch.playerId !== scorerPlayerId && touch.team === goalScored) {
-              const dtMs = now - touch.timestamp;
-              const dtTicks = this.tickCount - touch.tick;
-              if (dtMs <= 7000 || dtTicks <= 420) {
-                assisterPlayerId = touch.playerId;
-                const ap = this.players.get(assisterPlayerId);
-                assisterPlayerName = ap?.name ?? assisterPlayerId;
-                const assisterStats = this.getOrCreatePlayerStats(assisterPlayerId);
-                assisterStats.assists++;
-                const asDisc = this.playerDiscs.get(assisterPlayerId);
-                const asX = asDisc ? asDisc.pos.x : this.ball.pos.x;
-                const asY = asDisc ? asDisc.pos.y : this.ball.pos.y;
-                if (touch.wasCurve) {
-                  assisterStats.assistsCurve = (assisterStats.assistsCurve || 0) + 1;
-                  assisterStats.points += 70; // +50 asistencia + 20 bonificación por curva
-                  this.onScoreEvent?.(assisterPlayerId, 'Asistencia con efecto +70', 70, asX, asY);
-                } else {
-                  assisterStats.assistsNormal = (assisterStats.assistsNormal || 0) + 1;
-                  assisterStats.points += 50;
-                  this.onScoreEvent?.(assisterPlayerId, 'Asistencia +50', 50, asX, asY);
-                }
-                this.checkHattrickBonus(assisterStats);
+          }
+
+          // 2. Asistencia (+50 pts, o +70 si fue con curva)
+          if (scorerIndex > 0) {
+            for (let i = scorerIndex - 1; i >= 0; i--) {
+              const touch = this.touchHistory[i];
+              if (touch.team !== goalScored) {
+                // Intervención rival intermedia => posesión perdida, sin asistencia
+                break;
               }
-              break;
+              if (touch.playerId !== scorerPlayerId && touch.team === goalScored) {
+                const dtMs = now - touch.timestamp;
+                const dtTicks = this.tickCount - touch.tick;
+                if (dtMs <= 7000 || dtTicks <= 420) {
+                  assisterPlayerId = touch.playerId;
+                  const ap = this.players.get(assisterPlayerId);
+                  assisterPlayerName = ap?.name ?? assisterPlayerId;
+                  const assisterStats = this.getOrCreatePlayerStats(assisterPlayerId);
+                  assisterStats.assists++;
+                  const asDisc = this.playerDiscs.get(assisterPlayerId);
+                  const asX = asDisc ? asDisc.pos.x : this.ball.pos.x;
+                  const asY = asDisc ? asDisc.pos.y : this.ball.pos.y;
+                  if (touch.wasCurve) {
+                    assisterStats.assistsCurve = (assisterStats.assistsCurve || 0) + 1;
+                    assisterStats.points += 70; // +50 asistencia + 20 bonificación por curva
+                    this.onScoreEvent?.(assisterPlayerId, 'Asistencia con efecto +70', 70, asX, asY);
+                  } else {
+                    assisterStats.assistsNormal = (assisterStats.assistsNormal || 0) + 1;
+                    assisterStats.points += 50;
+                    this.onScoreEvent?.(assisterPlayerId, 'Asistencia +50', 50, asX, asY);
+                  }
+                  this.checkHattrickBonus(assisterStats);
+                }
+                break;
+              }
             }
           }
         }
 
         this.lastGoalInfo = {
           scorerId: scorerPlayerId ?? '',
-          scorerName: scorerPlayerName || (goalScored === 'red' ? 'Equipo Rojo' : 'Equipo Azul'),
+          scorerName: isOwnGoal
+            ? `${scorerPlayerName} (Autogol)`
+            : (scorerPlayerName || (goalScored === 'red' ? 'Equipo Rojo' : 'Equipo Azul')),
           assisterId: assisterPlayerId,
           assisterName: assisterPlayerName,
           team: goalScored

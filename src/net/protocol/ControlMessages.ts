@@ -1,5 +1,6 @@
 import { MatchState } from '../../core/game/GameFSM';
 import { GameplayConfig } from '../../core/game/GameConfig';
+import { PlayerMatchStats } from '../../core/game/GameState';
 
 export type ControlMessageType =
   | 'kick_player'
@@ -38,7 +39,9 @@ export type ControlMessageType =
   | 'GAME_CONFIG_SYNC'
   | 'MAP_CHANGE_REQUEST'
   | 'MAP_CHANGE_SYNC'
-  | 'PEER_DISCONNECT';
+  | 'PEER_DISCONNECT'
+  | 'SCORE_EVENT'
+  | 'MATCH_END_STATS';
 
 export interface RoomConfig {
   name: string;
@@ -232,4 +235,23 @@ export interface PeerDisconnectMessage {
   type: 'PEER_DISCONNECT';
   reason?: string | undefined;
 }
+
+export interface ScoreEventPacket {
+  type: 'SCORE_EVENT';
+  playerId: string;
+  text: string;
+  points: number;
+  x: number;
+  y: number;
+  color?: string | undefined;
+}
+
+export interface MatchEndStatsPacket {
+  type: 'MATCH_END_STATS';
+  stats: PlayerMatchStats[];
+  mvpPlayerId: string | null;
+  winner: 'red' | 'blue' | null;
+  outcomeText?: string | undefined;
+}
+
 

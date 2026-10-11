@@ -188,8 +188,8 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     const disc = engine.playerDiscs.get('p1')!;
 
     // 1. Regular kick (320 px/s with 0.99 ball damping after 1 tick = 316.8)
-    disc.pos.set(-28, 0);
-    disc.prevPos.set(-28, 0);
+    disc.pos.set(-24, 0);
+    disc.prevPos.set(-24, 0);
     disc.vel.set(0, 0);
     engine.ball.pos.set(0, 0);
     engine.ball.prevPos.set(0, 0);
@@ -203,8 +203,8 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
 
     // 2. Dash kick (x1.35 -> 320 * 1.35 * 0.99 = 427.68)
     playerRed.stamina = 100;
-    disc.pos.set(-28, 0);
-    disc.prevPos.set(-28, 0);
+    disc.pos.set(-24, 0);
+    disc.prevPos.set(-24, 0);
     disc.vel.set(0, 0);
     engine.ball.pos.set(0, 0);
     engine.ball.prevPos.set(0, 0);
@@ -220,8 +220,8 @@ describe('Shared Stamina System (Turbo, Dash, Immobility Recharge & Tackle)', ()
     // 3. Turbo kick (x1.15 -> 320 * 1.15 * 0.99 = 364.32)
     playerRed.stamina = 100;
     playerRed.isDashing = false;
-    disc.pos.set(-28, 0);
-    disc.prevPos.set(-28, 0);
+    disc.pos.set(-24, 0);
+    disc.prevPos.set(-24, 0);
     disc.vel.set(0, 0);
     engine.ball.pos.set(0, 0);
     engine.ball.prevPos.set(0, 0);

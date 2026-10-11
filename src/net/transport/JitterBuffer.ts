@@ -240,6 +240,8 @@ export class JitterBuffer {
           isTurbo: d1.isTurbo,
           isSpinActive: d1.isSpinActive,
           isCurvingAllowed: d1.isCurvingAllowed,
+          isPowerShot: d1.isPowerShot,
+          spin: d1.spin,
           lastKickerId: d1.lastKickerId,
           curveFactor: d1.curveFactor
         });

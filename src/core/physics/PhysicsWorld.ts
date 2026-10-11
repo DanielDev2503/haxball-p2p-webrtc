@@ -15,6 +15,7 @@ export interface PhysicsWorldConfig {
   gravityY?: number;
   fixedDt?: number;
   maxSubsteps?: number;
+  kickMargin?: number;
 }
 
 export class PhysicsWorld {
@@ -23,6 +24,7 @@ export class PhysicsWorld {
   public goalNets: GoalNet[] = [];
   public fixedDt: number;
   public maxSubsteps: number;
+  public kickMargin: number;
   public onCollision?: (event: CollisionEvent) => void;
   public onSubstep?: (subDt: number) => void;
   public kickoffContext?: KickoffPhysicsContext | null = null;
@@ -30,6 +32,7 @@ export class PhysicsWorld {
   constructor(config: PhysicsWorldConfig = {}) {
     this.fixedDt = config.fixedDt ?? 1 / 60;
     this.maxSubsteps = config.maxSubsteps ?? 8;
+    this.kickMargin = config.kickMargin ?? 4.0;
   }
 
   public addDisc(disc: Disc): void {
@@ -280,93 +283,98 @@ export class PhysicsWorld {
    * - Si saca el equipo Azul (campo derecho, x >= 0): su posición se acota a x >= r.
    *   Si x - r < 0, corrige su posición a x = r y anula la velocidad horizontal negativa (vx = max(vx, 0)).
    */
+  /**
+   * Valida si un disco jugador está a distancia de contacto de tiro con el balón
+   * considerando el margen geométrico configurable kickMargin.
+   */
+  public isWithinKickDistance(player: Disc, ball: Disc, margin: number = this.kickMargin): boolean {
+    const maxDist = player.radius + ball.radius + margin;
+    const dx = ball.pos.x - player.pos.x;
+    const dy = ball.pos.y - player.pos.y;
+    return (dx * dx + dy * dy) <= maxDist * maxDist;
+  }
+
   public enforceMidfieldBarrier(disc: Disc, team: 'red' | 'blue'): void {
-    const r = disc.radius;
+    PhysicsWorld.enforceMidfieldBarrierStatic(disc.pos, disc.vel, disc.radius, team);
+  }
+
+  public enforceKickoffPossessionBarrier(disc: Disc, team: 'red' | 'blue', centerRadius: number): void {
+    PhysicsWorld.enforceKickoffPossessionBarrierStatic(disc.pos, disc.vel, disc.radius, team, centerRadius);
+  }
+
+  public static enforceMidfieldBarrierStatic(
+    pos: { x: number; y: number },
+    vel: { x: number; y: number },
+    r: number,
+    team: 'red' | 'blue'
+  ): void {
     if (team === 'red') {
-      if (disc.pos.x + r > 0) {
-        disc.pos.x = -r;
-        if (disc.vel.x > 0) disc.vel.x = 0;
+      if (pos.x + r > 0) {
+        pos.x = -r;
+        if (vel.x > 0) vel.x = 0;
       }
     } else if (team === 'blue') {
-      if (disc.pos.x - r < 0) {
-        disc.pos.x = r;
-        if (disc.vel.x < 0) disc.vel.x = 0;
+      if (pos.x - r < 0) {
+        pos.x = r;
+        if (vel.x < 0) vel.x = 0;
       }
     }
   }
 
-  /**
-   * Aplica la regla física de barreras de saque para el equipo con posesión:
-   * - Sea R = centerRadius, r = player.radius.
-   * - R_inner = R - r.
-   * - Altura de intersección geométrica exacta (seam):
-   *   Y_seam = Math.sqrt(Math.max(0, R_inner * R_inner - r * r)).
-   * - Equipo Rojo (campo base x <= 0):
-   *   - Zona fuera del círculo (|pos.y| >= Y_seam): límite exterior estricto x = -r (ningún píxel cruza x = 0).
-   *   - Zona frente/dentro del círculo (|pos.y| < Y_seam): libre si pos.x <= -r, proyectar a R_inner si dist > R_inner.
-   * - Equipo Azul (campo base x >= 0):
-   *   - Zona fuera del círculo (|pos.y| >= Y_seam): límite exterior estricto x = +r.
-   *   - Zona frente/dentro del círculo (|pos.y| < Y_seam): libre si pos.x >= r, proyectar a R_inner si dist > R_inner.
-   */
-  public enforceKickoffPossessionBarrier(disc: Disc, team: 'red' | 'blue', centerRadius: number): void {
-    const r = disc.radius;
+  public static enforceKickoffPossessionBarrierStatic(
+    pos: { x: number; y: number },
+    vel: { x: number; y: number },
+    r: number,
+    team: 'red' | 'blue',
+    centerRadius: number
+  ): void {
     const rInner = centerRadius - r;
     if (rInner <= 0) return;
     const ySeam = Math.sqrt(Math.max(0, rInner * rInner - r * r));
-    const absY = Math.abs(disc.pos.y);
+    const absY = Math.abs(pos.y);
 
     if (team === 'red') {
-      // Semicampo base propio es X <= 0:
       if (absY >= ySeam) {
-        // Zona fuera del círculo: el límite exterior de la línea media es x = -r
-        if (disc.pos.x > -r) {
-          disc.pos.x = -r;
-          if (disc.vel.x > 0) disc.vel.x = 0;
+        if (pos.x > -r) {
+          pos.x = -r;
+          if (vel.x > 0) vel.x = 0;
         }
       } else {
-        // Zona frente/dentro del círculo (|pos.y| < Y_seam):
-        // Si pos.x <= -r: libre en propio campo
-        if (disc.pos.x > -r) {
-          const dist = Math.hypot(disc.pos.x, disc.pos.y);
+        if (pos.x > -r) {
+          const dist = Math.hypot(pos.x, pos.y);
           if (dist > rInner) {
             const factor = rInner / dist;
-            disc.pos.x *= factor;
-            disc.pos.y *= factor;
-            // Eliminar componente de velocidad saliente
-            const nx = disc.pos.x / rInner;
-            const ny = disc.pos.y / rInner;
-            const vDotN = disc.vel.x * nx + disc.vel.y * ny;
+            pos.x *= factor;
+            pos.y *= factor;
+            const nx = pos.x / rInner;
+            const ny = pos.y / rInner;
+            const vDotN = vel.x * nx + vel.y * ny;
             if (vDotN > 0) {
-              disc.vel.x -= vDotN * nx;
-              disc.vel.y -= vDotN * ny;
+              vel.x -= vDotN * nx;
+              vel.y -= vDotN * ny;
             }
           }
         }
       }
     } else if (team === 'blue') {
-      // Semicampo base propio es X >= 0:
       if (absY >= ySeam) {
-        // Zona fuera del círculo: el límite exterior de la línea media es x = +r
-        if (disc.pos.x < r) {
-          disc.pos.x = r;
-          if (disc.vel.x < 0) disc.vel.x = 0;
+        if (pos.x < r) {
+          pos.x = r;
+          if (vel.x < 0) vel.x = 0;
         }
       } else {
-        // Zona frente/dentro del círculo (|pos.y| < Y_seam):
-        // Si pos.x >= r: libre en propio campo
-        if (disc.pos.x < r) {
-          const dist = Math.hypot(disc.pos.x, disc.pos.y);
+        if (pos.x < r) {
+          const dist = Math.hypot(pos.x, pos.y);
           if (dist > rInner) {
             const factor = rInner / dist;
-            disc.pos.x *= factor;
-            disc.pos.y *= factor;
-            // Eliminar componente de velocidad saliente
-            const nx = disc.pos.x / rInner;
-            const ny = disc.pos.y / rInner;
-            const vDotN = disc.vel.x * nx + disc.vel.y * ny;
+            pos.x *= factor;
+            pos.y *= factor;
+            const nx = pos.x / rInner;
+            const ny = pos.y / rInner;
+            const vDotN = vel.x * nx + vel.y * ny;
             if (vDotN > 0) {
-              disc.vel.x -= vDotN * nx;
-              disc.vel.y -= vDotN * ny;
+              vel.x -= vDotN * nx;
+              vel.y -= vDotN * ny;
             }
           }
         }
@@ -374,3 +382,4 @@ export class PhysicsWorld {
     }
   }
 }
+

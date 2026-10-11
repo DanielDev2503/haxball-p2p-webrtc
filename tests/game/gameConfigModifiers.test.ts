@@ -149,8 +149,8 @@ describe('Gameplay Modifiers & Continuous A/D Magnus Physics Suite', () => {
     it('curves the ball laterally to the left when kicker presses Key A (curveInput = 1) and stops curving when released', () => {
       const disc = engine.playerDiscs.get('p1')!;
       // Player kicks ball forwards (+X)
-      disc.pos.set(-25, 0);
-      disc.prevPos.set(-25, 0);
+      disc.pos.set(-24, 0);
+      disc.prevPos.set(-24, 0);
       disc.vel.set(0, 0);
 
       engine.ball.pos.set(0, 0);
@@ -189,8 +189,8 @@ describe('Gameplay Modifiers & Continuous A/D Magnus Physics Suite', () => {
     it('curves the ball laterally to the right when kicker presses Key D (curveInput = 2) and stops curving when released', () => {
       const disc = engine.playerDiscs.get('p1')!;
       // Player kicks ball forwards (+X)
-      disc.pos.set(-25, 0);
-      disc.prevPos.set(-25, 0);
+      disc.pos.set(-24, 0);
+      disc.prevPos.set(-24, 0);
       disc.vel.set(0, 0);
 
       engine.ball.pos.set(0, 0);

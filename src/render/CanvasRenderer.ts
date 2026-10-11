@@ -19,6 +19,7 @@ export interface FloatingScoreText {
   life: number;
   maxLife: number;
   active: boolean;
+  color?: string | undefined;
 }
 
 export class CanvasRenderer {
@@ -642,15 +643,15 @@ export class CanvasRenderer {
     ctx.restore();
   }
 
-  public addFloatingScore(text: string, x: number, y: number): void {
+  public addFloatingScore(text: string, x: number, y: number, color?: string): void {
     let slot = this.floatingScores.find(f => !f.active);
     if (!slot) {
       if (this.floatingScores.length < 32) {
-        slot = { text, x, y, startY: y, life: 1.2, maxLife: 1.2, active: true };
+        slot = { text, x, y, startY: y, life: 1.2, maxLife: 1.2, active: true, color };
         this.floatingScores.push(slot);
         return;
       }
-      slot = this.floatingScores[0];
+      slot = this.floatingScores[0]!;
     }
     slot.text = text;
     slot.x = x;
@@ -659,6 +660,7 @@ export class CanvasRenderer {
     slot.life = 1.2;
     slot.maxLife = 1.2;
     slot.active = true;
+    slot.color = color;
   }
 
   public renderFloatingScores(ctx: CanvasRenderingContext2D, dt: number = 1 / 60): void {
@@ -680,9 +682,17 @@ export class CanvasRenderer {
       ctx.font = '700 13px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      // Dorado #ffd700 con sutil resplandor, sin cajas ni bordes ni fondos opacos
-      ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
-      ctx.shadowColor = `rgba(255, 215, 0, ${alpha * 0.75})`;
+
+      if (ft.color === '#ff4757') {
+        // Rojo carmesí para Autogol
+        ctx.fillStyle = `rgba(255, 71, 87, ${alpha})`;
+        ctx.shadowColor = `rgba(255, 71, 87, ${alpha * 0.75})`;
+      } else {
+        // Dorado #ffd700 con sutil resplandor, sin cajas ni bordes ni fondos opacos
+        ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
+        ctx.shadowColor = `rgba(255, 215, 0, ${alpha * 0.75})`;
+      }
+
       ctx.shadowBlur = 6;
       ctx.fillText(ft.text, ft.x, currentY);
       ctx.restore();

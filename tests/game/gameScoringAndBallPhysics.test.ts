@@ -32,7 +32,7 @@ describe('Game Scoring Engine & Ball Kinematics (Phase 1)', () => {
   describe('1. Magnus Effect Limits (Max 2 Presses & 3.0s Timer)', () => {
     it('initializes magnus controller, 2 presses and 3.0s timer when ball is kicked', () => {
       const disc = engine.playerDiscs.get('r1')!;
-      disc.pos.set(-25, 0);
+      disc.pos.set(-24, 0);
       engine.ball.pos.set(0, 0);
 
       const inputs = new Map<string, number>();
@@ -46,7 +46,7 @@ describe('Game Scoring Engine & Ball Kinematics (Phase 1)', () => {
 
     it('allows at most 2 directional curve presses, blocking the 3rd attempt', () => {
       const disc = engine.playerDiscs.get('r1')!;
-      disc.pos.set(-25, 0);
+      disc.pos.set(-24, 0);
       engine.ball.pos.set(0, 0);
 
       const kickInputs = new Map<string, number>();
@@ -89,7 +89,7 @@ describe('Game Scoring Engine & Ball Kinematics (Phase 1)', () => {
 
     it('revokes aerodynamic control after 3.0 seconds (180 ticks)', () => {
       const disc = engine.playerDiscs.get('r1')!;
-      disc.pos.set(-25, 0);
+      disc.pos.set(-24, 0);
       engine.ball.pos.set(0, 0);
 
       const kickInputs = new Map<string, number>();
@@ -114,8 +114,8 @@ describe('Game Scoring Engine & Ball Kinematics (Phase 1)', () => {
   });
 
   describe('2. Power Shot Threshold', () => {
-    it('activates isPowerShot when ball speed >= 700 px/s', () => {
-      engine.ball.vel.set(750, 0);
+    it('activates isPowerShot when ball speed >= 950 px/s', () => {
+      engine.ball.vel.set(960, 0);
       const speed = Math.hypot(engine.ball.vel.x, engine.ball.vel.y);
       expect(speed).toBeGreaterThanOrEqual(POWER_SHOT_SPEED_THRESHOLD);
 
@@ -124,8 +124,8 @@ describe('Game Scoring Engine & Ball Kinematics (Phase 1)', () => {
       expect(engine.ball.isPowerShot).toBe(true);
     });
 
-    it('deactivates isPowerShot when ball speed < 700 px/s', () => {
-      engine.ball.vel.set(500, 0);
+    it('deactivates isPowerShot when ball speed < 950 px/s', () => {
+      engine.ball.vel.set(700, 0);
       engine.registerBallTouch('r1', false);
       expect(engine.ball.isPowerShot).toBe(false);
     });
@@ -273,6 +273,81 @@ describe('Game Scoring Engine & Ball Kinematics (Phase 1)', () => {
 
       expect(r2Stats.assists).toBe(1);
       expect(r2Stats.points).toBe(r2PointsBefore + 70); // +70 assist with curve
+    });
+
+    it('penalizes own goal (-50 pts) in crimson color (#ff4757) and credits no assist', () => {
+      let scoreEvents: Array<{ text: string; pts: number; color?: string | undefined }> = [];
+      engine.onScoreEvent = (_id, text, pts, _x, _y, color) => {
+        scoreEvents.push({ text, pts, color });
+      };
+
+      // Attacking team touches ball first
+      engine.registerBallTouch('r1', true);
+      for (let i = 0; i < 16; i++) engine.tick(new Map());
+
+      // Defending blue player touches ball last (deflection into own net)
+      engine.registerBallTouch('b1', false);
+      const b1Stats = engine.getOrCreatePlayerStats('b1');
+      const b1PointsBefore = b1Stats.points;
+
+      // Ball enters blue goal (red scores, blue concedes)
+      const blueGoal = engine.stadium.goals[1];
+      engine.ball.pos.set(blueGoal.p0.x + 10, 0);
+      engine.fsm.currentState = MatchPhase.PLAYING;
+      engine.tick(new Map());
+
+      // Buffon (b1) receives -50 pts penalty
+      expect(b1Stats.points).toBe(b1PointsBefore - 50);
+
+      // Event is emitted with crimson color
+      const ownGoalEvent = scoreEvents.find(e => e.text.includes('Autogol'));
+      expect(ownGoalEvent).toBeDefined();
+      expect(ownGoalEvent?.pts).toBe(-50);
+      expect(ownGoalEvent?.color).toBe('#ff4757');
+
+      // No assist should be credited
+      const r1Stats = engine.getOrCreatePlayerStats('r1');
+      expect(r1Stats.assists).toBe(0);
+    });
+
+    it('awards +120 pts for goal scored with active curve spin (total +140 with base shot of +20)', () => {
+      let scoreEvents: Array<{ text: string; pts: number }> = [];
+      engine.onScoreEvent = (_id, text, pts) => {
+        scoreEvents.push({ text, pts });
+      };
+
+      // r1 shoots with active curve
+      engine.ball.vel.set(400, 0);
+      engine.ball.spin = 3.5;
+      engine.registerBallTouch('r1', true);
+
+      const r1Stats = engine.getOrCreatePlayerStats('r1');
+      const r1PointsBefore = r1Stats.points;
+
+      const blueGoal = engine.stadium.goals[1];
+      engine.ball.pos.set(blueGoal.p0.x + 10, 0);
+      engine.fsm.currentState = MatchPhase.PLAYING;
+      engine.tick(new Map());
+
+      expect(r1Stats.goals).toBe(1);
+      expect(r1Stats.points).toBe(r1PointsBefore + 120);
+
+      const goalEvent = scoreEvents.find(e => e.text.includes('+120'));
+      expect(goalEvent).toBeDefined();
+    });
+
+    it('suppresses floating score text on simple ball touch (+2 pts)', () => {
+      let scoreEvents: Array<{ text: string; pts: number }> = [];
+      engine.onScoreEvent = (_id, text, pts) => {
+        scoreEvents.push({ text, pts });
+      };
+
+      engine.registerBallTouch('r1', false);
+      const stats = engine.getOrCreatePlayerStats('r1');
+      expect(stats.points).toBe(2);
+
+      const touchEvent = scoreEvents.find(e => e.text.includes('Toque'));
+      expect(touchEvent).toBeUndefined();
     });
 
     it('awards hattrick bonus (+100 pts) once when reaching 3 goals', () => {

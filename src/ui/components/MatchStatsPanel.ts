@@ -52,17 +52,19 @@ export class MatchStatsPanel {
     let content = overlay.querySelector('.match-stats-card') as HTMLElement | null;
     if (!content) {
       content = document.createElement('div');
-      content.className = 'match-stats-card sliding-panel panel-center modal-container custom-scrollbar';
+      content.className = 'match-stats-card menu-modal-card sliding-panel panel-center modal-container custom-scrollbar';
       content.style.maxWidth = '680px';
       content.style.width = '100%';
-      content.style.backgroundColor = 'rgba(15, 23, 42, 0.95)';
+      content.style.backgroundColor = 'rgba(15, 23, 42, 0.92)';
+      content.style.backdropFilter = 'blur(24px) saturate(190%)';
+      (content.style as any).webkitBackdropFilter = 'blur(24px) saturate(190%)';
       content.style.border = '1.5px solid rgba(14, 165, 233, 0.35)';
       content.style.boxShadow = '0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(14, 165, 233, 0.15)';
-      content.style.borderRadius = '16px';
+      content.style.borderRadius = '24px';
       content.style.padding = '24px';
       content.style.color = '#F8FAFC';
       content.style.fontFamily = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      content.style.maxHeight = '90vh';
+      content.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 90px)';
       content.style.overflowY = 'auto';
       overlay.appendChild(content);
     }
@@ -80,10 +82,14 @@ export class MatchStatsPanel {
   }
 
   public slideToLeft(): void {
+    if (this.overlayEl) {
+      this.overlayEl.style.pointerEvents = 'none';
+    }
     if (this.containerEl) {
       this.containerEl.classList?.remove?.('panel-center', 'panel-right');
       this.containerEl.classList?.add?.('panel-left');
     }
+    this._isOpen = false;
   }
 
   public slideToCenter(): void {
@@ -102,10 +108,14 @@ export class MatchStatsPanel {
   }
 
   public slideToRight(): void {
+    if (this.overlayEl) {
+      this.overlayEl.style.pointerEvents = 'none';
+    }
     if (this.containerEl) {
       this.containerEl.classList?.remove?.('panel-center', 'panel-left');
       this.containerEl.classList?.add?.('panel-right');
     }
+    this._isOpen = false;
   }
 
   public show(stats: PlayerMatchStats[], mvpId?: string | null): void {
@@ -386,6 +396,7 @@ export class MatchStatsPanel {
   public close(): void {
     if (this.overlayEl) {
       this.overlayEl.style.display = 'none';
+      this.overlayEl.style.pointerEvents = 'none';
     }
     this._isOpen = false;
     this.events.onClose?.();
