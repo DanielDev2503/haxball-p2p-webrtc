@@ -2399,11 +2399,66 @@ select:focus-visible {
 .sliding-panels-container {
   position: fixed;
   inset: 0;
-  pointer-events: none;
+  pointer-events: none !important;
   z-index: 10005;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  overflow: visible !important;
+}
+
+#matchStatsModal {
+  position: fixed !important;
+  inset: 0 !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  z-index: 10005 !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  overflow: visible !important;
+}
+
+#matchStatsModal .match-stats-card {
+  position: absolute !important;
+  top: 60px !important;
+  bottom: calc(var(--chat-height, 180px) + 16px) !important;
+  max-height: calc(100vh - var(--chat-height, 180px) - 86px) !important;
+  left: 50% !important;
+  width: min(94vw, 860px) !important;
+  max-width: 860px !important;
+  pointer-events: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+}
+
+#matchStatsModal .match-stats-card.panel-center {
+  transform: translate3d(-50%, 0, 0) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+#matchStatsModal .match-stats-card.panel-left {
+  transform: translate3d(calc(-50% - 120vw), 0, 0) !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+#matchStatsModal .match-stats-card.panel-right {
+  transform: translate3d(calc(-50% + 120vw), 0, 0) !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 .sliding-panel {
@@ -2511,6 +2566,165 @@ select:focus-visible {
   font-weight: 800;
   margin-left: 4px;
 }
+
+/* Scrollbar estilizado para estadísticas */
+.stats-scroll-container {
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+  padding-right: 4px;
+}
+
+.stats-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+.stats-scroll-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+.stats-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 229, 255, 0.4);
+  border-radius: 3px;
+}
+.stats-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 229, 255, 0.7);
+}
+
+/* Grid de tablas paralelas por equipo */
+.stats-teams-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+}
+
+@media (max-width: 680px) {
+  .stats-teams-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.team-stats-box {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(14, 165, 233, 0.25);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.team-stats-box.red-team-box {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.team-stats-box.blue-team-box {
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.team-stats-header {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 800;
+  font-size: 0.84rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.team-stats-header.red-header {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.3) 0%, rgba(239, 68, 68, 0.08) 100%);
+  color: #F87171;
+  border-bottom: 1.5px solid rgba(239, 68, 68, 0.3);
+}
+
+.team-stats-header.blue-header {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.3) 0%, rgba(59, 130, 246, 0.08) 100%);
+  color: #60A5FA;
+  border-bottom: 1.5px solid rgba(59, 130, 246, 0.3);
+}
+
+.team-score-badge {
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.stats-table thead tr {
+  background: rgba(15, 23, 42, 0.85);
+  border-bottom: 1px solid rgba(14, 165, 233, 0.2);
+  color: #94A3B8;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stats-table th {
+  padding: 8px 6px;
+  font-weight: 700;
+}
+
+.stats-table td {
+  padding: 7px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Pestañas externas de navegación lateral (Menú > / < Puntuaciones) */
+.external-nav-tab {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(15, 23, 42, 0.95);
+  color: #38BDF8;
+  border: 1.5px solid rgba(14, 165, 233, 0.45);
+  padding: 10px 14px;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+  pointer-events: auto !important;
+  z-index: 10010;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 15px rgba(14, 165, 233, 0.25);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.external-nav-tab.right-tab {
+  left: 100%;
+  border-left: none;
+  border-radius: 0 12px 12px 0;
+}
+
+.external-nav-tab.left-tab {
+  right: 100%;
+  border-right: none;
+  border-radius: 12px 0 0 12px;
+}
+
+.external-nav-tab:hover {
+  background: rgba(14, 165, 233, 0.35);
+  color: #FFFFFF;
+  border-color: #38BDF8;
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.6);
+}
+
+.external-nav-tab:active {
+  transform: translateY(-50%) scale(0.96);
+}
+
 
 
 

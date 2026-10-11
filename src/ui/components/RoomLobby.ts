@@ -48,10 +48,12 @@ export class RoomLobby {
   private refreshRoomsBtn: HTMLButtonElement | null = null;
   private roomIdInput: HTMLInputElement | null = null;
   private roomListContainer: HTMLElement | null = null;
+  private menuToStatsBtn: HTMLButtonElement | null = null;
 
   public createRoomModal: CreateRoomModal;
   private events: LobbyEvents;
   private cachedRooms: RoomListItem[] = [];
+  public onShowStats?: () => void;
 
   constructor(events: LobbyEvents) {
     this.events = events;
@@ -69,7 +71,29 @@ export class RoomLobby {
         content.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 90px)';
         content.style.overflowY = 'auto';
         content.style.boxSizing = 'border-box';
+        content.style.position = 'relative';
       }
+    }
+
+    // Botón externo lateral izquierdo "< Puntuaciones"
+    let statsBtn = document.getElementById('menu-to-stats-btn') as HTMLButtonElement | null;
+    const content = this.overlayEl?.querySelector('.room-lobby-modal, .modal-content') as HTMLElement | null;
+    if (!statsBtn && content) {
+      statsBtn = document.createElement('button');
+      statsBtn.id = 'menu-to-stats-btn';
+      statsBtn.className = 'external-nav-tab left-tab';
+      statsBtn.innerHTML = '&lt; Puntuaciones';
+      statsBtn.title = 'Ver puntuaciones del partido';
+      statsBtn.style.display = 'none';
+      content.appendChild(statsBtn);
+    }
+    this.menuToStatsBtn = statsBtn;
+    if (this.menuToStatsBtn) {
+      this.menuToStatsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.hide();
+        this.onShowStats?.();
+      });
     }
 
     if (typeof window !== 'undefined') {
@@ -324,6 +348,12 @@ export class RoomLobby {
     if (this.overlayEl) {
       this.overlayEl.classList.remove('u-hidden', 'ui-screen-hidden');
       this.overlayEl.style.display = 'flex';
+    }
+  }
+
+  public setStatsAvailable(available: boolean): void {
+    if (this.menuToStatsBtn) {
+      this.menuToStatsBtn.style.display = available ? 'inline-flex' : 'none';
     }
   }
 

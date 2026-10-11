@@ -234,8 +234,13 @@ export class GameApp {
     this.matchStatsModal = new MatchStatsModal({
       onSlideToMenu: () => {
         this.matchStatsModal.slideToLeft();
-        this.teamSelect.setSlideToStatsVisible(true);
-        this.teamSelect.slideToCenter();
+        if (this.uiStateMachine.getState() === 'STATE_LOBBY') {
+          this.lobby.setStatsAvailable(true);
+          this.lobby.show();
+        } else {
+          this.teamSelect.setSlideToStatsVisible(true);
+          this.teamSelect.slideToCenter();
+        }
       }
     });
 
@@ -334,6 +339,10 @@ export class GameApp {
         this.lobby.hideConnecting();
       }
     });
+    this.lobby.onShowStats = () => {
+      this.lobby.hide();
+      this.matchStatsModal.slideToCenter();
+    };
     if (savedNick) {
       this.lobby.setNickname(savedNick);
     }
@@ -1181,6 +1190,7 @@ export class GameApp {
       }
       this.enforceMenuState(MatchPhase.STOPPED, outcomeText);
       this.teamSelect.setSlideToStatsVisible(true);
+      this.lobby.setStatsAvailable(true);
       this.teamSelect.slideToRight();
 
       const stats = Array.from(engine.matchStats.values());
@@ -1206,6 +1216,7 @@ export class GameApp {
       this.enforceMenuState(state);
       if (state === MatchPhase.COUNTDOWN || state === MatchPhase.PLAYING) {
         this.teamSelect.setSlideToStatsVisible(false);
+        this.lobby.setStatsAvailable(false);
         this.matchStatsModal.close();
       }
       if (state === MatchPhase.COUNTDOWN) {
@@ -1685,6 +1696,7 @@ export class GameApp {
           const outcome = msg.outcomeText || (msg.winner ? `¡Victoria del Equipo ${msg.winner === 'red' ? 'Rojo' : 'Azul'}!` : '¡Empate!');
           this.enforceMenuState(MatchPhase.STOPPED, outcome);
           this.teamSelect.setSlideToStatsVisible(true);
+          this.lobby.setStatsAvailable(true);
           this.teamSelect.slideToRight();
           this.matchStatsModal.show(msg.stats, msg.mvpPlayerId ?? null);
           this.updateAdminControlsUI();
