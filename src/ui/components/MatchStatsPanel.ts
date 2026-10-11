@@ -22,60 +22,46 @@ export class MatchStatsPanel {
     if (events.onSlideToMenu) {
       this.onSlideToMenu = events.onSlideToMenu;
     }
+  }
+
+  public ensureDOM(): void {
+    if (this.overlayEl && this.containerEl) return;
     this.buildDOM();
   }
 
   private buildDOM(): void {
     if (typeof document === 'undefined') return;
 
-    let overlay = document.getElementById('matchStatsModal');
+    let overlay = document.getElementById('matchStatsModal') || document.getElementById('match-stats-panel');
     if (!overlay) {
       overlay = document.createElement('div');
       overlay.id = 'matchStatsModal';
-      overlay.className = 'sliding-panels-container';
-      overlay.style.position = 'fixed';
-      overlay.style.inset = '0';
+      overlay.className = 'match-stats-container sliding-panels-container';
+      overlay.style.position = 'absolute';
+      overlay.style.top = '60px';
+      overlay.style.bottom = 'calc(var(--chat-height, 180px) + 16px)';
+      overlay.style.left = '50%';
+      overlay.style.transform = 'translateX(-50%)';
+      overlay.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 86px)';
       overlay.style.backgroundColor = 'transparent';
-      overlay.style.backdropFilter = 'none';
-      (overlay.style as any).webkitBackdropFilter = 'none';
       overlay.style.display = 'none';
-      overlay.style.justifyContent = 'center';
-      overlay.style.alignItems = 'center';
-      overlay.style.zIndex = '10005';
       overlay.style.pointerEvents = 'none';
-      overlay.style.overflow = 'visible';
+      overlay.style.zIndex = '40';
       document.body.appendChild(overlay);
     } else {
+      overlay.classList.add('match-stats-container');
       overlay.style.backgroundColor = 'transparent';
-      overlay.style.backdropFilter = 'none';
-      (overlay.style as any).webkitBackdropFilter = 'none';
       overlay.style.pointerEvents = 'none';
+      overlay.style.display = 'none';
     }
     this.overlayEl = overlay;
 
     let content = overlay.querySelector('.match-stats-card') as HTMLElement | null;
     if (!content) {
       content = document.createElement('div');
-      content.className = 'match-stats-card menu-modal-card sliding-panel panel-center modal-container';
-      content.style.position = 'absolute';
-      content.style.top = '60px';
-      content.style.bottom = 'calc(var(--chat-height, 180px) + 16px)';
-      content.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 86px)';
-      content.style.left = '50%';
-      content.style.maxWidth = '860px';
-      content.style.width = 'min(94vw, 860px)';
-      content.style.backgroundColor = 'rgba(15, 23, 42, 0.95)';
-      content.style.border = '1.5px solid rgba(14, 165, 233, 0.35)';
-      content.style.boxShadow = '0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(14, 165, 233, 0.15)';
-      content.style.borderRadius = '20px';
-      content.style.padding = '20px';
-      content.style.color = '#F8FAFC';
-      content.style.fontFamily = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      content.className = 'match-stats-card menu-modal-card sliding-panel panel-right modal-container';
+      content.style.position = 'relative';
       content.style.pointerEvents = 'auto';
-      content.style.overflow = 'visible';
-      content.style.display = 'flex';
-      content.style.flexDirection = 'column';
-      content.style.boxSizing = 'border-box';
       overlay.appendChild(content);
     }
     this.containerEl = content;
@@ -99,18 +85,18 @@ export class MatchStatsPanel {
   public slideToLeft(): void {
     if (this.overlayEl) {
       this.overlayEl.style.pointerEvents = 'none';
+      this.overlayEl.style.display = 'none';
     }
     if (this.containerEl) {
       this.containerEl.classList?.remove?.('panel-center', 'panel-right');
       this.containerEl.classList?.add?.('panel-left');
+      this.containerEl.style.pointerEvents = 'none';
     }
     this._isOpen = false;
   }
 
   public slideToCenter(): void {
-    if (!this.overlayEl || !this.containerEl) {
-      this.buildDOM();
-    }
+    this.ensureDOM();
     if (this.overlayEl) {
       this.overlayEl.style.display = 'flex';
       this.overlayEl.style.pointerEvents = 'none';
@@ -126,10 +112,12 @@ export class MatchStatsPanel {
   public slideToRight(): void {
     if (this.overlayEl) {
       this.overlayEl.style.pointerEvents = 'none';
+      this.overlayEl.style.display = 'none';
     }
     if (this.containerEl) {
       this.containerEl.classList?.remove?.('panel-center', 'panel-left');
       this.containerEl.classList?.add?.('panel-right');
+      this.containerEl.style.pointerEvents = 'none';
     }
     this._isOpen = false;
   }
@@ -139,9 +127,7 @@ export class MatchStatsPanel {
     this.currentStats = stats;
     this.currentMvpId = mvpId ?? null;
 
-    if (!this.overlayEl || !this.containerEl) {
-      this.buildDOM();
-    }
+    this.ensureDOM();
     if (!this.overlayEl || !this.containerEl) return;
 
     this.renderContent();
@@ -283,45 +269,49 @@ export class MatchStatsPanel {
               <span>🔴 Equipo Rojo</span>
               <span class="team-score-badge">${redGoals} Goles</span>
             </div>
-            <table class="stats-table">
-              <thead>
-                <tr>
-                  <th style="text-align: left; padding-left: 8px;">Jugador</th>
-                  <th style="text-align: right;">Pts</th>
-                  <th style="text-align: center;">G</th>
-                  <th style="text-align: center;">A</th>
-                  <th style="text-align: center;">P</th>
-                  <th style="text-align: center;">S</th>
-                  <th style="text-align: center; width: 28px;">▼</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${redRowsHtml}
-              </tbody>
-            </table>
+            <div class="team-table-scroll" style="overflow-y: auto; flex: 1; min-height: 0;">
+              <table class="stats-table">
+                <thead>
+                  <tr>
+                    <th style="text-align: left; padding-left: 8px;">Jugador</th>
+                    <th style="text-align: right;">Pts</th>
+                    <th style="text-align: center;">G</th>
+                    <th style="text-align: center;">A</th>
+                    <th style="text-align: center;">P</th>
+                    <th style="text-align: center;">S</th>
+                    <th style="text-align: center; width: 28px;">▼</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${redRowsHtml}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          <div class="team-stats-box blue-team-box">
+          <div class="team-stats-box blue-team-box" style="display: flex; flex-direction: column; overflow: hidden;">
             <div class="team-stats-header blue-header">
               <span>🔵 Equipo Azul</span>
               <span class="team-score-badge">${blueGoals} Goles</span>
             </div>
-            <table class="stats-table">
-              <thead>
-                <tr>
-                  <th style="text-align: left; padding-left: 8px;">Jugador</th>
-                  <th style="text-align: right;">Pts</th>
-                  <th style="text-align: center;">G</th>
-                  <th style="text-align: center;">A</th>
-                  <th style="text-align: center;">P</th>
-                  <th style="text-align: center;">S</th>
-                  <th style="text-align: center; width: 28px;">▼</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${blueRowsHtml}
-              </tbody>
-            </table>
+            <div class="team-table-scroll" style="overflow-y: auto; flex: 1; min-height: 0;">
+              <table class="stats-table">
+                <thead>
+                  <tr>
+                    <th style="text-align: left; padding-left: 8px;">Jugador</th>
+                    <th style="text-align: right;">Pts</th>
+                    <th style="text-align: center;">G</th>
+                    <th style="text-align: center;">A</th>
+                    <th style="text-align: center;">P</th>
+                    <th style="text-align: center;">S</th>
+                    <th style="text-align: center; width: 28px;">▼</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${blueRowsHtml}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -331,27 +321,7 @@ export class MatchStatsPanel {
       </div>
     `;
 
-    let statsBtn = typeof this.containerEl.querySelector === 'function'
-      ? this.containerEl.querySelector('#stats-to-menu-btn') as HTMLButtonElement | null
-      : null;
-    if (!statsBtn && typeof document !== 'undefined') {
-      statsBtn = document.createElement('button') as HTMLButtonElement;
-      statsBtn.id = 'stats-to-menu-btn';
-      statsBtn.className = 'external-nav-tab right-tab';
-      statsBtn.innerHTML = 'Menú &gt;';
-      statsBtn.title = 'Ir al Menú de Sala';
-      this.containerEl.appendChild(statsBtn);
-    }
-    this.slideToMenuBtn = statsBtn;
-
-    this.slideToMenuBtn?.addEventListener('click', () => {
-      this.slideToLeft();
-      if (this.onSlideToMenu) {
-        this.onSlideToMenu();
-      } else {
-        this.events.onSlideToMenu?.();
-      }
-    });
+    this.renderStatsToMenuButton();
 
     const accordionBtns = typeof this.containerEl.querySelectorAll === 'function'
       ? this.containerEl.querySelectorAll<HTMLButtonElement>('.accordion-toggle-btn')
@@ -381,6 +351,34 @@ export class MatchStatsPanel {
     });
   }
 
+  public renderStatsToMenuButton(): void {
+    if (!this.containerEl) return;
+    let statsBtn = typeof this.containerEl.querySelector === 'function'
+      ? this.containerEl.querySelector('#stats-to-menu-btn') as HTMLButtonElement | null
+      : null;
+    if (!statsBtn && typeof document !== 'undefined') {
+      statsBtn = document.createElement('button') as HTMLButtonElement;
+      statsBtn.id = 'stats-to-menu-btn';
+      statsBtn.className = 'external-nav-tab right-tab';
+      statsBtn.innerHTML = 'Menú &gt;';
+      statsBtn.title = 'Ir al Menú de Sala';
+      this.containerEl.appendChild(statsBtn);
+    }
+    this.slideToMenuBtn = statsBtn;
+
+    if (this.slideToMenuBtn) {
+      this.slideToMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.slideToLeft();
+        if (this.onSlideToMenu) {
+          this.onSlideToMenu();
+        } else {
+          this.events.onSlideToMenu?.();
+        }
+      });
+    }
+  }
+
   public close(): void {
     if (this.overlayEl) {
       this.overlayEl.style.display = 'none';
@@ -399,5 +397,8 @@ export class MatchStatsPanel {
     if (this.overlayEl && this.overlayEl.parentNode) {
       this.overlayEl.parentNode.removeChild(this.overlayEl);
     }
+    this.overlayEl = null;
+    this.containerEl = null;
+    this.slideToMenuBtn = null;
   }
 }

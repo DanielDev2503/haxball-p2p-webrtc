@@ -1,6 +1,6 @@
 import { MatchPhase } from '../core/game/GameFSM';
 
-export type UIState = 'STATE_NICKNAME' | 'STATE_LOBBY' | 'STATE_IN_GAME';
+export type UIState = 'STATE_NICKNAME' | 'STATE_LOBBY' | 'STATE_IN_GAME' | 'NICKNAME_GATEKEEPER';
 
 export interface UIStateMachineOptions {
   onStateChange?: ((newState: UIState, prevState: UIState) => void) | undefined;
@@ -21,8 +21,13 @@ export class UIStateMachine {
   private elSettingsModal: HTMLElement | null = null;
   private elContextMenu: HTMLElement | null = null;
 
+  private normalizeState(state: UIState): UIState {
+    if (state === 'NICKNAME_GATEKEEPER') return 'STATE_NICKNAME';
+    return state;
+  }
+
   constructor(initialState: UIState, options: UIStateMachineOptions = {}) {
-    this.currentState = initialState;
+    this.currentState = this.normalizeState(initialState);
     this.onStateChange = options.onStateChange;
 
     if (typeof document !== 'undefined') {
@@ -50,15 +55,16 @@ export class UIStateMachine {
   }
 
   public transitionTo(nextState: UIState): void {
-    if (this.currentState === nextState) return;
+    const targetState = this.normalizeState(nextState);
+    if (this.currentState === targetState) return;
 
     const prevState = this.currentState;
-    this.currentState = nextState;
+    this.currentState = targetState;
 
-    this.applyDOMVisibility(nextState);
+    this.applyDOMVisibility(targetState);
 
     if (this.onStateChange) {
-      this.onStateChange(nextState, prevState);
+      this.onStateChange(targetState, prevState);
     }
   }
 
@@ -171,6 +177,7 @@ export class UIStateMachine {
     };
 
     switch (targetState) {
+      case 'NICKNAME_GATEKEEPER':
       case 'STATE_NICKNAME': {
         this.activeModal = null;
         // Modal de alias activo; canvas y lobby apagados
@@ -183,6 +190,11 @@ export class UIStateMachine {
         hide(this.elIngameMenu);
         hide(this.elSettingsModal);
         hide(this.elContextMenu);
+
+        const statsModal = document.getElementById('matchStatsModal') || document.getElementById('match-stats-panel');
+        if (statsModal) {
+          hide(statsModal);
+        }
         break;
       }
 
@@ -198,6 +210,11 @@ export class UIStateMachine {
         hide(this.elIngameMenu);
         hide(this.elSettingsModal);
         hide(this.elContextMenu);
+
+        const statsModal = document.getElementById('matchStatsModal') || document.getElementById('match-stats-panel');
+        if (statsModal && !statsModal.classList.contains('panel-active')) {
+          hide(statsModal);
+        }
         break;
       }
 

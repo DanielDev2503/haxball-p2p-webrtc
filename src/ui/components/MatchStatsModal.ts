@@ -1,8 +1,4 @@
-import { MatchStatsPanel, MatchStatsPanelEvents } from './MatchStatsPanel';
+export * from './MatchStatsPanel';
+export { MatchStatsPanel as MatchStatsModal } from './MatchStatsPanel';
+export type { MatchStatsPanelEvents as MatchStatsModalEvents } from './MatchStatsPanel';
 
-export type MatchStatsModalEvents = MatchStatsPanelEvents;
-export class MatchStatsModal extends MatchStatsPanel {
-  constructor(events: MatchStatsModalEvents = {}) {
-    super(events);
-  }
-}

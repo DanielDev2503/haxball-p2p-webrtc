@@ -213,36 +213,90 @@ export class GameApp {
     });
     this.currentHostId = this.localPlayer.id;
 
-    this.inputManager = new InputManager();
-    this.inputManager.onKickImmediate = () => this.sendClientInputImmediate();
-    this.audioManager = new AudioManager();
-    this.hud = new ScoreboardHUD();
-    this.chat = new ChatBox();
-    this.chat.audioManager = this.audioManager;
-    this.statsMonitor = new StatsMonitor();
-    this.teamSelect = new TeamSelectModal();
+    try {
+      this.inputManager = new InputManager();
+      this.inputManager.onKickImmediate = () => this.sendClientInputImmediate();
+    } catch (err) {
+      console.error('[GameApp] Failed to initialize InputManager:', err);
+      this.inputManager = new InputManager();
+    }
+
+    try {
+      this.audioManager = new AudioManager();
+    } catch (err) {
+      console.error('[GameApp] Failed to initialize AudioManager:', err);
+      this.audioManager = new AudioManager();
+    }
+
+    try {
+      this.hud = new ScoreboardHUD();
+    } catch (err) {
+      console.error('[GameApp] Failed to initialize ScoreboardHUD:', err);
+      this.hud = new ScoreboardHUD();
+    }
+
+    try {
+      this.chat = new ChatBox();
+      if (this.audioManager) this.chat.audioManager = this.audioManager;
+    } catch (err) {
+      console.error('[GameApp] Failed to initialize ChatBox:', err);
+      this.chat = new ChatBox();
+    }
+
+    try {
+      this.statsMonitor = new StatsMonitor();
+    } catch (err) {
+      console.error('[GameApp] Failed to initialize StatsMonitor:', err);
+      this.statsMonitor = new StatsMonitor();
+    }
+
+    try {
+      this.teamSelect = new TeamSelectModal();
+    } catch (err) {
+      console.error('[GameApp] Failed to initialize TeamSelectModal:', err);
+      this.teamSelect = new TeamSelectModal();
+    }
+
     this.jitterBuffer = new JitterBuffer(33, 30, true);
 
-    this.modifierModal = new GameplayModifierModal(
-      this.gameplayConfig,
-      (newConfig) => this.onGameplayConfigChanged(newConfig),
-      () => Boolean(this.mode === 'host' || this.localPlayer.isHost),
-      () => false
-    );
-    this.settingsModal = new SettingsModal(this.inputManager, this.audioManager);
-    this.keybindModal = this.settingsModal;
-    this.matchStatsModal = new MatchStatsModal({
-      onSlideToMenu: () => {
-        this.matchStatsModal.slideToLeft();
-        if (this.uiStateMachine.getState() === 'STATE_LOBBY') {
-          this.lobby.setStatsAvailable(true);
-          this.lobby.show();
-        } else {
-          this.teamSelect.setSlideToStatsVisible(true);
-          this.teamSelect.slideToCenter();
+    try {
+      this.modifierModal = new GameplayModifierModal(
+        this.gameplayConfig,
+        (newConfig) => this.onGameplayConfigChanged(newConfig),
+        () => Boolean(this.mode === 'host' || this.localPlayer.isHost),
+        () => false
+      );
+    } catch (err) {
+      console.error('[GameApp] Failed to initialize GameplayModifierModal:', err);
+      this.modifierModal = new GameplayModifierModal(this.gameplayConfig, () => {}, () => false, () => false);
+    }
+
+    try {
+      this.settingsModal = new SettingsModal(this.inputManager, this.audioManager);
+      this.keybindModal = this.settingsModal;
+    } catch (err) {
+      console.error('[GameApp] Failed to initialize SettingsModal:', err);
+      this.settingsModal = new SettingsModal(this.inputManager, this.audioManager);
+      this.keybindModal = this.settingsModal;
+    }
+
+    try {
+      this.matchStatsModal = new MatchStatsModal({
+        onSlideToMenu: () => {
+          this.matchStatsModal.slideToLeft();
+          if (this.uiStateMachine.getState() === 'STATE_LOBBY') {
+            this.lobby.setStatsAvailable(true);
+            this.lobby.show();
+          } else {
+            this.teamSelect.setSlideToStatsVisible(true);
+            this.teamSelect.slideToCenter();
+          }
         }
-      }
-    });
+      });
+    } catch (err) {
+      console.error('[GameApp] Failed to initialize MatchStatsModal:', err);
+      this.matchStatsModal = new MatchStatsModal({});
+    }
 
     this.teamSelect.onSlideToStats = () => {
       this.teamSelect.slideToRight();
@@ -435,6 +489,27 @@ export class GameApp {
     if (typeof window !== 'undefined') {
       window.addEventListener('beforeunload', notifyDisconnection);
       window.addEventListener('pagehide', notifyDisconnection);
+    }
+  }
+
+  public init(): void {
+    console.log('[GameApp] Initializing game application lifecycle...');
+    try {
+      const initialUIState: UIState = 'STATE_NICKNAME';
+      if (this.uiStateMachine) {
+        this.uiStateMachine.transitionTo(initialUIState);
+        this.uiStateMachine.applyDOMVisibility(initialUIState);
+      }
+      if (this.gatekeeper) {
+        const savedNick = NicknameGatekeeper.getSavedNickname();
+        if (savedNick) {
+          this.gatekeeper.setInputValue(savedNick);
+        }
+        this.gatekeeper.show();
+      }
+      console.log('[GameApp] GameApp.init() successfully invoked: NicknameGatekeeper is visible.');
+    } catch (err) {
+      console.error('[GameApp] Non-fatal error during GameApp.init():', err);
     }
   }
 

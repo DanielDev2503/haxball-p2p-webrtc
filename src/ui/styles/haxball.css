@@ -1119,7 +1119,22 @@ button:disabled, input:disabled, select:disabled {
   z-index: 250 !important;
 }
 
-#nicknameGatekeeperModal {
+#nicknameGatekeeperModal,
+.modal-nickname,
+.nickname-modal {
+  position: fixed;
+  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(6, 14, 24, 0.85);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   z-index: 300 !important;
 }
 
@@ -2396,69 +2411,71 @@ select:focus-visible {
    SISTEMA DE PANELES DESLIZABLES (SLIDING PANELS: ESTADÍSTICAS & MENÚ/LOBBY)
    ========================================================================== */
 
-.sliding-panels-container {
-  position: fixed;
-  inset: 0;
-  pointer-events: none !important;
-  z-index: 10005;
+.match-stats-container,
+#matchStatsModal,
+#match-stats-panel {
+  position: absolute;
+  top: 60px;
+  bottom: calc(var(--chat-height, 180px) + 16px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-height: calc(100vh - var(--chat-height, 180px) - 86px);
+  width: min(94vw, 860px);
+  max-width: 860px;
+  pointer-events: none;
+  z-index: 40;
   display: flex;
-  align-items: center;
   justify-content: center;
-  background: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  overflow: visible !important;
+  align-items: center;
+  background: transparent;
+  background-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: visible;
 }
 
-#matchStatsModal {
-  position: fixed !important;
-  inset: 0 !important;
-  pointer-events: none !important;
-  background: transparent !important;
-  background-color: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  z-index: 10005 !important;
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
-  overflow: visible !important;
+.match-stats-container.u-hidden,
+#matchStatsModal.u-hidden,
+#match-stats-panel.u-hidden {
+  display: none !important;
 }
 
-#matchStatsModal .match-stats-card {
-  position: absolute !important;
-  top: 60px !important;
-  bottom: calc(var(--chat-height, 180px) + 16px) !important;
-  max-height: calc(100vh - var(--chat-height, 180px) - 86px) !important;
-  left: 50% !important;
-  width: min(94vw, 860px) !important;
-  max-width: 860px !important;
-  pointer-events: auto !important;
-  display: flex !important;
-  flex-direction: column !important;
-  box-sizing: border-box !important;
-  overflow: visible !important;
+.match-stats-card {
+  pointer-events: auto;
+  background: rgba(10, 16, 26, 0.94);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  border-radius: 8px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(0, 229, 255, 0.15);
+  padding: 18px 20px;
+  color: #F8FAFC;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  position: relative;
+  overflow: visible;
 }
 
-#matchStatsModal .match-stats-card.panel-center {
-  transform: translate3d(-50%, 0, 0) !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-  pointer-events: auto !important;
+.match-stats-card.panel-center {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
-#matchStatsModal .match-stats-card.panel-left {
-  transform: translate3d(calc(-50% - 120vw), 0, 0) !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
+.match-stats-card.panel-left {
+  transform: translate3d(-120vw, 0, 0);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
-#matchStatsModal .match-stats-card.panel-right {
-  transform: translate3d(calc(-50% + 120vw), 0, 0) !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
+.match-stats-card.panel-right {
+  transform: translate3d(120vw, 0, 0);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .sliding-panel {
@@ -2620,6 +2637,28 @@ select:focus-visible {
 
 .team-stats-box.blue-team-box {
   border-color: rgba(59, 130, 246, 0.35);
+}
+
+.team-table-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.team-table-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.team-table-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+.team-table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 229, 255, 0.35);
+  border-radius: 3px;
+}
+.team-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 229, 255, 0.65);
 }
 
 .team-stats-header {

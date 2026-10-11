@@ -67,6 +67,7 @@ export function renderErrorBoundary(error: unknown): void {
 }
 
 async function initApp(): Promise<void> {
+  console.log('[Boot] Initializing BallHax application...');
   try {
     let targetRoomId: string | null = null;
     if (typeof window !== 'undefined' && window.location) {
@@ -78,11 +79,20 @@ async function initApp(): Promise<void> {
     }
 
     const app = new GameApp();
+    if (typeof app.init === 'function') {
+      try {
+        app.init();
+      } catch (initErr) {
+        console.error('[Boot] Non-fatal error during GameApp.init():', initErr);
+      }
+    }
     if (targetRoomId) {
       app.targetRoomId = targetRoomId;
     }
     (window as any).__HAXBALL_APP__ = app;
+    console.log('[Boot] BallHax application initialized successfully.');
   } catch (err) {
+    console.error('[Boot] Critical exception caught during application bootstrap:', err);
     renderErrorBoundary(err);
   }
 }

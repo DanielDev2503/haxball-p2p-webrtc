@@ -75,26 +75,8 @@ export class RoomLobby {
       }
     }
 
-    // Botón externo lateral izquierdo "< Puntuaciones"
-    let statsBtn = document.getElementById('menu-to-stats-btn') as HTMLButtonElement | null;
-    const content = this.overlayEl?.querySelector('.room-lobby-modal, .modal-content') as HTMLElement | null;
-    if (!statsBtn && content) {
-      statsBtn = document.createElement('button');
-      statsBtn.id = 'menu-to-stats-btn';
-      statsBtn.className = 'external-nav-tab left-tab';
-      statsBtn.innerHTML = '&lt; Puntuaciones';
-      statsBtn.title = 'Ver puntuaciones del partido';
-      statsBtn.style.display = 'none';
-      content.appendChild(statsBtn);
-    }
-    this.menuToStatsBtn = statsBtn;
-    if (this.menuToStatsBtn) {
-      this.menuToStatsBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.hide();
-        this.onShowStats?.();
-      });
-    }
+    // Inyección segura de botón de estadísticas desacoplada
+    this.renderStatsNavigationTab();
 
     if (typeof window !== 'undefined') {
       window.addEventListener('chat:resize', (e: Event) => {
@@ -344,7 +326,34 @@ export class RoomLobby {
     this.createRoomModal.hide();
   }
 
+  public renderStatsNavigationTab(): void {
+    const container = this.overlayEl?.querySelector('.room-lobby-modal, .modal-content') as HTMLElement | null;
+    if (container) {
+      let statsBtn = container.querySelector('#menu-to-stats-btn') as HTMLButtonElement | null;
+      if (!statsBtn && typeof document !== 'undefined') {
+        statsBtn = document.createElement('button');
+        statsBtn.id = 'menu-to-stats-btn';
+        statsBtn.className = 'external-nav-tab left-tab';
+        statsBtn.innerHTML = '&lt; Puntuaciones';
+        statsBtn.title = 'Ver puntuaciones del partido';
+        statsBtn.style.display = 'none';
+        container.appendChild(statsBtn);
+      }
+      this.menuToStatsBtn = statsBtn;
+      if (this.menuToStatsBtn) {
+        this.menuToStatsBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.hide();
+          this.onShowStats?.();
+        });
+      }
+    }
+  }
+
   public show(): void {
+    if (!this.menuToStatsBtn) {
+      this.renderStatsNavigationTab();
+    }
     if (this.overlayEl) {
       this.overlayEl.classList.remove('u-hidden', 'ui-screen-hidden');
       this.overlayEl.style.display = 'flex';
@@ -352,6 +361,9 @@ export class RoomLobby {
   }
 
   public setStatsAvailable(available: boolean): void {
+    if (!this.menuToStatsBtn) {
+      this.renderStatsNavigationTab();
+    }
     if (this.menuToStatsBtn) {
       this.menuToStatsBtn.style.display = available ? 'inline-flex' : 'none';
     }

@@ -111,6 +111,54 @@ describe('UIStateMachine Navigation & Lifecycle', () => {
 
     delete (globalThis as any).document;
   });
+
+  it('normalizes NICKNAME_GATEKEEPER to STATE_NICKNAME and hides any residual stats panel', () => {
+    const mockClassList = (classes: Set<string>) => ({
+      add: vi.fn((...c: string[]) => c.forEach(cls => classes.add(cls))),
+      remove: vi.fn((...c: string[]) => c.forEach(cls => classes.delete(cls))),
+      contains: vi.fn((cls: string) => classes.has(cls))
+    });
+
+    const createMockEl = (id: string, initialClasses: string[] = ['u-hidden']) => {
+      const classes = new Set(initialClasses);
+      return {
+        id,
+        style: { display: 'none' },
+        classList: mockClassList(classes)
+      } as any;
+    };
+
+    const nicknameEl = createMockEl('nicknameGatekeeperModal');
+    const lobbyEl = createMockEl('lobbyModal');
+    const appRootEl = createMockEl('app-root');
+    const statsModalEl = createMockEl('matchStatsModal', ['sliding-panels-container']);
+
+    const elements: Record<string, any> = {
+      nicknameGatekeeperModal: nicknameEl,
+      lobbyModal: lobbyEl,
+      'app-root': appRootEl,
+      matchStatsModal: statsModalEl
+    };
+
+    (globalThis as any).document = {
+      getElementById: (id: string) => elements[id] || null,
+      querySelector: (selector: string) => {
+        if (selector === '.modal-nickname') return nicknameEl;
+        if (selector === '.lobby-container') return lobbyEl;
+        if (selector === '.game-container') return appRootEl;
+        return null;
+      }
+    };
+
+    const fsm = new UIStateMachine('NICKNAME_GATEKEEPER');
+    expect(fsm.getState()).toBe('STATE_NICKNAME');
+    expect(nicknameEl.classList.remove).toHaveBeenCalledWith('u-hidden', 'ui-screen-hidden');
+    expect(nicknameEl.style.display).toBe('flex');
+    expect(statsModalEl.classList.add).toHaveBeenCalledWith('u-hidden', 'ui-screen-hidden');
+    expect(statsModalEl.style.display).toBe('none');
+
+    delete (globalThis as any).document;
+  });
 });
 
 describe('InputManager Keyboard Isolation', () => {
