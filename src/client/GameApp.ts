@@ -1,7 +1,7 @@
 import { GameEngine } from '../core/game/GameEngine';
 import { Player, TeamType, INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT, INPUT_KICK, INPUT_TURBO, INPUT_DASH, INPUT_TYPING } from '../core/game/Player';
 import { MatchPhase, MatchState, toMatchPhase } from '../core/game/GameFSM';
-import { GameSnapshot, DiscSnapshot } from '../core/game/GameState';
+import { GameSnapshot, DiscSnapshot, PlayerMatchStats } from '../core/game/GameState';
 import { CanvasRenderer } from '../render/CanvasRenderer';
 import { InputManager } from './InputManager';
 import { AudioManager } from './AudioManager';
@@ -96,6 +96,9 @@ export class GameApp {
   public statsMonitor: StatsMonitor;
   public teamSelect: TeamSelectModal;
   public lobby: RoomLobby;
+  public get roomLobby(): RoomLobby {
+    return this.lobby;
+  }
   public gatekeeper: NicknameGatekeeper;
   public uiStateMachine: UIStateMachine;
 
@@ -170,6 +173,10 @@ export class GameApp {
   public keybindModal: KeybindModal;
   public settingsModal: SettingsModal;
   public matchStatsModal: MatchStatsModal;
+  public get matchStatsPanel(): MatchStatsModal {
+    return this.matchStatsModal;
+  }
+  public lastMatchStats: PlayerMatchStats[] = [];
   private clientPrevDashState: boolean = false;
   private btnOpenPhysicsModifiers: HTMLButtonElement | null = null;
 
@@ -283,42 +290,30 @@ export class GameApp {
     try {
       this.matchStatsModal = new MatchStatsModal({
         onSlideToMenu: () => {
-          this.matchStatsModal.slideToLeft();
-          if (this.uiStateMachine.getState() === 'STATE_LOBBY') {
-            this.lobby.setStatsAvailable(true);
-            this.lobby.show();
-          } else {
-            this.teamSelect.setSlideToStatsVisible(true);
-            this.teamSelect.slideToCenter();
-          }
+          this.showRoomLobby();
         }
       });
     } catch (err) {
       console.error('[GameApp] Failed to initialize MatchStatsModal:', err);
       this.matchStatsModal = new MatchStatsModal({});
     }
+    this.matchStatsModal.gameApp = this;
+    this.teamSelect.gameApp = this;
 
     this.teamSelect.onSlideToStats = () => {
-      this.teamSelect.slideToRight();
-      this.matchStatsModal.slideToCenter();
+      this.teamSelect.close(true);
+      this.matchStatsModal.show(this.lastMatchStats);
     };
 
     if (typeof window !== 'undefined') {
       window.addEventListener('stats:navigate-to-menu', () => {
-        this.matchStatsModal.hide();
-        if (this.uiStateMachine.getState() === 'STATE_LOBBY') {
-          this.lobby.setStatsAvailable(true);
-          this.lobby.show();
-        } else {
-          this.teamSelect.setSlideToStatsVisible(true);
-          this.teamSelect.slideToCenter();
-        }
+        this.showRoomLobby();
       });
 
       window.addEventListener('stats:navigate-to-stats', () => {
         this.lobby.hide();
-        this.teamSelect.close();
-        this.matchStatsModal.slideToCenter();
+        this.teamSelect.close(true);
+        this.matchStatsModal.show(this.lastMatchStats);
       });
     }
 
@@ -414,8 +409,9 @@ export class GameApp {
     });
     this.lobby.onShowStats = () => {
       this.lobby.hide();
-      this.matchStatsModal.slideToCenter();
+      this.matchStatsModal.show(this.lastMatchStats);
     };
+    this.lobby.matchStatsPanel = this.matchStatsModal;
     if (savedNick) {
       this.lobby.setNickname(savedNick);
     }
@@ -1282,14 +1278,21 @@ export class GameApp {
       if (engine.isGoldenGoal && winner) {
         outcomeText = `¡Gol de Oro! Victoria del Equipo ${winner === 'red' ? 'Rojo' : 'Azul'}`;
       }
-      this.enforceMenuState(MatchPhase.STOPPED, outcomeText);
-      this.teamSelect.setSlideToStatsVisible(true);
-      this.lobby.setStatsAvailable(true);
-      this.teamSelect.slideToRight();
 
       const stats = Array.from(engine.matchStats.values());
       const mvp = engine.getMVP();
-      this.matchStatsModal.show(stats, mvp?.playerId ?? null);
+      this.lastMatchStats = stats;
+
+      // 1. Asegurar que RoomLobby esté oculto
+      this.roomLobby.hide();
+      this.teamSelect.close(true);
+
+      // 2. Mostrar la pantalla de estadísticas directamente
+      this.matchStatsPanel.show(stats, mvp?.playerId ?? null);
+
+      this.roomLobby.setStatsAvailable(true, stats);
+      this.teamSelect.setSlideToStatsVisible(true);
+
       this.broadcastMatchStateSync();
       this.broadcastSnapshot();
       this.updateAdminControlsUI();
@@ -1310,8 +1313,8 @@ export class GameApp {
       this.enforceMenuState(state);
       if (state === MatchPhase.COUNTDOWN || state === MatchPhase.PLAYING) {
         this.teamSelect.setSlideToStatsVisible(false);
-        this.lobby.setStatsAvailable(false);
-        this.matchStatsModal.destroy();
+        this.roomLobby.hideStatsNavigationButton();
+        this.matchStatsPanel.hide();
       }
       if (state === MatchPhase.COUNTDOWN) {
         this.audioManager.playCountdown(false);
@@ -1787,12 +1790,17 @@ export class GameApp {
           this.canvasRenderer?.addFloatingScore(msg.text, msg.x, msg.y, msg.color);
         } else if (msg.type === 'MATCH_END_STATS') {
           this.audioManager.playGoalWhistle();
-          const outcome = msg.outcomeText || (msg.winner ? `¡Victoria del Equipo ${msg.winner === 'red' ? 'Rojo' : 'Azul'}!` : '¡Empate!');
-          this.enforceMenuState(MatchPhase.STOPPED, outcome);
+          this.lastMatchStats = msg.stats;
+
+          // 1. Asegurar que RoomLobby esté oculto
+          this.roomLobby.hide();
+          this.teamSelect.close(true);
+
+          // 2. Mostrar la pantalla de estadísticas directamente
+          this.matchStatsPanel.show(msg.stats, msg.mvpPlayerId ?? null);
+
+          this.roomLobby.setStatsAvailable(true, msg.stats);
           this.teamSelect.setSlideToStatsVisible(true);
-          this.lobby.setStatsAvailable(true);
-          this.teamSelect.slideToRight();
-          this.matchStatsModal.show(msg.stats, msg.mvpPlayerId ?? null);
           this.updateAdminControlsUI();
         } else if (msg.type === 'banned') {
           alert('Has sido baneado de esta sala.');
@@ -2255,27 +2263,23 @@ export class GameApp {
 
   private isTogglingMatch: boolean = false;
 
-  public handleMatchToggle(): void {
-    if (this.isTogglingMatch) return;
-    this.isTogglingMatch = true;
-    setTimeout(() => {
-      this.isTogglingMatch = false;
-    }, 300);
-
-    const isAuthorized = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost || this.mode === 'host');
-    if (!isAuthorized) return;
-    const currentPhase = this.matchPhase;
-    const action = currentPhase === MatchPhase.STOPPED ? 'START' : 'STOP';
-
-    if (action === 'STOP') {
-      this.requestStopMatch();
-      return;
+  public showRoomLobby(): void {
+    this.matchStatsPanel.hide();
+    if (this.uiStateMachine.getState() === 'STATE_LOBBY') {
+      this.lobby.setStatsAvailable(true, this.lastMatchStats);
+      this.lobby.show();
+    } else {
+      this.teamSelect.setSlideToStatsVisible(true);
+      this.teamSelect.slideToCenter();
+      this.teamSelect.open(false);
     }
+  }
 
-    // Host iniciando el partido: cierra y desmonta MatchStatsPanel y oculta botones de navegación de estadísticas
-    this.matchStatsModal.destroy();
+  public startGame(): void {
+    this.matchStatsPanel.hide();
+    this.roomLobby.hideStatsNavigationButton();
+    this.teamSelect.hideStatsNavigationButton();
     this.teamSelect.setSlideToStatsVisible(false);
-    this.lobby.setStatsAvailable(false);
 
     if (this.modifierModal?.isOpen()) {
       this.modifierModal.hide();
@@ -2297,6 +2301,26 @@ export class GameApp {
       this.broadcastMatchStateSync();
       this.broadcastSnapshot();
     }
+  }
+
+  public handleMatchToggle(): void {
+    if (this.isTogglingMatch) return;
+    this.isTogglingMatch = true;
+    setTimeout(() => {
+      this.isTogglingMatch = false;
+    }, 300);
+
+    const isAuthorized = Boolean(this.localPlayer.isAdmin || this.localPlayer.isHost || this.mode === 'host');
+    if (!isAuthorized) return;
+    const currentPhase = this.matchPhase;
+    const action = currentPhase === MatchPhase.STOPPED ? 'START' : 'STOP';
+
+    if (action === 'STOP') {
+      this.requestStopMatch();
+      return;
+    }
+
+    this.startGame();
   }
 
   public requestStopMatch(): void {
@@ -3034,14 +3058,24 @@ export class GameApp {
               } else if (currentPhase === MatchPhase.VICTORY_CELEBRATION || currentPhase === MatchPhase.MATCH_ENDED) {
                 this.audioManager.playGoalWhistle();
                 if (activeSnapshot.matchStats) {
-                  this.matchStatsModal.show(activeSnapshot.matchStats, activeSnapshot.mvpPlayerId ?? null);
+                  this.lastMatchStats = activeSnapshot.matchStats;
+                  this.roomLobby.hide();
+                  this.teamSelect.close(true);
+                  this.matchStatsPanel.show(activeSnapshot.matchStats, activeSnapshot.mvpPlayerId ?? null);
+                  this.roomLobby.setStatsAvailable(true, activeSnapshot.matchStats);
+                  this.teamSelect.setSlideToStatsVisible(true);
                 }
               }
 
               let outcomeText: string | undefined = undefined;
               if (currentPhase === MatchPhase.STOPPED) {
                 if (activeSnapshot.matchStats && !this.matchStatsModal.isOpen()) {
-                  this.matchStatsModal.show(activeSnapshot.matchStats, activeSnapshot.mvpPlayerId ?? null);
+                  this.lastMatchStats = activeSnapshot.matchStats;
+                  this.roomLobby.hide();
+                  this.teamSelect.close(true);
+                  this.matchStatsPanel.show(activeSnapshot.matchStats, activeSnapshot.mvpPlayerId ?? null);
+                  this.roomLobby.setStatsAvailable(true, activeSnapshot.matchStats);
+                  this.teamSelect.setSlideToStatsVisible(true);
                 }
                 const red = activeSnapshot.scoreRed ?? activeSnapshot.redScore;
                 const blue = activeSnapshot.scoreBlue ?? activeSnapshot.blueScore;

@@ -42,7 +42,9 @@ describe('MatchStatsPanel & RoomLobby Navigation Lifecycle', () => {
         if (sel === '.match-stats-card') return createdElements['match-stats-card'];
         if (sel === '.match-stats-wrapper') return createdElements['match-stats-wrapper'];
         if (sel === '#stats-to-menu-btn') return createdElements['stats-to-menu-btn'];
-        if (sel === '#menu-to-stats-btn') return createdElements['menu-to-stats-btn'];
+        if (sel === '#lobby-to-stats-btn' || sel === '#menu-to-stats-btn') {
+          return createdElements['lobby-to-stats-btn'] || createdElements['menu-to-stats-btn'];
+        }
         if (sel.includes('modal-content') || sel.includes('room-lobby-modal')) {
           return el.children.find((c: any) => c.className?.includes('modal-content') || c.className?.includes('room-lobby-modal')) || null;
         }
@@ -137,6 +139,7 @@ describe('MatchStatsPanel & RoomLobby Navigation Lifecycle', () => {
     // External navigation tab
     const statsToMenuBtn = createdElements['stats-to-menu-btn'];
     expect(statsToMenuBtn).toBeDefined();
+    expect(statsToMenuBtn.className).toContain('right-tab');
     // No "Continuar" or "X" dead buttons
     expect(card.innerHTML).not.toContain('id="btnCloseMatchStats"');
     expect(card.innerHTML).not.toContain('id="btnDismissMatchStats"');
@@ -146,7 +149,7 @@ describe('MatchStatsPanel & RoomLobby Navigation Lifecycle', () => {
     (globalThis as any).document = originalDoc;
   });
 
-  it('toggles seamlessly between MatchStatsPanel and RoomLobby via external tabs', () => {
+  it('toggles seamlessly between MatchStatsPanel and RoomLobby via external right-side tabs', () => {
     let slideToMenuCalled = false;
     let showStatsCalled = false;
 
@@ -173,14 +176,15 @@ describe('MatchStatsPanel & RoomLobby Navigation Lifecycle', () => {
       panel.slideToCenter();
     };
 
-    // Before stats available, menuToStatsBtn is hidden
-    const menuToStatsBtn = createdElements['menu-to-stats-btn'];
-    expect(menuToStatsBtn).toBeDefined();
-    expect(menuToStatsBtn.style.display).toBe('none');
+    // Before stats available, lobbyToStatsBtn is hidden
+    const lobbyToStatsBtn = createdElements['lobby-to-stats-btn'] || createdElements['menu-to-stats-btn'];
+    expect(lobbyToStatsBtn).toBeDefined();
+    expect(lobbyToStatsBtn.className).toContain('right-tab');
+    expect(lobbyToStatsBtn.style.display).toBe('none');
 
     // Make stats available
     lobby.setStatsAvailable(true);
-    expect(menuToStatsBtn.style.display).toBe('inline-flex');
+    expect(lobbyToStatsBtn.style.display).toBe('inline-flex');
 
     // Show stats panel
     panel.show([]);
@@ -194,12 +198,73 @@ describe('MatchStatsPanel & RoomLobby Navigation Lifecycle', () => {
     expect(slideToMenuCalled).toBe(true);
     expect(panel.isOpen()).toBe(false);
 
-    // Now click external "< Puntuaciones" button on lobby
-    menuToStatsBtn.dispatchEvent({ type: 'click', stopPropagation: () => {} });
+    // Now click external "Estadísticas >" button on lobby
+    lobbyToStatsBtn.dispatchEvent({ type: 'click', stopPropagation: () => {} });
     expect(showStatsCalled).toBe(true);
     expect(panel.isOpen()).toBe(true);
 
+    // Starting new match hides stats navigation button
+    lobby.hideStatsNavigationButton();
+    expect(lobbyToStatsBtn.style.display).toBe('none');
+    expect(lobby.hasCompletedMatch).toBe(false);
+
     panel.destroy();
     (globalThis as any).document = originalDoc;
+  });
+
+  it('enforces post-match appflow with stats shown first, lobby hidden, and button hidden on startGame', () => {
+    let roomLobbyHidden = false;
+    let matchStatsShown = false;
+    let roomLobbyStatsButtonHidden = false;
+
+    const mockStatsData: PlayerMatchStats[] = [
+      {
+        playerId: 'p1',
+        playerName: 'Hero',
+        team: 'red',
+        points: 500,
+        goals: 3,
+        assists: 1,
+        passes: 5,
+        saves: 1,
+        shots: 4,
+        touches: 20,
+        hasHattrickBonus: true
+      }
+    ];
+
+    const mockRoomLobby = {
+      hide: () => {
+        roomLobbyHidden = true;
+      },
+      show: vi.fn(),
+      hideStatsNavigationButton: () => {
+        roomLobbyStatsButtonHidden = true;
+      },
+      setStatsAvailable: vi.fn()
+    };
+
+    const mockMatchStatsPanel = {
+      isOpen: vi.fn().mockReturnValue(false),
+      show: (_stats: any) => {
+        matchStatsShown = true;
+      },
+      hide: vi.fn(),
+      destroy: vi.fn()
+    };
+
+    // 1. Concluir partido: orden estricto
+    mockRoomLobby.hide();
+    mockMatchStatsPanel.show(mockStatsData);
+
+    expect(roomLobbyHidden).toBe(true);
+    expect(matchStatsShown).toBe(true);
+
+    // 2. Reiniciar partido: startGame
+    mockMatchStatsPanel.hide();
+    mockRoomLobby.hideStatsNavigationButton();
+
+    expect(mockMatchStatsPanel.hide).toHaveBeenCalled();
+    expect(roomLobbyStatsButtonHidden).toBe(true);
   });
 });

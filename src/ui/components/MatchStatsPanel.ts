@@ -19,6 +19,7 @@ export class MatchStatsPanel {
   private isListenerBound: boolean = false;
 
   public onSlideToMenu?: () => void;
+  public gameApp?: { showRoomLobby?: () => void };
 
   constructor(events: MatchStatsPanelEvents = {}) {
     this.events = events;
@@ -41,21 +42,25 @@ export class MatchStatsPanel {
       overlay.id = 'match-stats-overlay';
       overlay.className = 'match-stats-overlay';
       overlay.style.position = 'absolute';
-      overlay.style.top = '60px';
-      overlay.style.bottom = 'calc(var(--chat-height, 180px) + 16px)';
-      overlay.style.left = '0';
-      overlay.style.right = '0';
+      overlay.style.inset = '0';
       overlay.style.display = 'none';
       overlay.style.pointerEvents = 'none';
       overlay.style.backgroundColor = 'transparent';
       overlay.style.zIndex = '35';
+      overlay.style.justifyContent = 'center';
+      overlay.style.alignItems = 'center';
       document.body.appendChild(overlay);
     } else {
       overlay.id = 'match-stats-overlay';
       overlay.className = 'match-stats-overlay';
+      overlay.style.position = 'absolute';
+      overlay.style.inset = '0';
       overlay.style.backgroundColor = 'transparent';
       overlay.style.pointerEvents = 'none';
       overlay.style.display = 'none';
+      overlay.style.zIndex = '35';
+      overlay.style.justifyContent = 'center';
+      overlay.style.alignItems = 'center';
     }
     this.overlayEl = overlay;
     this.element = overlay;
@@ -66,7 +71,17 @@ export class MatchStatsPanel {
       wrapper.className = 'match-stats-wrapper';
       overlay.appendChild(wrapper);
     }
+    wrapper.style.overflow = 'visible';
+    wrapper.style.position = 'relative';
     this.wrapperEl = wrapper;
+
+    let content = (typeof wrapper.querySelector === 'function' ? wrapper.querySelector('.match-stats-card') : null) as HTMLElement | null;
+    if (!content) {
+      content = document.createElement('div');
+      content.className = 'match-stats-card';
+      wrapper.appendChild(content);
+    }
+    this.containerEl = content;
 
     let statsBtn = (typeof wrapper.querySelector === 'function' ? wrapper.querySelector('#stats-to-menu-btn') : null) as HTMLButtonElement | null;
     if (!statsBtn) {
@@ -83,6 +98,9 @@ export class MatchStatsPanel {
       this.slideToMenuBtn.addEventListener('click', (e: MouseEvent) => {
         e?.stopPropagation?.();
         this.hide();
+        if (this.gameApp && typeof this.gameApp.showRoomLobby === 'function') {
+          this.gameApp.showRoomLobby();
+        }
         if (this.onSlideToMenu) {
           this.onSlideToMenu();
         } else {
@@ -94,14 +112,6 @@ export class MatchStatsPanel {
       });
     }
 
-    let content = (typeof wrapper.querySelector === 'function' ? wrapper.querySelector('.match-stats-card') : null) as HTMLElement | null;
-    if (!content) {
-      content = document.createElement('div');
-      content.className = 'match-stats-card';
-      wrapper.appendChild(content);
-    }
-    this.containerEl = content;
-
     if (!this.isListenerBound && this.element) {
       this.isListenerBound = true;
       this.element.addEventListener('click', (e: MouseEvent) => {
@@ -111,6 +121,9 @@ export class MatchStatsPanel {
         // 1. Manejo del botón Menú >
         if (typeof target.closest === 'function' && target.closest('#stats-to-menu-btn')) {
           this.hide();
+          if (this.gameApp && typeof this.gameApp.showRoomLobby === 'function') {
+            this.gameApp.showRoomLobby();
+          }
           if (this.onSlideToMenu) {
             this.onSlideToMenu();
           } else {
@@ -122,8 +135,8 @@ export class MatchStatsPanel {
           return;
         }
 
-        // 2. Manejo de acordeón para desglose de puntos
-        const toggleBtn = (typeof target.closest === 'function' ? target.closest('.btn-toggle-breakdown') : null) as HTMLElement | null;
+        // 2. Manejo de acordeón para desglose de puntos (botón ▼/▲ o click en fila)
+        const toggleBtn = (typeof target.closest === 'function' ? target.closest('.btn-toggle-breakdown, .accordion-toggle-btn') : null) as HTMLElement | null;
         if (toggleBtn) {
           const playerId = toggleBtn.getAttribute('data-player-id');
           const breakdownRow = this.element?.querySelector(`.breakdown-row[data-player-id="${playerId}"]`);
@@ -136,6 +149,26 @@ export class MatchStatsPanel {
             }
             toggleBtn.textContent = isExpanded ? '▲' : '▼';
           }
+          return;
+        }
+
+        const playerRow = (typeof target.closest === 'function' ? target.closest('tr:not(.breakdown-row)') : null) as HTMLElement | null;
+        if (playerRow) {
+          const btn = playerRow.querySelector('.btn-toggle-breakdown, .accordion-toggle-btn') as HTMLElement | null;
+          const playerId = btn?.getAttribute('data-player-id');
+          if (playerId) {
+            const breakdownRow = this.element?.querySelector(`.breakdown-row[data-player-id="${playerId}"]`);
+            if (breakdownRow) {
+              const isExpanded = breakdownRow.classList.toggle('active');
+              if (isExpanded) {
+                this.expandedPlayerIds.add(playerId);
+              } else {
+                this.expandedPlayerIds.delete(playerId);
+              }
+              if (btn) btn.textContent = isExpanded ? '▲' : '▼';
+            }
+          }
+          return;
         }
       });
     }
@@ -316,15 +349,21 @@ export class MatchStatsPanel {
 
     this.containerEl.innerHTML = `
       <div class="match-stats-header">
-        <h2 class="stats-title">ESTADÍSTICAS DEL PARTIDO</h2>
+        <div class="match-stats-score-banner">
+          <h2 class="stats-title" style="margin: 0;">ESTADÍSTICAS DEL PARTIDO</h2>
+          <span style="color: #F87171; font-weight: 800; margin-left: 8px;">${redGoals}</span>
+          <span style="opacity: 0.5; font-weight: 800;">-</span>
+          <span style="color: #60A5FA; font-weight: 800;">${blueGoals}</span>
+        </div>
+        <div class="match-stats-mvp-badge">${mvpPlayer ? `👑 MVP: ${mvpPlayer.playerName || mvpPlayer.nickname || 'Jugador'}` : 'Sin MVP'}</div>
       </div>
       
       <!-- Contenedor ÚNICO con scroll vertical -->
       <div class="match-stats-scroll-body">
         ${mvpBannerHtml}
-        <div class="stats-dual-container">
-          <!-- Tabla Equipo 1 -->
-          <div class="team-stats-box team-home">
+        <div class="stats-dual-grid stats-dual-container">
+          <!-- Tabla Equipo RED -->
+          <div class="team-stats-column team-red team-stats-box team-home">
             <div class="team-stats-header red-header" id="team-home-header">
               <span>🔴 Equipo Rojo</span>
               <span class="team-score-badge">${redGoals} Goles</span>
@@ -349,8 +388,8 @@ export class MatchStatsPanel {
             </div>
           </div>
 
-          <!-- Tabla Equipo 2 -->
-          <div class="team-stats-box team-away">
+          <!-- Tabla Equipo BLUE -->
+          <div class="team-stats-column team-blue team-stats-box team-away">
             <div class="team-stats-header blue-header" id="team-away-header">
               <span>🔵 Equipo Azul</span>
               <span class="team-score-badge">${blueGoals} Goles</span>
@@ -391,7 +430,7 @@ export class MatchStatsPanel {
       statsBtn.className = 'external-nav-tab right-tab';
       statsBtn.innerHTML = 'Menú &gt;';
       statsBtn.title = 'Ir al Menú de Sala';
-      this.wrapperEl.insertBefore(statsBtn, this.wrapperEl.firstChild);
+      this.wrapperEl.appendChild(statsBtn);
     }
     this.slideToMenuBtn = statsBtn;
   }

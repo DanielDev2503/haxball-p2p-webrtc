@@ -1,6 +1,7 @@
 import { CreateRoomModal, CreateRoomModalConfig } from './CreateRoomModal';
 import { renderIcon, PlusSquare, Search, RefreshCw, Sun, Moon } from '../utils/icons';
 import { $theme, toggleTheme } from '../stores/gameStore';
+import { PlayerMatchStats } from '../../core/game/GameState';
 
 export interface LobbyRoomConfig {
   name: string;
@@ -48,7 +49,13 @@ export class RoomLobby {
   private refreshRoomsBtn: HTMLButtonElement | null = null;
   private roomIdInput: HTMLInputElement | null = null;
   private roomListContainer: HTMLElement | null = null;
-  private menuToStatsBtn: HTMLButtonElement | null = null;
+  public lobbyToStatsBtn: HTMLButtonElement | null = null;
+  public get menuToStatsBtn(): HTMLButtonElement | null {
+    return this.lobbyToStatsBtn;
+  }
+  public hasCompletedMatch: boolean = false;
+  public lastStats: PlayerMatchStats[] = [];
+  public matchStatsPanel?: { show: (stats: PlayerMatchStats[], mvpId?: string | null) => void };
 
   public createRoomModal: CreateRoomModal;
   private events: LobbyEvents;
@@ -347,42 +354,51 @@ export class RoomLobby {
   }
 
   public renderStatsNavigationTab(): void {
+    // Elimina cualquier botón duplicado previo en la izquierda o con clase .left-tab o #menu-to-stats-btn
+    if (this.overlayEl && typeof this.overlayEl.querySelectorAll === 'function') {
+      const oldLeftButtons = this.overlayEl.querySelectorAll('.left-tab, #menu-to-stats-btn, #teamselect-to-stats-btn, .sliding-tab-btn');
+      oldLeftButtons.forEach((btn) => btn.remove());
+    }
+
     const wrapper = this.overlayEl?.querySelector('.room-lobby-wrapper') as HTMLElement | null;
     const content = this.overlayEl?.querySelector('.room-lobby-modal, .modal-content') as HTMLElement | null;
     const container = wrapper || content || this.overlayEl;
     if (container) {
-      let statsBtn = this.overlayEl?.querySelector('#menu-to-stats-btn') as HTMLButtonElement | null;
+      let statsBtn = (this.overlayEl?.querySelector('#lobby-to-stats-btn') || wrapper?.querySelector('#lobby-to-stats-btn')) as HTMLButtonElement | null;
       if (!statsBtn && typeof document !== 'undefined') {
         statsBtn = document.createElement('button');
-        statsBtn.id = 'menu-to-stats-btn';
-        statsBtn.className = 'external-nav-tab left-tab';
-        statsBtn.innerHTML = '&lt; Puntuaciones';
-        statsBtn.title = 'Ver puntuaciones del partido';
+        statsBtn.id = 'lobby-to-stats-btn';
+        statsBtn.className = 'external-nav-tab right-tab';
+        statsBtn.innerHTML = 'Estadísticas &gt;';
+        statsBtn.title = 'Ver estadísticas del partido';
         statsBtn.style.display = 'none';
-        if (wrapper && content && typeof wrapper.insertBefore === 'function') {
-          wrapper.insertBefore(statsBtn, content);
-        } else {
-          container.appendChild(statsBtn);
-        }
+        container.appendChild(statsBtn);
       }
-      this.menuToStatsBtn = statsBtn;
-      if (this.menuToStatsBtn && !(this.menuToStatsBtn as any)._boundNav) {
-        (this.menuToStatsBtn as any)._boundNav = true;
-        this.menuToStatsBtn.addEventListener('click', (e) => {
+      this.lobbyToStatsBtn = statsBtn;
+      if (this.lobbyToStatsBtn && !(this.lobbyToStatsBtn as any)._boundNav) {
+        (this.lobbyToStatsBtn as any)._boundNav = true;
+        this.lobbyToStatsBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           this.hide();
+          if (this.matchStatsPanel && this.lastStats) {
+            this.matchStatsPanel.show(this.lastStats);
+          }
           this.onShowStats?.();
           if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
             window.dispatchEvent(new CustomEvent('stats:navigate-to-stats'));
           }
         });
       }
+      if (this.lobbyToStatsBtn) {
+        this.lobbyToStatsBtn.style.display = this.hasCompletedMatch ? 'inline-flex' : 'none';
+      }
     }
   }
 
   public show(): void {
-    if (!this.menuToStatsBtn) {
-      this.renderStatsNavigationTab();
+    this.renderStatsNavigationTab();
+    if (this.lobbyToStatsBtn) {
+      this.lobbyToStatsBtn.style.display = this.hasCompletedMatch ? 'inline-flex' : 'none';
     }
     if (this.overlayEl) {
       this.overlayEl.classList.remove('u-hidden', 'ui-screen-hidden');
@@ -390,12 +406,30 @@ export class RoomLobby {
     }
   }
 
-  public setStatsAvailable(available: boolean): void {
-    if (!this.menuToStatsBtn) {
-      this.renderStatsNavigationTab();
+  public setStatsAvailable(available: boolean, stats?: PlayerMatchStats[]): void {
+    this.hasCompletedMatch = available;
+    if (stats) {
+      this.lastStats = stats;
     }
-    if (this.menuToStatsBtn) {
-      this.menuToStatsBtn.style.display = available ? 'inline-flex' : 'none';
+    this.renderStatsNavigationTab();
+    if (this.lobbyToStatsBtn) {
+      this.lobbyToStatsBtn.style.display = available ? 'inline-flex' : 'none';
+    }
+  }
+
+  public setCompletedMatch(stats: PlayerMatchStats[]): void {
+    this.hasCompletedMatch = true;
+    this.lastStats = stats;
+    this.renderStatsNavigationTab();
+    if (this.lobbyToStatsBtn) {
+      this.lobbyToStatsBtn.style.display = 'inline-flex';
+    }
+  }
+
+  public hideStatsNavigationButton(): void {
+    this.hasCompletedMatch = false;
+    if (this.lobbyToStatsBtn) {
+      this.lobbyToStatsBtn.style.display = 'none';
     }
   }
 

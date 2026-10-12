@@ -2417,10 +2417,7 @@ select:focus-visible {
 #matchStatsModal,
 #match-stats-panel {
   position: absolute;
-  top: 60px;
-  bottom: calc(var(--chat-height, 180px) + 16px);
-  left: 0;
-  right: 0;
+  inset: 0;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -2492,20 +2489,43 @@ select:focus-visible {
   text-transform: uppercase;
 }
 
+.match-stats-score-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #F8FAFC;
+}
+
+.match-stats-mvp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.22) 0%, rgba(202, 138, 4, 0.1) 100%);
+  border: 1px solid rgba(234, 179, 8, 0.45);
+  color: #FDE047;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
 .match-stats-scroll-body {
-  flex: 1;
-  overflow-y: auto !important; /* Solo vertical */
-  overflow-x: hidden !important; /* Elimina cualquier deslizador horizontal */
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  max-height: calc(100vh - var(--chat-height, 180px) - 110px);
   padding: 12px 16px;
   box-sizing: border-box;
 }
 
-/* Scrollbar vertical sutil solo cuando el contenido excede el alto */
+/* Scrollbar vertical sutil de 5px cian translúcido solo si excede la altura */
 .match-stats-scroll-body::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 .match-stats-scroll-body::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+  background: transparent;
 }
 .match-stats-scroll-body::-webkit-scrollbar-thumb {
   background: rgba(0, 229, 255, 0.4);
@@ -2516,6 +2536,7 @@ select:focus-visible {
 }
 
 /* Diseño de Tablas Duales (Grid Responsive) */
+.stats-dual-grid,
 .stats-dual-container,
 .stats-teams-grid {
   display: grid;
@@ -2525,12 +2546,14 @@ select:focus-visible {
 }
 
 @media (max-width: 680px) {
+  .stats-dual-grid,
   .stats-dual-container,
   .stats-teams-grid {
     grid-template-columns: 1fr;
   }
 }
 
+.team-stats-column,
 .team-stats-box {
   background: rgba(15, 23, 42, 0.6);
   border: 1px solid rgba(14, 165, 233, 0.25);
@@ -2540,11 +2563,13 @@ select:focus-visible {
   flex-direction: column;
 }
 
+.team-stats-column.team-red,
 .team-stats-box.team-home,
 .team-stats-box.red-team-box {
   border-color: rgba(239, 68, 68, 0.35);
 }
 
+.team-stats-column.team-blue,
 .team-stats-box.team-away,
 .team-stats-box.blue-team-box {
   border-color: rgba(59, 130, 246, 0.35);
@@ -2671,15 +2696,15 @@ select:focus-visible {
   margin-left: 4px;
 }
 
-/* Botones Exteriores ("Menú >" y "< Puntuaciones") */
+/* Botones Exteriores a la Derecha ("Menú >" y "Estadísticas >") */
 .external-nav-tab {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
   background: rgba(10, 16, 26, 0.95);
-  border: 1px solid rgba(0, 229, 255, 0.5);
+  border: 1px solid rgba(0, 229, 255, 0.4);
   color: #00e5ff;
-  padding: 12px 8px;
+  padding: 12px 10px;
   font-family: inherit;
   font-size: 13px;
   font-weight: bold;
@@ -2695,18 +2720,30 @@ select:focus-visible {
   box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
 }
 
-.right-tab {
-  right: -42px;
+.external-nav-tab.right-tab {
+  position: absolute;
+  right: -48px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(10, 16, 26, 0.95);
+  border: 1px solid rgba(0, 229, 255, 0.4);
+  border-left: none;
   border-top-right-radius: 8px;
   border-bottom-right-radius: 8px;
-  border-left: none;
+  color: #00e5ff;
+  padding: 12px 10px;
+  cursor: pointer;
+  pointer-events: auto;
+  white-space: nowrap;
+  font-weight: bold;
+  font-size: 13px;
+  z-index: 40;
+  transition: all 0.2s ease;
 }
 
-.left-tab {
-  left: -42px;
-  border-top-left-radius: 8px;
-  border-bottom-left-radius: 8px;
-  border-right: none;
+.external-nav-tab.right-tab:hover {
+  background: rgba(0, 229, 255, 0.2);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
 }
 
 

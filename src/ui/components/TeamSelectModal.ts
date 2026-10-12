@@ -47,8 +47,8 @@ export class TeamSelectModal {
     this.closeBtn = document.getElementById('menu-close-btn') || document.getElementById('btn-close-modal');
     this.returnGameBtn = document.getElementById('btn-return-game') || document.getElementById('btn-back');
     this.slideToStatsBtn = (typeof this.menuEl?.querySelector === 'function'
-      ? this.menuEl.querySelector('#menu-to-stats-btn, #teamselect-to-stats-btn') as HTMLButtonElement | null
-      : null) || (document.getElementById('menu-to-stats-btn') || document.getElementById('btn-slide-to-stats')) as HTMLButtonElement | null;
+      ? this.menuEl.querySelector('#lobby-to-stats-btn, #teamselect-to-stats-btn, #menu-to-stats-btn') as HTMLButtonElement | null
+      : null) || (document.getElementById('lobby-to-stats-btn') || document.getElementById('teamselect-to-stats-btn') || document.getElementById('menu-to-stats-btn')) as HTMLButtonElement | null;
     if (this.slideToStatsBtn) {
       this.slideToStatsBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -510,8 +510,12 @@ export class TeamSelectModal {
 
     // Cierre o apertura reactiva basada en transición de fase:
     if (phase === MatchPhase.STOPPED) {
-      // Apertura Forzada Únicamente en STOPPED y Game Over
-      this.open(true);
+      if (this.gameApp?.matchStatsPanel?.isOpen?.()) {
+        this.close(true);
+      } else {
+        // Apertura Forzada Únicamente en STOPPED y Game Over si stats no está activo
+        this.open(true);
+      }
     } else if (prevPhase !== phase) {
       if (phase === MatchPhase.COUNTDOWN || phase === MatchPhase.PLAYING) {
         // Cierre Automático: Solo en transición al iniciar o tras la cuenta regresiva hacia el partido
@@ -588,16 +592,16 @@ export class TeamSelectModal {
 
   public setSlideToStatsVisible(visible: boolean): void {
     const btn1 = (typeof this.menuEl?.querySelector === 'function'
-      ? this.menuEl.querySelector('#menu-to-stats-btn, #teamselect-to-stats-btn')
-      : null) || document.getElementById('menu-to-stats-btn');
-    const btn2 = (typeof this.menuEl?.querySelector === 'function'
-      ? this.menuEl.querySelector('#btn-slide-to-stats')
-      : null) || document.getElementById('btn-slide-to-stats');
+      ? this.menuEl.querySelector('#lobby-to-stats-btn, #menu-to-stats-btn, #teamselect-to-stats-btn')
+      : null) || document.getElementById('lobby-to-stats-btn') || document.getElementById('teamselect-to-stats-btn');
     if (btn1) (btn1 as HTMLElement).style.display = visible ? 'inline-flex' : 'none';
-    if (btn2) (btn2 as HTMLElement).style.display = visible ? 'inline-flex' : 'none';
     if (this.slideToStatsBtn) {
       this.slideToStatsBtn.style.display = visible ? 'inline-flex' : 'none';
     }
+  }
+
+  public hideStatsNavigationButton(): void {
+    this.setSlideToStatsVisible(false);
   }
 
   public slideToCenter(): void {
