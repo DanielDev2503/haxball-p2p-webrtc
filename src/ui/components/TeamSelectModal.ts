@@ -46,12 +46,17 @@ export class TeamSelectModal {
     this.menuEl = document.getElementById('ingame-menu');
     this.closeBtn = document.getElementById('menu-close-btn') || document.getElementById('btn-close-modal');
     this.returnGameBtn = document.getElementById('btn-return-game') || document.getElementById('btn-back');
-    this.slideToStatsBtn = (document.getElementById('menu-to-stats-btn') || document.getElementById('btn-slide-to-stats')) as HTMLButtonElement | null;
+    this.slideToStatsBtn = (typeof this.menuEl?.querySelector === 'function'
+      ? this.menuEl.querySelector('#menu-to-stats-btn, #teamselect-to-stats-btn') as HTMLButtonElement | null
+      : null) || (document.getElementById('menu-to-stats-btn') || document.getElementById('btn-slide-to-stats')) as HTMLButtonElement | null;
     if (this.slideToStatsBtn) {
       this.slideToStatsBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.slideToRight();
         this.onSlideToStats?.();
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+          window.dispatchEvent(new CustomEvent('stats:navigate-to-stats'));
+        }
       });
     }
 
@@ -582,10 +587,14 @@ export class TeamSelectModal {
   }
 
   public setSlideToStatsVisible(visible: boolean): void {
-    const btn1 = document.getElementById('menu-to-stats-btn') as HTMLElement | null;
-    const btn2 = document.getElementById('btn-slide-to-stats') as HTMLElement | null;
-    if (btn1) btn1.style.display = visible ? 'inline-flex' : 'none';
-    if (btn2) btn2.style.display = visible ? 'inline-flex' : 'none';
+    const btn1 = (typeof this.menuEl?.querySelector === 'function'
+      ? this.menuEl.querySelector('#menu-to-stats-btn, #teamselect-to-stats-btn')
+      : null) || document.getElementById('menu-to-stats-btn');
+    const btn2 = (typeof this.menuEl?.querySelector === 'function'
+      ? this.menuEl.querySelector('#btn-slide-to-stats')
+      : null) || document.getElementById('btn-slide-to-stats');
+    if (btn1) (btn1 as HTMLElement).style.display = visible ? 'inline-flex' : 'none';
+    if (btn2) (btn2 as HTMLElement).style.display = visible ? 'inline-flex' : 'none';
     if (this.slideToStatsBtn) {
       this.slideToStatsBtn.style.display = visible ? 'inline-flex' : 'none';
     }

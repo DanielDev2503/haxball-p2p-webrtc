@@ -303,6 +303,25 @@ export class GameApp {
       this.matchStatsModal.slideToCenter();
     };
 
+    if (typeof window !== 'undefined') {
+      window.addEventListener('stats:navigate-to-menu', () => {
+        this.matchStatsModal.hide();
+        if (this.uiStateMachine.getState() === 'STATE_LOBBY') {
+          this.lobby.setStatsAvailable(true);
+          this.lobby.show();
+        } else {
+          this.teamSelect.setSlideToStatsVisible(true);
+          this.teamSelect.slideToCenter();
+        }
+      });
+
+      window.addEventListener('stats:navigate-to-stats', () => {
+        this.lobby.hide();
+        this.teamSelect.close();
+        this.matchStatsModal.slideToCenter();
+      });
+    }
+
     // Physics Engine por defecto
     this.engine = new GameEngine({
       scoreLimit: this.roomConfig.scoreLimit,
@@ -1292,7 +1311,7 @@ export class GameApp {
       if (state === MatchPhase.COUNTDOWN || state === MatchPhase.PLAYING) {
         this.teamSelect.setSlideToStatsVisible(false);
         this.lobby.setStatsAvailable(false);
-        this.matchStatsModal.close();
+        this.matchStatsModal.destroy();
       }
       if (state === MatchPhase.COUNTDOWN) {
         this.audioManager.playCountdown(false);
@@ -2252,6 +2271,11 @@ export class GameApp {
       this.requestStopMatch();
       return;
     }
+
+    // Host iniciando el partido: cierra y desmonta MatchStatsPanel y oculta botones de navegación de estadísticas
+    this.matchStatsModal.destroy();
+    this.teamSelect.setSlideToStatsVisible(false);
+    this.lobby.setStatsAvailable(false);
 
     if (this.modifierModal?.isOpen()) {
       this.modifierModal.hide();

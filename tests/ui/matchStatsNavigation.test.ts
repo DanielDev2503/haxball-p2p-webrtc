@@ -27,6 +27,9 @@ describe('MatchStatsPanel & RoomLobby Navigation Lifecycle', () => {
         if (child.className && child.className.includes('match-stats-card')) {
           createdElements['match-stats-card'] = child;
         }
+        if (child.className && child.className.includes('match-stats-wrapper')) {
+          createdElements['match-stats-wrapper'] = child;
+        }
         el.children.push(child);
         return child;
       },
@@ -37,6 +40,7 @@ describe('MatchStatsPanel & RoomLobby Navigation Lifecycle', () => {
       },
       querySelector: (sel: string) => {
         if (sel === '.match-stats-card') return createdElements['match-stats-card'];
+        if (sel === '.match-stats-wrapper') return createdElements['match-stats-wrapper'];
         if (sel === '#stats-to-menu-btn') return createdElements['stats-to-menu-btn'];
         if (sel === '#menu-to-stats-btn') return createdElements['menu-to-stats-btn'];
         if (sel.includes('modal-content') || sel.includes('room-lobby-modal')) {
@@ -116,7 +120,7 @@ describe('MatchStatsPanel & RoomLobby Navigation Lifecycle', () => {
     panel.show(stats);
     expect(panel.isOpen()).toBe(true);
 
-    const overlay = (globalThis as any).document.getElementById('matchStatsModal');
+    const overlay = (globalThis as any).document.getElementById('match-stats-overlay') || (globalThis as any).document.getElementById('matchStatsModal');
     expect(overlay).not.toBeNull();
     expect(overlay.style.pointerEvents).toBe('none');
     expect(overlay.style.backgroundColor).toBe('transparent');
@@ -131,7 +135,8 @@ describe('MatchStatsPanel & RoomLobby Navigation Lifecycle', () => {
     expect(card.innerHTML).toContain('👑 MVP');
     expect(card.innerHTML).toContain('380');
     // External navigation tab
-    expect(card.innerHTML).toContain('id="stats-to-menu-btn"');
+    const statsToMenuBtn = createdElements['stats-to-menu-btn'];
+    expect(statsToMenuBtn).toBeDefined();
     // No "Continuar" or "X" dead buttons
     expect(card.innerHTML).not.toContain('id="btnCloseMatchStats"');
     expect(card.innerHTML).not.toContain('id="btnDismissMatchStats"');

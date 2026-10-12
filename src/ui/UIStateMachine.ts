@@ -191,7 +191,7 @@ export class UIStateMachine {
         hide(this.elSettingsModal);
         hide(this.elContextMenu);
 
-        const statsModal = document.getElementById('matchStatsModal') || document.getElementById('match-stats-panel');
+        const statsModal = document.getElementById('match-stats-overlay') || document.getElementById('matchStatsModal') || document.getElementById('match-stats-panel');
         if (statsModal) {
           hide(statsModal);
         }
@@ -211,7 +211,7 @@ export class UIStateMachine {
         hide(this.elSettingsModal);
         hide(this.elContextMenu);
 
-        const statsModal = document.getElementById('matchStatsModal') || document.getElementById('match-stats-panel');
+        const statsModal = document.getElementById('match-stats-overlay') || document.getElementById('matchStatsModal') || document.getElementById('match-stats-panel');
         if (statsModal && !statsModal.classList.contains('panel-active')) {
           hide(statsModal);
         }

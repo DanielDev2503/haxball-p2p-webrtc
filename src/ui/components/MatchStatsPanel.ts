@@ -7,13 +7,16 @@ export interface MatchStatsPanelEvents {
 
 export class MatchStatsPanel {
   private overlayEl: HTMLElement | null = null;
+  private wrapperEl: HTMLElement | null = null;
   private containerEl: HTMLElement | null = null;
+  private element: HTMLElement | null = null;
   private slideToMenuBtn: HTMLButtonElement | null = null;
   private events: MatchStatsPanelEvents;
   private _isOpen: boolean = false;
   private expandedPlayerIds: Set<string> = new Set();
   private currentStats: PlayerMatchStats[] = [];
   private currentMvpId: string | null = null;
+  private isListenerBound: boolean = false;
 
   public onSlideToMenu?: () => void;
 
@@ -25,57 +28,134 @@ export class MatchStatsPanel {
   }
 
   public ensureDOM(): void {
-    if (this.overlayEl && this.containerEl) return;
+    if (this.overlayEl && this.wrapperEl && this.containerEl) return;
     this.buildDOM();
   }
 
   private buildDOM(): void {
     if (typeof document === 'undefined') return;
 
-    let overlay = document.getElementById('matchStatsModal') || document.getElementById('match-stats-panel');
+    let overlay = document.getElementById('match-stats-overlay') || document.getElementById('matchStatsModal') || document.getElementById('match-stats-panel');
     if (!overlay) {
       overlay = document.createElement('div');
-      overlay.id = 'matchStatsModal';
-      overlay.className = 'match-stats-container sliding-panels-container';
+      overlay.id = 'match-stats-overlay';
+      overlay.className = 'match-stats-overlay';
       overlay.style.position = 'absolute';
       overlay.style.top = '60px';
       overlay.style.bottom = 'calc(var(--chat-height, 180px) + 16px)';
-      overlay.style.left = '50%';
-      overlay.style.transform = 'translateX(-50%)';
-      overlay.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 86px)';
-      overlay.style.backgroundColor = 'transparent';
+      overlay.style.left = '0';
+      overlay.style.right = '0';
       overlay.style.display = 'none';
       overlay.style.pointerEvents = 'none';
-      overlay.style.zIndex = '40';
+      overlay.style.backgroundColor = 'transparent';
+      overlay.style.zIndex = '35';
       document.body.appendChild(overlay);
     } else {
-      overlay.classList.add('match-stats-container');
+      overlay.id = 'match-stats-overlay';
+      overlay.className = 'match-stats-overlay';
       overlay.style.backgroundColor = 'transparent';
       overlay.style.pointerEvents = 'none';
       overlay.style.display = 'none';
     }
     this.overlayEl = overlay;
+    this.element = overlay;
 
-    let content = overlay.querySelector('.match-stats-card') as HTMLElement | null;
+    let wrapper = (typeof overlay.querySelector === 'function' ? overlay.querySelector('.match-stats-wrapper') : null) as HTMLElement | null;
+    if (!wrapper) {
+      wrapper = document.createElement('div');
+      wrapper.className = 'match-stats-wrapper';
+      overlay.appendChild(wrapper);
+    }
+    this.wrapperEl = wrapper;
+
+    let statsBtn = (typeof wrapper.querySelector === 'function' ? wrapper.querySelector('#stats-to-menu-btn') : null) as HTMLButtonElement | null;
+    if (!statsBtn) {
+      statsBtn = document.createElement('button') as HTMLButtonElement;
+      statsBtn.id = 'stats-to-menu-btn';
+      statsBtn.className = 'external-nav-tab right-tab';
+      statsBtn.innerHTML = 'Menú &gt;';
+      statsBtn.title = 'Ir al Menú de Sala';
+      wrapper.appendChild(statsBtn);
+    }
+    this.slideToMenuBtn = statsBtn;
+    if (this.slideToMenuBtn && !(this.slideToMenuBtn as any)._boundClick) {
+      (this.slideToMenuBtn as any)._boundClick = true;
+      this.slideToMenuBtn.addEventListener('click', (e: MouseEvent) => {
+        e?.stopPropagation?.();
+        this.hide();
+        if (this.onSlideToMenu) {
+          this.onSlideToMenu();
+        } else {
+          this.events.onSlideToMenu?.();
+        }
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+          window.dispatchEvent(new CustomEvent('stats:navigate-to-menu'));
+        }
+      });
+    }
+
+    let content = (typeof wrapper.querySelector === 'function' ? wrapper.querySelector('.match-stats-card') : null) as HTMLElement | null;
     if (!content) {
       content = document.createElement('div');
-      content.className = 'match-stats-card menu-modal-card sliding-panel panel-right modal-container';
-      content.style.position = 'relative';
-      content.style.pointerEvents = 'auto';
-      overlay.appendChild(content);
+      content.className = 'match-stats-card';
+      wrapper.appendChild(content);
     }
     this.containerEl = content;
+
+    if (!this.isListenerBound && this.element) {
+      this.isListenerBound = true;
+      this.element.addEventListener('click', (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if (!target) return;
+
+        // 1. Manejo del botón Menú >
+        if (typeof target.closest === 'function' && target.closest('#stats-to-menu-btn')) {
+          this.hide();
+          if (this.onSlideToMenu) {
+            this.onSlideToMenu();
+          } else {
+            this.events.onSlideToMenu?.();
+          }
+          if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('stats:navigate-to-menu'));
+          }
+          return;
+        }
+
+        // 2. Manejo de acordeón para desglose de puntos
+        const toggleBtn = (typeof target.closest === 'function' ? target.closest('.btn-toggle-breakdown') : null) as HTMLElement | null;
+        if (toggleBtn) {
+          const playerId = toggleBtn.getAttribute('data-player-id');
+          const breakdownRow = this.element?.querySelector(`.breakdown-row[data-player-id="${playerId}"]`);
+          if (breakdownRow) {
+            const isExpanded = breakdownRow.classList.toggle('active');
+            if (isExpanded) {
+              if (playerId) this.expandedPlayerIds.add(playerId);
+            } else {
+              if (playerId) this.expandedPlayerIds.delete(playerId);
+            }
+            toggleBtn.textContent = isExpanded ? '▲' : '▼';
+          }
+        }
+      });
+    }
 
     if (typeof window !== 'undefined') {
       window.addEventListener('chat:resize', (e: Event) => {
         const customEvent = e as CustomEvent<{ height: number }>;
         const h = customEvent?.detail?.height ?? 180;
+        if (this.overlayEl) {
+          this.overlayEl.style.bottom = `calc(${h}px + 16px)`;
+        }
         if (this.containerEl) {
-          this.containerEl.style.bottom = `calc(${h}px + 16px)`;
-          this.containerEl.style.maxHeight = `calc(100vh - ${h}px - 86px)`;
+          this.containerEl.style.maxHeight = `calc(100vh - ${h}px - 96px)`;
         }
       });
     }
+  }
+
+  public getElement(): HTMLElement | null {
+    return this.overlayEl;
   }
 
   public isOpen(): boolean {
@@ -84,13 +164,9 @@ export class MatchStatsPanel {
 
   public slideToLeft(): void {
     if (this.overlayEl) {
-      this.overlayEl.style.pointerEvents = 'none';
+      this.overlayEl.classList?.add?.('u-hidden');
       this.overlayEl.style.display = 'none';
-    }
-    if (this.containerEl) {
-      this.containerEl.classList?.remove?.('panel-center', 'panel-right');
-      this.containerEl.classList?.add?.('panel-left');
-      this.containerEl.style.pointerEvents = 'none';
+      this.overlayEl.style.pointerEvents = 'none';
     }
     this._isOpen = false;
   }
@@ -98,26 +174,18 @@ export class MatchStatsPanel {
   public slideToCenter(): void {
     this.ensureDOM();
     if (this.overlayEl) {
+      this.overlayEl.classList?.remove?.('u-hidden');
       this.overlayEl.style.display = 'flex';
       this.overlayEl.style.pointerEvents = 'none';
-    }
-    if (this.containerEl) {
-      this.containerEl.classList?.remove?.('panel-left', 'panel-right');
-      this.containerEl.classList?.add?.('panel-center');
-      this.containerEl.style.pointerEvents = 'auto';
     }
     this._isOpen = true;
   }
 
   public slideToRight(): void {
     if (this.overlayEl) {
-      this.overlayEl.style.pointerEvents = 'none';
+      this.overlayEl.classList?.add?.('u-hidden');
       this.overlayEl.style.display = 'none';
-    }
-    if (this.containerEl) {
-      this.containerEl.classList?.remove?.('panel-center', 'panel-left');
-      this.containerEl.classList?.add?.('panel-right');
-      this.containerEl.style.pointerEvents = 'none';
+      this.overlayEl.style.pointerEvents = 'none';
     }
     this._isOpen = false;
   }
@@ -128,7 +196,7 @@ export class MatchStatsPanel {
     this.currentMvpId = mvpId ?? null;
 
     this.ensureDOM();
-    if (!this.overlayEl || !this.containerEl) return;
+    if (!this.overlayEl || !this.wrapperEl || !this.containerEl) return;
 
     this.renderContent();
     this.slideToCenter();
@@ -200,12 +268,12 @@ export class MatchStatsPanel {
             ${p.saves}
           </td>
           <td style="padding: 8px 4px; text-align: center; width: 28px;">
-            <button class="accordion-toggle-btn" data-player-id="${p.playerId}" title="Desglose detallado">
+            <button class="btn-toggle-breakdown accordion-toggle-btn" data-player-id="${p.playerId}" title="Desglose detallado">
               ${isExpanded ? '▲' : '▼'}
             </button>
           </td>
         </tr>
-        <tr id="breakdown-row-${p.playerId}" style="display: ${isExpanded ? 'table-row' : 'none'}; background: rgba(15, 23, 42, 0.85);">
+        <tr class="breakdown-row ${isExpanded ? 'active' : ''}" data-player-id="${p.playerId}" id="breakdown-row-${p.playerId}" style="background: rgba(15, 23, 42, 0.85);">
           <td colspan="7" style="padding: 0;">
             <div class="player-breakdown-panel">
               <div class="breakdown-item"><span class="breakdown-label">Toques:</span><span class="breakdown-val">${p.touches}</span><span class="breakdown-pts">+${touchesPts}</span></div>
@@ -247,30 +315,22 @@ export class MatchStatsPanel {
       : '';
 
     this.containerEl.innerHTML = `
-      <!-- Botón Externo a la derecha -->
-      <button id="stats-to-menu-btn" class="external-nav-tab right-tab" title="Ir al Menú de Sala">
-        Menú &gt;
-      </button>
-
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 1.4rem;">📊</span>
-          <h2 style="margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em; color: #F8FAFC;">
-            Estadísticas del Partido
-          </h2>
-        </div>
+      <div class="match-stats-header">
+        <h2 class="stats-title">ESTADÍSTICAS DEL PARTIDO</h2>
       </div>
-
-      <div class="stats-scroll-container">
+      
+      <!-- Contenedor ÚNICO con scroll vertical -->
+      <div class="match-stats-scroll-body">
         ${mvpBannerHtml}
-        <div class="stats-teams-grid">
-          <div class="team-stats-box red-team-box">
-            <div class="team-stats-header red-header">
+        <div class="stats-dual-container">
+          <!-- Tabla Equipo 1 -->
+          <div class="team-stats-box team-home">
+            <div class="team-stats-header red-header" id="team-home-header">
               <span>🔴 Equipo Rojo</span>
               <span class="team-score-badge">${redGoals} Goles</span>
             </div>
-            <div class="team-table-scroll" style="overflow-y: auto; flex: 1; min-height: 0;">
-              <table class="stats-table">
+            <div class="team-stats-table-wrapper">
+              <table class="stats-table" id="team-home-table">
                 <thead>
                   <tr>
                     <th style="text-align: left; padding-left: 8px;">Jugador</th>
@@ -289,13 +349,14 @@ export class MatchStatsPanel {
             </div>
           </div>
 
-          <div class="team-stats-box blue-team-box" style="display: flex; flex-direction: column; overflow: hidden;">
-            <div class="team-stats-header blue-header">
+          <!-- Tabla Equipo 2 -->
+          <div class="team-stats-box team-away">
+            <div class="team-stats-header blue-header" id="team-away-header">
               <span>🔵 Equipo Azul</span>
               <span class="team-score-badge">${blueGoals} Goles</span>
             </div>
-            <div class="team-table-scroll" style="overflow-y: auto; flex: 1; min-height: 0;">
-              <table class="stats-table">
+            <div class="team-stats-table-wrapper">
+              <table class="stats-table" id="team-away-table">
                 <thead>
                   <tr>
                     <th style="text-align: left; padding-left: 8px;">Jugador</th>
@@ -314,73 +375,30 @@ export class MatchStatsPanel {
             </div>
           </div>
         </div>
-      </div>
-
-      <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 0.75rem; color: #94A3B8;">Haz clic en ▼ para ver el desglose matemático de puntos.</span>
+        <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.75rem; color: #94A3B8;">Haz clic en ▼ para ver el desglose matemático de puntos.</span>
+        </div>
       </div>
     `;
-
-    this.renderStatsToMenuButton();
-
-    const accordionBtns = typeof this.containerEl.querySelectorAll === 'function'
-      ? this.containerEl.querySelectorAll<HTMLButtonElement>('.accordion-toggle-btn')
-      : [];
-    accordionBtns.forEach?.((btn) => {
-      btn.addEventListener?.('click', (e) => {
-        e.stopPropagation();
-        const pId = btn.getAttribute?.('data-player-id');
-        if (!pId) return;
-
-        if (this.expandedPlayerIds.has(pId)) {
-          this.expandedPlayerIds.delete(pId);
-          btn.textContent = '▼';
-          const subRow = typeof this.containerEl?.querySelector === 'function'
-            ? this.containerEl.querySelector(`#breakdown-row-${pId}`) as HTMLElement | null
-            : null;
-          if (subRow) subRow.style.display = 'none';
-        } else {
-          this.expandedPlayerIds.add(pId);
-          btn.textContent = '▲';
-          const subRow = typeof this.containerEl?.querySelector === 'function'
-            ? this.containerEl.querySelector(`#breakdown-row-${pId}`) as HTMLElement | null
-            : null;
-          if (subRow) subRow.style.display = 'table-row';
-        }
-      });
-    });
   }
 
   public renderStatsToMenuButton(): void {
-    if (!this.containerEl) return;
-    let statsBtn = typeof this.containerEl.querySelector === 'function'
-      ? this.containerEl.querySelector('#stats-to-menu-btn') as HTMLButtonElement | null
-      : null;
+    if (!this.wrapperEl) return;
+    let statsBtn = (typeof this.wrapperEl.querySelector === 'function' ? this.wrapperEl.querySelector('#stats-to-menu-btn') : null) as HTMLButtonElement | null;
     if (!statsBtn && typeof document !== 'undefined') {
       statsBtn = document.createElement('button') as HTMLButtonElement;
       statsBtn.id = 'stats-to-menu-btn';
       statsBtn.className = 'external-nav-tab right-tab';
       statsBtn.innerHTML = 'Menú &gt;';
       statsBtn.title = 'Ir al Menú de Sala';
-      this.containerEl.appendChild(statsBtn);
+      this.wrapperEl.insertBefore(statsBtn, this.wrapperEl.firstChild);
     }
     this.slideToMenuBtn = statsBtn;
-
-    if (this.slideToMenuBtn) {
-      this.slideToMenuBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.slideToLeft();
-        if (this.onSlideToMenu) {
-          this.onSlideToMenu();
-        } else {
-          this.events.onSlideToMenu?.();
-        }
-      });
-    }
   }
 
   public close(): void {
     if (this.overlayEl) {
+      this.overlayEl.classList?.add?.('u-hidden');
       this.overlayEl.style.display = 'none';
       this.overlayEl.style.pointerEvents = 'none';
     }
@@ -398,7 +416,10 @@ export class MatchStatsPanel {
       this.overlayEl.parentNode.removeChild(this.overlayEl);
     }
     this.overlayEl = null;
+    this.wrapperEl = null;
     this.containerEl = null;
+    this.element = null;
     this.slideToMenuBtn = null;
+    this.isListenerBound = false;
   }
 }

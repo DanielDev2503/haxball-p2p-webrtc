@@ -395,17 +395,26 @@ describe('Game Scoring Engine & Ball Kinematics (Phase 1)', () => {
           id: '',
           className: '',
           style: {},
+          classList: {
+            add: () => {},
+            remove: () => {},
+            toggle: () => {},
+            contains: () => false
+          },
           children: [] as any[],
           innerHTML: '',
           appendChild: (c: any) => {
             if (c.id) createdElements[c.id] = c;
             if (c.className && c.className.includes('match-stats-card')) createdElements['match-stats-card'] = c;
+            if (c.className && c.className.includes('match-stats-wrapper')) createdElements['match-stats-wrapper'] = c;
             el.children.push(c);
             return c;
           },
           removeChild: () => {},
           querySelector: (sel: string) => {
             if (sel === '.match-stats-card') return createdElements['match-stats-card'];
+            if (sel === '.match-stats-wrapper') return createdElements['match-stats-wrapper'];
+            if (sel === '#stats-to-menu-btn') return createdElements['stats-to-menu-btn'];
             return null;
           },
           addEventListener: () => {}
@@ -454,9 +463,9 @@ describe('Game Scoring Engine & Ball Kinematics (Phase 1)', () => {
       modal.show(statsList);
       expect(modal.isOpen()).toBe(true);
 
-      const overlay = (globalThis as any).document.getElementById('matchStatsModal');
+      const overlay = (globalThis as any).document.getElementById('match-stats-overlay') || (globalThis as any).document.getElementById('matchStatsModal');
       expect(overlay).not.toBeNull();
-      const card = overlay.children.find((c: any) => c.className?.includes('match-stats-card')) || overlay;
+      const card = createdElements['match-stats-card'] || overlay;
       expect(card.innerHTML).toContain('Beta');
       expect(card.innerHTML).toContain('MVP');
       expect(card.innerHTML).toContain('350');

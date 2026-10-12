@@ -63,15 +63,35 @@ export class RoomLobby {
       console.warn('[RoomLobby] Element "#lobbyModal" was not found in DOM.');
     } else {
       this.overlayEl.classList.add('room-lobby-container', 'modal-overlay', 'modal-backdrop');
-      const content = this.overlayEl.querySelector('.modal-content') as HTMLElement | null;
+      let wrapper = this.overlayEl.querySelector('.room-lobby-wrapper') as HTMLElement | null;
+      const content = this.overlayEl.querySelector('.modal-content, .room-lobby-modal') as HTMLElement | null;
+      if (!wrapper && content) {
+        wrapper = document.createElement('div');
+        wrapper.className = 'room-lobby-wrapper';
+        wrapper.style.position = 'relative';
+        wrapper.style.display = 'flex';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.justifyContent = 'center';
+        wrapper.style.width = 'min(94vw, 860px)';
+        wrapper.style.maxWidth = '860px';
+        wrapper.style.maxHeight = '100%';
+        wrapper.style.overflow = 'visible';
+        wrapper.style.pointerEvents = 'none';
+        if (content.parentNode && typeof content.parentNode.insertBefore === 'function') {
+          content.parentNode.insertBefore(wrapper, content);
+          wrapper.appendChild(content);
+        }
+      }
       if (content) {
         content.classList.add('room-lobby-modal', 'modal-container');
-        content.style.width = 'min(94vw, 860px)';
+        content.style.width = '100%';
         content.style.maxWidth = '860px';
         content.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 90px)';
         content.style.overflowY = 'auto';
+        content.style.overflowX = 'hidden';
         content.style.boxSizing = 'border-box';
         content.style.position = 'relative';
+        content.style.pointerEvents = 'auto';
       }
     }
 
@@ -327,9 +347,11 @@ export class RoomLobby {
   }
 
   public renderStatsNavigationTab(): void {
-    const container = this.overlayEl?.querySelector('.room-lobby-modal, .modal-content') as HTMLElement | null;
+    const wrapper = this.overlayEl?.querySelector('.room-lobby-wrapper') as HTMLElement | null;
+    const content = this.overlayEl?.querySelector('.room-lobby-modal, .modal-content') as HTMLElement | null;
+    const container = wrapper || content || this.overlayEl;
     if (container) {
-      let statsBtn = container.querySelector('#menu-to-stats-btn') as HTMLButtonElement | null;
+      let statsBtn = this.overlayEl?.querySelector('#menu-to-stats-btn') as HTMLButtonElement | null;
       if (!statsBtn && typeof document !== 'undefined') {
         statsBtn = document.createElement('button');
         statsBtn.id = 'menu-to-stats-btn';
@@ -337,14 +359,22 @@ export class RoomLobby {
         statsBtn.innerHTML = '&lt; Puntuaciones';
         statsBtn.title = 'Ver puntuaciones del partido';
         statsBtn.style.display = 'none';
-        container.appendChild(statsBtn);
+        if (wrapper && content && typeof wrapper.insertBefore === 'function') {
+          wrapper.insertBefore(statsBtn, content);
+        } else {
+          container.appendChild(statsBtn);
+        }
       }
       this.menuToStatsBtn = statsBtn;
-      if (this.menuToStatsBtn) {
+      if (this.menuToStatsBtn && !(this.menuToStatsBtn as any)._boundNav) {
+        (this.menuToStatsBtn as any)._boundNav = true;
         this.menuToStatsBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           this.hide();
           this.onShowStats?.();
+          if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('stats:navigate-to-stats'));
+          }
         });
       }
     }
