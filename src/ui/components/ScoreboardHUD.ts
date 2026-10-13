@@ -20,32 +20,262 @@ export class ScoreboardHUD {
   private wifiSlot: HTMLElement | null = null;
   private goalBannerEl: HTMLElement | null = null;
   private goalBannerTimeout: any = null;
+
+  // Cyber-Pitch Top Banner & Perimeter
+  private roomInfoEl: HTMLElement | null = null;
+  private roomNameBadgeEl: HTMLElement | null = null;
+  private roomIdEl: HTMLElement | null = null;
+  private redTeamTagEl: HTMLElement | null = null;
+  private blueTeamTagEl: HTMLElement | null = null;
+  private audioBtnEl: HTMLElement | null = null;
+  private menuBtnEl: HTMLElement | null = null;
+  private settingsBtnEl: HTMLElement | null = null;
+  private themeBtnEl: HTMLElement | null = null;
+
+  // Panoramic Full-Viewport Carousel (100vw)
+  private carouselViewportEl: HTMLElement | null = null;
+  private carouselTrackEl: HTMLElement | null = null;
+  private slideStatsEl: HTMLElement | null = null;
+  private slideLobbyEl: HTMLElement | null = null;
+  private currentSlideIndex: number = 0;
+
   public onMenuToggle?: () => void;
   public gameApp?: any = null;
   public uiStateMachine?: UIStateMachine | null = null;
 
   constructor() {
+    this.renderSkeleton();
+    this.cacheElements();
+    this.initEventListeners();
+    this.applyTheme($theme.get());
+  }
+
+  /**
+   * Instancia el esqueleto visual completo del HUD y el carrusel panorámico (100vw).
+   */
+  public renderSkeleton(): void {
+    if (typeof document === 'undefined') return;
+
+    this.ensureCarousel();
+    this.ensureTopBanner();
+  }
+
+  private ensureCarousel(): void {
+    if (typeof document === 'undefined') return;
+
+    this.carouselViewportEl = (document.querySelector('.carousel-viewport') || document.getElementById('carouselViewport')) as HTMLElement | null;
+    this.carouselTrackEl = (document.querySelector('.carousel-track') || document.getElementById('carouselTrack')) as HTMLElement | null;
+    this.slideStatsEl = document.getElementById('slide-stats') || (document.querySelector('.carousel-slide#slide-stats') as HTMLElement | null);
+    this.slideLobbyEl = document.getElementById('slide-lobby') || (document.querySelector('.carousel-slide#slide-lobby') as HTMLElement | null);
+
+    if (!this.carouselViewportEl && document.body) {
+      const parent = document.getElementById('app-root') || document.body;
+      const viewport = document.createElement('div');
+      viewport.className = 'carousel-viewport';
+      viewport.id = 'carouselViewport';
+
+      const track = document.createElement('div');
+      track.className = 'carousel-track';
+      track.id = 'carouselTrack';
+
+      const slideStats = document.createElement('div');
+      slideStats.className = 'carousel-slide';
+      slideStats.id = 'slide-stats';
+
+      const slideLobby = document.createElement('div');
+      slideLobby.className = 'carousel-slide';
+      slideLobby.id = 'slide-lobby';
+
+      track.appendChild(slideStats);
+      track.appendChild(slideLobby);
+      viewport.appendChild(track);
+      parent.appendChild(viewport);
+
+      this.carouselViewportEl = viewport;
+      this.carouselTrackEl = track;
+      this.slideStatsEl = slideStats;
+      this.slideLobbyEl = slideLobby;
+    }
+  }
+
+  private ensureTopBanner(): void {
+    if (typeof document === 'undefined') return;
+
+    let banner = (document.querySelector('.hud-top-banner') || document.querySelector('.hud-container')) as HTMLElement | null;
+    if (banner && !banner.classList.contains('hud-top-banner')) {
+      banner.classList.add('hud-top-banner');
+    }
+
+    const hasScores = Boolean(document.getElementById('redScore') && document.getElementById('blueScore'));
+    if (!hasScores && banner) {
+      // 1. Izquierda: Contenedor del nombre de sala y código: [ <Nombre Sala> - ID: <RoomID> ]
+      const topLeft = document.createElement('div');
+      topLeft.className = 'hud-top-left';
+
+      const roomInfo = document.createElement('div');
+      roomInfo.className = 'hud-room-info';
+      roomInfo.id = 'hudRoomInfo';
+
+      const leftBracket = document.createElement('span');
+      leftBracket.className = 'hud-bracket';
+      leftBracket.textContent = '[';
+
+      const roomName = document.createElement('span');
+      roomName.id = 'roomNameBadge';
+      roomName.className = 'room-name-text';
+      roomName.textContent = 'Lobby';
+
+      const roomSep = document.createElement('span');
+      roomSep.className = 'hud-room-sep';
+      roomSep.id = 'roomSepId';
+      roomSep.textContent = ' - ID: ';
+
+      const roomId = document.createElement('span');
+      roomId.id = 'roomIdBadge';
+      roomId.className = 'room-id-text';
+      roomId.textContent = 'LOCAL';
+
+      const rightBracket = document.createElement('span');
+      rightBracket.className = 'hud-bracket';
+      rightBracket.textContent = ']';
+
+      roomInfo.appendChild(leftBracket);
+      roomInfo.appendChild(roomName);
+      roomInfo.appendChild(roomSep);
+      roomInfo.appendChild(roomId);
+      roomInfo.appendChild(rightBracket);
+      topLeft.appendChild(roomInfo);
+
+      // 2. Centro: Marcador continuo con acrónimos coloreados y reloj digital de partido
+      const capsule = document.createElement('div');
+      capsule.className = 'scoreboard-capsule hud-scoreboard-center bg-slate-900/10 border-slate-900/15 text-slate-800 dark:bg-slate-950/70 dark:border-cyan-500/20 dark:text-slate-100 dark:shadow-[0_4px_20px_rgba(0,229,255,0.08)]';
+      capsule.id = 'scoreboardCapsule';
+
+      const scoreDisplay = document.createElement('div');
+      scoreDisplay.className = 'hud-score-display';
+
+      const tilde1 = document.createElement('span');
+      tilde1.className = 'hud-tilde';
+      tilde1.textContent = '~';
+
+      const redTeam = document.createElement('span');
+      redTeam.className = 'hud-team-tag team-red';
+      redTeam.id = 'redTeamTag';
+      redTeam.textContent = '[BAR]';
+
+      const redScore = document.createElement('span');
+      redScore.id = 'redScore';
+      redScore.className = 'team-score score-red';
+      redScore.textContent = '0';
+
+      const scoreDiv = document.createElement('span');
+      scoreDiv.className = 'score-divider';
+      scoreDiv.textContent = '-';
+
+      const blueScore = document.createElement('span');
+      blueScore.id = 'blueScore';
+      blueScore.className = 'team-score score-blue';
+      blueScore.textContent = '0';
+
+      const blueTeam = document.createElement('span');
+      blueTeam.className = 'hud-team-tag team-blue';
+      blueTeam.id = 'blueTeamTag';
+      blueTeam.textContent = '[MAD]';
+
+      const tilde2 = document.createElement('span');
+      tilde2.className = 'hud-tilde';
+      tilde2.textContent = '~';
+
+      scoreDisplay.appendChild(tilde1);
+      scoreDisplay.appendChild(redTeam);
+      scoreDisplay.appendChild(redScore);
+      scoreDisplay.appendChild(scoreDiv);
+      scoreDisplay.appendChild(blueScore);
+      scoreDisplay.appendChild(blueTeam);
+      scoreDisplay.appendChild(tilde2);
+
+      const clockContainer = document.createElement('div');
+      clockContainer.className = 'match-clock-container hud-time-pill';
+      clockContainer.id = 'matchClockContainer';
+
+      const clockBracketL = document.createElement('span');
+      clockBracketL.className = 'hud-bracket';
+      clockBracketL.textContent = '[';
+
+      const clockIcon = document.createElement('span');
+      clockIcon.className = 'clock-icon';
+      clockIcon.id = 'clockIconSlot';
+
+      const matchTimer = document.createElement('span');
+      matchTimer.id = 'matchTimer';
+      matchTimer.className = 'match-clock';
+      matchTimer.textContent = '00:00';
+
+      const clockBracketR = document.createElement('span');
+      clockBracketR.className = 'hud-bracket';
+      clockBracketR.textContent = ']';
+
+      clockContainer.appendChild(clockBracketL);
+      clockContainer.appendChild(clockIcon);
+      clockContainer.appendChild(matchTimer);
+      clockContainer.appendChild(clockBracketR);
+
+      const goldenGoal = document.createElement('span');
+      goldenGoal.id = 'goldenGoalBadge';
+      goldenGoal.className = 'golden-goal-badge u-hidden';
+      goldenGoal.textContent = 'GOL DE ORO';
+
+      capsule.appendChild(scoreDisplay);
+      capsule.appendChild(clockContainer);
+      capsule.appendChild(goldenGoal);
+
+      // 3. Derecha: Los 4 botones circulares de 32x32px
+      const topRight = document.createElement('div');
+      topRight.className = 'hud-top-right top-bar-right';
+
+      const audioBtn = document.createElement('button');
+      audioBtn.id = 'audio-toggle-btn';
+      audioBtn.className = 'hud-btn-circle icon-btn';
+      audioBtn.title = 'Audio (Mute / Unmute)';
+      audioBtn.textContent = '🔊';
+
+      const menuBtn = document.createElement('button');
+      menuBtn.id = 'btn-menu';
+      menuBtn.className = 'hud-btn-circle icon-btn menu-btn';
+      menuBtn.setAttribute('data-alias', 'menu-toggle-btn');
+      menuBtn.title = 'Menú (Esc)';
+      menuBtn.textContent = '☰';
+
+      const settingsBtn = document.createElement('button');
+      settingsBtn.id = 'top-settings-btn';
+      settingsBtn.className = 'hud-btn-circle icon-btn';
+      settingsBtn.title = 'Ajustes (Teclas)';
+      settingsBtn.textContent = '⚙';
+
+      const themeBtn = document.createElement('button');
+      themeBtn.id = 'theme-toggle-btn';
+      themeBtn.className = 'hud-btn-circle icon-btn theme-toggle-btn';
+      themeBtn.title = 'Cambiar Tema (Claro / Oscuro)';
+
+      topRight.appendChild(audioBtn);
+      topRight.appendChild(menuBtn);
+      topRight.appendChild(settingsBtn);
+      topRight.appendChild(themeBtn);
+
+      banner.appendChild(topLeft);
+      banner.appendChild(capsule);
+      banner.appendChild(topRight);
+    }
+  }
+
+  private cacheElements(): void {
+    if (typeof document === 'undefined') return;
+
     this.capsuleEl = (document.querySelector('.scoreboard-capsule') || document.querySelector('.scoreboard')) as HTMLElement | null;
-    this.hudContainerEl = document.querySelector('.hud-container') as HTMLElement | null;
-    this.matchClockContainerEl = document.querySelector('.match-clock-container') as HTMLElement | null;
+    this.hudContainerEl = (document.querySelector('.hud-top-banner') || document.querySelector('.hud-container')) as HTMLElement | null;
+    this.matchClockContainerEl = (document.querySelector('.match-clock-container') || document.getElementById('matchClockContainer')) as HTMLElement | null;
     this.clockSlot = document.getElementById('clockIconSlot');
     this.wifiSlot = document.getElementById('wifiIconSlot');
-    this.goalBannerEl = document.getElementById('hudGoalBanner');
-    if (!this.goalBannerEl && typeof document !== 'undefined' && document.body) {
-      this.goalBannerEl = document.createElement('div');
-      this.goalBannerEl.id = 'hudGoalBanner';
-      this.goalBannerEl.className = 'hud-goal-banner';
-      this.goalBannerEl.style.position = 'fixed';
-      this.goalBannerEl.style.top = '60px';
-      this.goalBannerEl.style.left = '50%';
-      this.goalBannerEl.style.transform = 'translateX(-50%)';
-      this.goalBannerEl.style.zIndex = '999';
-      this.goalBannerEl.style.pointerEvents = 'none';
-      this.goalBannerEl.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-      this.goalBannerEl.style.opacity = '0';
-      this.goalBannerEl.style.display = 'none';
-      document.body.appendChild(this.goalBannerEl);
-    }
 
     this.redScoreEl = document.getElementById('redScore');
     if (!this.redScoreEl) {
@@ -69,46 +299,99 @@ export class ScoreboardHUD {
       console.warn('[ScoreboardHUD] Element "#pingValue" was not found in DOM.');
     }
 
-    this.pingDotEl = document.getElementById('pingDot') || document.querySelector('.stat-dot') as HTMLElement | null;
+    this.pingDotEl = document.getElementById('pingDot') || (document.querySelector('.stat-dot') as HTMLElement | null);
 
     this.fpsEl = document.getElementById('fpsValue');
     if (!this.fpsEl) {
       console.warn('[ScoreboardHUD] Element "#fpsValue" was not found in DOM.');
     }
 
-    // Inicializar tokens y estilos base de ScoreboardHUD
-    this.applyTheme($theme.get());
+    // Top banner elements
+    this.roomInfoEl = document.getElementById('hudRoomInfo') || (document.querySelector('.hud-room-info') as HTMLElement | null);
+    this.roomNameBadgeEl = document.getElementById('roomNameBadge');
+    this.roomIdEl = document.getElementById('roomIdBadge') || document.getElementById('roomIdText');
+    this.redTeamTagEl = document.getElementById('redTeamTag');
+    this.blueTeamTagEl = document.getElementById('blueTeamTag');
 
-    // Botón de alternancia de menú de sala (#btn-menu / #menu-toggle-btn) para todos los jugadores (Host y No-Host)
-    const menuBtn = document.getElementById('btn-menu') || document.getElementById('menu-toggle-btn');
-    if (menuBtn && !menuBtn.dataset?.listenerBound) {
-      if (menuBtn.dataset) menuBtn.dataset.listenerBound = 'true';
-      menuBtn.addEventListener('click', (e) => {
+    // Botones top right
+    this.audioBtnEl = document.getElementById('audio-toggle-btn');
+    this.menuBtnEl = document.getElementById('btn-menu') || document.getElementById('menu-toggle-btn');
+    this.settingsBtnEl = document.getElementById('top-settings-btn') || document.getElementById('btn-settings-toggle');
+    this.themeBtnEl = document.getElementById('theme-toggle-btn');
+
+    // Carrusel
+    this.carouselViewportEl = (document.querySelector('.carousel-viewport') || document.getElementById('carouselViewport')) as HTMLElement | null;
+    this.carouselTrackEl = (document.querySelector('.carousel-track') || document.getElementById('carouselTrack')) as HTMLElement | null;
+    this.slideStatsEl = document.getElementById('slide-stats') || (document.querySelector('.carousel-slide#slide-stats') as HTMLElement | null);
+    this.slideLobbyEl = document.getElementById('slide-lobby') || (document.querySelector('.carousel-slide#slide-lobby') as HTMLElement | null);
+
+    // Goal notification banner
+    this.goalBannerEl = document.getElementById('hudGoalBanner');
+    if (!this.goalBannerEl && document.body) {
+      this.goalBannerEl = document.createElement('div');
+      this.goalBannerEl.id = 'hudGoalBanner';
+      this.goalBannerEl.className = 'hud-goal-banner';
+      this.goalBannerEl.style.position = 'fixed';
+      this.goalBannerEl.style.top = '60px';
+      this.goalBannerEl.style.left = '50%';
+      this.goalBannerEl.style.transform = 'translateX(-50%)';
+      this.goalBannerEl.style.zIndex = '999';
+      this.goalBannerEl.style.pointerEvents = 'none';
+      this.goalBannerEl.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      this.goalBannerEl.style.opacity = '0';
+      this.goalBannerEl.style.display = 'none';
+      document.body.appendChild(this.goalBannerEl);
+    }
+  }
+
+  private initEventListeners(): void {
+    // Botón 1 (Audio): Alterna mute
+    if (this.audioBtnEl && !this.audioBtnEl.dataset?.listenerBound) {
+      if (this.audioBtnEl.dataset) this.audioBtnEl.dataset.listenerBound = 'true';
+      this.audioBtnEl.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const phase = this.gameApp?.matchPhase ?? ($matchPhase.get());
-        if (phase === MatchPhase.STOPPED) return;
-        if (this.uiStateMachine) {
-          this.uiStateMachine.toggleModal('teamSelect');
-        } else if (this.onMenuToggle) {
-          this.onMenuToggle();
-        }
+        e.stopImmediatePropagation();
+        this.toggleAudio();
       });
     }
 
-    // Botón Switch de Modo Oscuro / Claro en el HUD superior
-    const themeBtn = document.getElementById('theme-toggle-btn');
-    if (themeBtn) {
-      themeBtn.addEventListener('click', () => {
+    // Botón 2 (Menú): Alterna el despliegue del panel central
+    if (this.menuBtnEl && !this.menuBtnEl.dataset?.listenerBound) {
+      if (this.menuBtnEl.dataset) this.menuBtnEl.dataset.listenerBound = 'true';
+      this.menuBtnEl.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleMenu();
+      });
+    }
+
+    // Botón 3 (Ajustes): Abre el modal de configuración
+    if (this.settingsBtnEl && !this.settingsBtnEl.dataset?.listenerBound) {
+      if (this.settingsBtnEl.dataset) this.settingsBtnEl.dataset.listenerBound = 'true';
+      this.settingsBtnEl.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        this.openSettings();
+      });
+    }
+
+    // Botón 4 (Tema): Conmuta modo oscuro/claro
+    if (this.themeBtnEl && !this.themeBtnEl.dataset?.listenerBound) {
+      if (this.themeBtnEl.dataset) this.themeBtnEl.dataset.listenerBound = 'true';
+      this.themeBtnEl.addEventListener('click', () => {
         toggleTheme();
       });
 
       this.unsubs.push(
         $theme.subscribe((theme) => {
           const isDark = theme === 'dark';
-          themeBtn.innerHTML = '';
-          renderIcon(themeBtn, isDark ? Sun : Moon, { width: 16, height: 16, stroke: isDark ? '#F59E0B' : '#0284C7' });
-          themeBtn.title = isDark ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Oscuro';
+          if (this.themeBtnEl) {
+            this.themeBtnEl.innerHTML = '';
+            renderIcon(this.themeBtnEl, isDark ? Sun : Moon, { width: 16, height: 16, stroke: isDark ? '#F59E0B' : '#0284C7' });
+            this.themeBtnEl.title = isDark ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Oscuro';
+          }
         })
       );
     }
@@ -150,6 +433,124 @@ export class ScoreboardHUD {
     );
   }
 
+  // ==========================================================================
+  // MÉTODOS PÚBLICOS DEL CARRUSEL PANORÁMICO
+  // ==========================================================================
+
+  /**
+   * Muestra la diapositiva de Estadísticas aplicando translateX(0vw)
+   */
+  public showStatsSlide(): void {
+    this.currentSlideIndex = 0;
+    if (this.carouselTrackEl) {
+      this.carouselTrackEl.style.transform = 'translateX(0vw)';
+    }
+  }
+
+  /**
+   * Muestra la diapositiva de Lobby / Menú de Sala aplicando translateX(-100vw)
+   */
+  public showLobbySlide(): void {
+    this.currentSlideIndex = 1;
+    if (this.carouselTrackEl) {
+      this.carouselTrackEl.style.transform = 'translateX(-100vw)';
+    }
+  }
+
+  public getTrackElement(): HTMLElement | null {
+    return this.carouselTrackEl;
+  }
+
+  public getViewportElement(): HTMLElement | null {
+    return this.carouselViewportEl;
+  }
+
+  public getStatsSlide(): HTMLElement | null {
+    return this.slideStatsEl;
+  }
+
+  public getLobbySlide(): HTMLElement | null {
+    return this.slideLobbyEl;
+  }
+
+  public getCurrentSlideIndex(): number {
+    return this.currentSlideIndex;
+  }
+
+  // ==========================================================================
+  // ACCIONES Y DISPARADORES DE EVENTOS
+  // ==========================================================================
+
+  public toggleAudio(): boolean {
+    if (this.gameApp?.audioManager) {
+      this.gameApp.audioManager.isMuted = !this.gameApp.audioManager.isMuted;
+      const isMuted = this.gameApp.audioManager.isMuted;
+      this.updateAudioButtonState(isMuted);
+      return isMuted;
+    }
+    return false;
+  }
+
+  public updateAudioButtonState(isMuted: boolean): void {
+    if (this.audioBtnEl) {
+      this.audioBtnEl.textContent = isMuted ? '🔇' : '🔊';
+      this.audioBtnEl.title = isMuted ? 'Audio Silenciado' : 'Audio Activado';
+    }
+  }
+
+  public toggleMenu(): void {
+    const phase = this.gameApp?.matchPhase ?? ($matchPhase.get());
+    if (phase === MatchPhase.STOPPED) return;
+    if (this.uiStateMachine) {
+      this.uiStateMachine.toggleModal('teamSelect');
+    } else if (this.onMenuToggle) {
+      this.onMenuToggle();
+    }
+  }
+
+  public openSettings(): void {
+    if (this.gameApp?.settingsModal) {
+      this.gameApp.settingsModal.open();
+    } else if (this.gameApp?.keybindModal) {
+      this.gameApp.keybindModal.open();
+    } else {
+      const modal = document.getElementById('settingsModal');
+      if (modal) {
+        modal.classList.remove('u-hidden');
+        modal.style.display = 'flex';
+      }
+    }
+  }
+
+  public getRoomInfoElement(): HTMLElement | null {
+    return this.roomInfoEl;
+  }
+
+  public setRoomInfo(name: string, roomId?: string): void {
+    if (this.roomNameBadgeEl) {
+      this.roomNameBadgeEl.textContent = name;
+    }
+    if (this.roomIdEl && roomId !== undefined) {
+      this.roomIdEl.textContent = roomId;
+    }
+    if (this.roomInfoEl) {
+      this.roomInfoEl.setAttribute('data-room-name', name);
+    }
+  }
+
+  public setTeamTags(redTag: string = 'BAR', blueTag: string = 'MAD'): void {
+    if (this.redTeamTagEl) {
+      this.redTeamTagEl.textContent = `[${redTag}]`;
+    }
+    if (this.blueTeamTagEl) {
+      this.blueTeamTagEl.textContent = `[${blueTag}]`;
+    }
+  }
+
+  // ==========================================================================
+  // TEMAS Y ESTADOS DE PARTIDO
+  // ==========================================================================
+
   public applyTheme(theme: 'light' | 'dark'): void {
     const isDark = theme === 'dark';
 
@@ -168,10 +569,8 @@ export class ScoreboardHUD {
       this.capsuleEl.classList.toggle('scoreboard-dark', isDark);
       this.capsuleEl.classList.toggle('scoreboard-light', !isDark);
 
-      // Variantes reactivas de Tailwind v4 y tokens solicitados:
-      // Modo Claro: bg-slate-900/10 border-slate-900/15 text-slate-800 backdrop-blur-md
-      // Modo Oscuro: dark:bg-slate-950/70 dark:border-cyan-500/20 dark:text-slate-100 backdrop-blur-md dark:shadow-[0_4px_20px_rgba(0,229,255,0.08)]
-      const lightTokens = ['bg-slate-900/10', 'border-slate-900/15', 'text-slate-800', 'backdrop-blur-md'];
+      // Compatibilidad con pruebas reactivas de clases de Tailwind
+      const lightTokens = ['bg-slate-900/10', 'border-slate-900/15', 'text-slate-800'];
       const darkTokens = ['dark:bg-slate-950/70', 'dark:border-cyan-500/20', 'dark:text-slate-100', 'dark:shadow-[0_4px_20px_rgba(0,229,255,0.08)]'];
 
       for (const t of [...lightTokens, ...darkTokens]) {
@@ -255,9 +654,9 @@ export class ScoreboardHUD {
     if (!this.goalBannerEl) return;
     const assistText = assister ? `(Asistencia: ${assister})` : '(Sin asistencia)';
     this.goalBannerEl.innerHTML = `
-      <div style="background: rgba(15, 23, 42, 0.9); border: 2px solid #00E5FF; box-shadow: 0 0 20px rgba(0, 229, 255, 0.4); border-radius: 12px; padding: 10px 24px; text-align: center; color: #fff; font-family: 'Zen Dots', 'Inter', sans-serif;">
+      <div style="background: rgba(10, 16, 26, 0.96); border: 2px solid #00E5FF; box-shadow: 0 0 20px rgba(0, 229, 255, 0.4); border-radius: 12px; padding: 10px 24px; text-align: center; color: #fff; font-family: 'Space Grotesk', var(--font-mono), sans-serif;">
         <div style="font-size: 1.25rem; font-weight: 900; color: #00E5FF; text-shadow: 0 0 10px #00E5FF;">¡GOL DE ${scorer.toUpperCase()}!</div>
-        <div style="font-size: 0.85rem; color: #94A3B8; margin-top: 4px;">${assistText}</div>
+        <div style="font-size: 0.85rem; color: #8fa0b5; margin-top: 4px;">${assistText}</div>
       </div>
     `;
     this.goalBannerEl.style.display = 'block';

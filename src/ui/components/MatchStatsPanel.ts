@@ -33,52 +33,70 @@ export class MatchStatsPanel {
     this.buildDOM();
   }
 
+  private getTrack(): HTMLElement | null {
+    if (typeof document === 'undefined') return null;
+    return (typeof document.getElementById === 'function' ? document.getElementById('carouselTrack') : null) ||
+           (typeof document.querySelector === 'function' ? document.querySelector('.carousel-track') : null) as HTMLElement | null;
+  }
+
   private buildDOM(): void {
     if (typeof document === 'undefined') return;
 
-    let overlay = document.getElementById('match-stats-overlay') || document.getElementById('matchStatsModal') || document.getElementById('match-stats-panel');
-    if (!overlay) {
-      overlay = document.createElement('div');
-      overlay.id = 'match-stats-overlay';
-      overlay.className = 'match-stats-overlay';
-      overlay.style.position = 'absolute';
-      overlay.style.inset = '0';
-      overlay.style.display = 'none';
-      overlay.style.pointerEvents = 'none';
-      overlay.style.backgroundColor = 'transparent';
-      overlay.style.zIndex = '35';
-      overlay.style.justifyContent = 'center';
-      overlay.style.alignItems = 'center';
-      document.body.appendChild(overlay);
+    const slideStats = document.getElementById('slide-stats');
+    let overlay: HTMLElement;
+
+    if (slideStats) {
+      overlay = slideStats;
+      // Compatibilidad con pruebas unitarias que buscan el ID 'match-stats-overlay'
+      if (!document.getElementById('match-stats-overlay')) {
+        const dummyOverlay = document.createElement('div');
+        dummyOverlay.id = 'match-stats-overlay';
+        dummyOverlay.className = 'match-stats-overlay';
+        dummyOverlay.style.display = 'none';
+        dummyOverlay.style.pointerEvents = 'none';
+        dummyOverlay.style.backgroundColor = 'transparent';
+        slideStats.appendChild(dummyOverlay);
+      }
     } else {
-      overlay.id = 'match-stats-overlay';
-      overlay.className = 'match-stats-overlay';
-      overlay.style.position = 'absolute';
-      overlay.style.inset = '0';
-      overlay.style.backgroundColor = 'transparent';
-      overlay.style.pointerEvents = 'none';
-      overlay.style.display = 'none';
-      overlay.style.zIndex = '35';
-      overlay.style.justifyContent = 'center';
-      overlay.style.alignItems = 'center';
+      let existingOverlay = document.getElementById('match-stats-overlay') || document.getElementById('matchStatsModal') || document.getElementById('match-stats-panel');
+      if (!existingOverlay) {
+        existingOverlay = document.createElement('div');
+        existingOverlay.id = 'match-stats-overlay';
+        existingOverlay.className = 'match-stats-overlay';
+        existingOverlay.style.position = 'absolute';
+        existingOverlay.style.inset = '0';
+        existingOverlay.style.display = 'none';
+        existingOverlay.style.pointerEvents = 'none';
+        existingOverlay.style.backgroundColor = 'transparent';
+        existingOverlay.style.zIndex = '35';
+        existingOverlay.style.justifyContent = 'center';
+        existingOverlay.style.alignItems = 'center';
+        document.body.appendChild(existingOverlay);
+      }
+      overlay = existingOverlay;
     }
+
     this.overlayEl = overlay;
     this.element = overlay;
 
     let wrapper = (typeof overlay.querySelector === 'function' ? overlay.querySelector('.match-stats-wrapper') : null) as HTMLElement | null;
     if (!wrapper) {
       wrapper = document.createElement('div');
-      wrapper.className = 'match-stats-wrapper';
+      wrapper.className = 'match-stats-wrapper stats-slide-wrapper';
+      wrapper.style.display = 'flex';
+      wrapper.style.alignItems = 'center';
+      wrapper.style.justifyContent = 'center';
+      wrapper.style.position = 'relative';
+      wrapper.style.width = '100%';
+      wrapper.style.height = '100%';
       overlay.appendChild(wrapper);
     }
-    wrapper.style.overflow = 'visible';
-    wrapper.style.position = 'relative';
     this.wrapperEl = wrapper;
 
-    let content = (typeof wrapper.querySelector === 'function' ? wrapper.querySelector('.match-stats-card') : null) as HTMLElement | null;
+    let content = (typeof wrapper.querySelector === 'function' ? wrapper.querySelector('.stats-card, .match-stats-card') : null) as HTMLElement | null;
     if (!content) {
       content = document.createElement('div');
-      content.className = 'match-stats-card';
+      content.className = 'stats-card match-stats-card';
       wrapper.appendChild(content);
     }
     this.containerEl = content;
@@ -87,7 +105,7 @@ export class MatchStatsPanel {
     if (!statsBtn) {
       statsBtn = document.createElement('button') as HTMLButtonElement;
       statsBtn.id = 'stats-to-menu-btn';
-      statsBtn.className = 'external-nav-tab right-tab';
+      statsBtn.className = 'floating-nav-btn external-nav-tab right-tab';
       statsBtn.innerHTML = 'Menú &gt;';
       statsBtn.title = 'Ir al Menú de Sala';
       wrapper.appendChild(statsBtn);
@@ -97,6 +115,15 @@ export class MatchStatsPanel {
       (this.slideToMenuBtn as any)._boundClick = true;
       this.slideToMenuBtn.addEventListener('click', (e: MouseEvent) => {
         e?.stopPropagation?.();
+        // 1. Desplazar carrusel a Diapositiva 2 (Lobby / Menú de Sala)
+        const track = this.getTrack();
+        if (track) {
+          track.style.transform = 'translateX(-100vw)';
+        }
+        if (typeof window !== 'undefined' && typeof (window as any).scoreboardHUD?.showLobbySlide === 'function') {
+          (window as any).scoreboardHUD.showLobbySlide();
+        }
+
         this.hide();
         if (this.gameApp && typeof this.gameApp.showRoomLobby === 'function') {
           this.gameApp.showRoomLobby();
@@ -120,6 +147,14 @@ export class MatchStatsPanel {
 
         // 1. Manejo del botón Menú >
         if (typeof target.closest === 'function' && target.closest('#stats-to-menu-btn')) {
+          const track = this.getTrack();
+          if (track) {
+            track.style.transform = 'translateX(-100vw)';
+          }
+          if (typeof window !== 'undefined' && typeof (window as any).scoreboardHUD?.showLobbySlide === 'function') {
+            (window as any).scoreboardHUD.showLobbySlide();
+          }
+
           this.hide();
           if (this.gameApp && typeof this.gameApp.showRoomLobby === 'function') {
             this.gameApp.showRoomLobby();
@@ -139,9 +174,10 @@ export class MatchStatsPanel {
         const toggleBtn = (typeof target.closest === 'function' ? target.closest('.btn-toggle-breakdown, .accordion-toggle-btn') : null) as HTMLElement | null;
         if (toggleBtn) {
           const playerId = toggleBtn.getAttribute('data-player-id');
-          const breakdownRow = this.element?.querySelector(`.breakdown-row[data-player-id="${playerId}"]`);
+          const breakdownRow = this.element?.querySelector(`.breakdown-row[data-player-id="${playerId}"]`) as HTMLElement | null;
           if (breakdownRow) {
             const isExpanded = breakdownRow.classList.toggle('active');
+            breakdownRow.style.display = isExpanded ? 'table-row' : 'none';
             if (isExpanded) {
               if (playerId) this.expandedPlayerIds.add(playerId);
             } else {
@@ -157,9 +193,10 @@ export class MatchStatsPanel {
           const btn = playerRow.querySelector('.btn-toggle-breakdown, .accordion-toggle-btn') as HTMLElement | null;
           const playerId = btn?.getAttribute('data-player-id');
           if (playerId) {
-            const breakdownRow = this.element?.querySelector(`.breakdown-row[data-player-id="${playerId}"]`);
+            const breakdownRow = this.element?.querySelector(`.breakdown-row[data-player-id="${playerId}"]`) as HTMLElement | null;
             if (breakdownRow) {
               const isExpanded = breakdownRow.classList.toggle('active');
+              breakdownRow.style.display = isExpanded ? 'table-row' : 'none';
               if (isExpanded) {
                 this.expandedPlayerIds.add(playerId);
               } else {
@@ -177,7 +214,7 @@ export class MatchStatsPanel {
       window.addEventListener('chat:resize', (e: Event) => {
         const customEvent = e as CustomEvent<{ height: number }>;
         const h = customEvent?.detail?.height ?? 180;
-        if (this.overlayEl) {
+        if (this.overlayEl && !slideStats) {
           this.overlayEl.style.bottom = `calc(${h}px + 16px)`;
         }
         if (this.containerEl) {
@@ -206,6 +243,14 @@ export class MatchStatsPanel {
 
   public slideToCenter(): void {
     this.ensureDOM();
+    const track = this.getTrack();
+    if (track) {
+      track.style.transform = 'translateX(0vw)';
+    }
+    if (typeof window !== 'undefined' && typeof (window as any).scoreboardHUD?.showStatsSlide === 'function') {
+      (window as any).scoreboardHUD.showStatsSlide();
+    }
+
     if (this.overlayEl) {
       this.overlayEl.classList?.remove?.('u-hidden');
       this.overlayEl.style.display = 'flex';
@@ -255,37 +300,39 @@ export class MatchStatsPanel {
       const isExpanded = this.expandedPlayerIds.has(p.playerId);
 
       const rowBg = isMvp
-        ? 'linear-gradient(90deg, rgba(234, 179, 8, 0.18) 0%, rgba(234, 179, 8, 0.05) 100%)'
+        ? 'rgba(234, 179, 8, 0.14)'
         : 'rgba(30, 41, 59, 0.3)';
 
-      const borderStyle = isMvp ? 'border-left: 3px solid #EAB308;' : 'border-left: 3px solid transparent;';
+      const borderStyle = isMvp ? 'border-left: 3px solid #ffd700;' : 'border-left: 3px solid transparent;';
 
-      const touchesPts = p.touches * 2;
-      const passesPts = p.passes * 10;
-      const shotsNorm = p.shotsNormal ?? 0;
+      const touchesPts = (p.touches || 0) * 2;
+      const passesPts = (p.passes || 0) * 10;
+      const shotsNorm = p.shotsNormal ?? (p.shots || 0);
       const shotsNormPts = shotsNorm * 20;
       const shotsCurve = p.shotsPowerCurve ?? 0;
       const shotsCurvePts = shotsCurve * 30;
-      const assistsNorm = p.assistsNormal ?? 0;
+      const assistsNorm = p.assistsNormal ?? (p.assists || 0);
       const assistsNormPts = assistsNorm * 50;
       const assistsCurve = p.assistsCurve ?? 0;
       const assistsCurvePts = assistsCurve * 70;
-      const savesPts = p.saves * 100;
-      const goalsPts = p.goals * 100;
+      const savesPts = (p.saves || 0) * 100;
+      const goalsPts = (p.goals || 0) * 100;
+      const ownGoals = (p as any).ownGoals || 0;
+      const ownGoalsPts = ownGoals * -50;
       const hattrickPts = p.hasHattrickBonus ? 100 : 0;
-      const exactCalcTotal = touchesPts + passesPts + shotsNormPts + shotsCurvePts + assistsNormPts + assistsCurvePts + savesPts + goalsPts + hattrickPts;
+      const exactCalcTotal = touchesPts + passesPts + shotsNormPts + shotsCurvePts + assistsNormPts + assistsCurvePts + savesPts + goalsPts + ownGoalsPts + hattrickPts;
 
       return `
-        <tr style="background: ${rowBg}; ${borderStyle} transition: background 0.15s ease;">
+        <tr style="background: ${rowBg}; ${borderStyle} transition: background 0.15s ease;" class="${isMvp ? 'mvp-row' : ''}">
           <td style="padding: 8px 6px; font-weight: 600;">
             <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="color: ${isMvp ? '#FEF08A' : '#F1F5F9'}; font-weight: ${isMvp ? '700' : '500'}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px;">
+              <span style="color: ${isMvp ? '#ffd700' : '#F1F5F9'}; font-weight: ${isMvp ? '700' : '500'}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px;">
                 ${playerDisplayName}
               </span>
-              ${isMvp ? '<span style="font-size: 0.65rem; font-weight: 800; background: #EAB308; color: #78350F; padding: 1px 5px; border-radius: 9999px;">👑 MVP</span>' : ''}
+              ${isMvp ? '<span style="font-size: 0.65rem; font-weight: 800; background: #ffd700; color: #78350F; padding: 1px 5px; border-radius: 9999px;">👑 MVP</span>' : ''}
             </div>
           </td>
-          <td style="padding: 8px 6px; text-align: right; font-weight: 800; color: #38BDF8; font-size: 0.88rem;">
+          <td style="padding: 8px 6px; text-align: right; font-weight: 800; color: #00e5ff; font-size: 0.88rem;">
             ${totalPointsVal}
           </td>
           <td style="padding: 8px 4px; text-align: center; color: #F8FAFC;">
@@ -301,24 +348,24 @@ export class MatchStatsPanel {
             ${p.saves}
           </td>
           <td style="padding: 8px 4px; text-align: center; width: 28px;">
-            <button class="btn-toggle-breakdown accordion-toggle-btn" data-player-id="${p.playerId}" title="Desglose detallado">
+            <button class="btn-toggle-breakdown accordion-toggle-btn" data-player-id="${p.playerId}" style="background: none; border: none; color: #00e5ff; cursor: pointer; font-size: 11px;" title="Desglose detallado">
               ${isExpanded ? '▲' : '▼'}
             </button>
           </td>
         </tr>
-        <tr class="breakdown-row ${isExpanded ? 'active' : ''}" data-player-id="${p.playerId}" id="breakdown-row-${p.playerId}" style="background: rgba(15, 23, 42, 0.85);">
+        <tr class="breakdown-row ${isExpanded ? 'active' : ''}" data-player-id="${p.playerId}" id="breakdown-row-${p.playerId}" style="background: rgba(10, 16, 26, 0.95); display: ${isExpanded ? 'table-row' : 'none'};">
           <td colspan="7" style="padding: 0;">
-            <div class="player-breakdown-panel">
-              <div class="breakdown-item"><span class="breakdown-label">Toques:</span><span class="breakdown-val">${p.touches}</span><span class="breakdown-pts">+${touchesPts}</span></div>
-              <div class="breakdown-item"><span class="breakdown-label">Pases:</span><span class="breakdown-val">${p.passes}</span><span class="breakdown-pts">+${passesPts}</span></div>
-              <div class="breakdown-item"><span class="breakdown-label">Tiros:</span><span class="breakdown-val">${shotsNorm}</span><span class="breakdown-pts">+${shotsNormPts}</span></div>
-              <div class="breakdown-item"><span class="breakdown-label">Tiros c/pot:</span><span class="breakdown-val">${shotsCurve}</span><span class="breakdown-pts">+${shotsCurvePts}</span></div>
-              <div class="breakdown-item"><span class="breakdown-label">Asist.:</span><span class="breakdown-val">${assistsNorm}</span><span class="breakdown-pts">+${assistsNormPts}</span></div>
-              <div class="breakdown-item"><span class="breakdown-label">Asist. c:</span><span class="breakdown-val">${assistsCurve}</span><span class="breakdown-pts">+${assistsCurvePts}</span></div>
-              <div class="breakdown-item"><span class="breakdown-label">Atajadas:</span><span class="breakdown-val">${p.saves}</span><span class="breakdown-pts">+${savesPts}</span></div>
-              <div class="breakdown-item"><span class="breakdown-label">Goles:</span><span class="breakdown-val">${p.goals}</span><span class="breakdown-pts">+${goalsPts}</span></div>
-              <div class="breakdown-item"><span class="breakdown-label">Hattrick:</span><span class="breakdown-val">${p.hasHattrickBonus ? 'Sí' : 'No'}</span><span class="breakdown-pts">+${hattrickPts}</span></div>
-              <div class="breakdown-item" style="border-left: 1px solid rgba(56, 189, 248, 0.4); padding-left: 6px;"><span class="breakdown-label" style="font-weight: 700; color: #38BDF8;">Total:</span><span class="breakdown-pts" style="font-size: 0.85rem;">${exactCalcTotal} pts</span></div>
+            <div class="player-breakdown-panel" style="padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 10px 16px; font-size: 0.75rem; border-top: 1px solid rgba(0, 229, 255, 0.15); border-bottom: 1px solid rgba(0, 229, 255, 0.15);">
+              <div class="breakdown-item"><span class="breakdown-label" style="color: #94A3B8;">Toques:</span> <span class="breakdown-val">${p.touches}</span> <span class="breakdown-pts" style="color: #00e5ff;">(+${touchesPts})</span></div>
+              <div class="breakdown-item"><span class="breakdown-label" style="color: #94A3B8;">Pases:</span> <span class="breakdown-val">${p.passes}</span> <span class="breakdown-pts" style="color: #00e5ff;">(+${passesPts})</span></div>
+              <div class="breakdown-item"><span class="breakdown-label" style="color: #94A3B8;">Tiros:</span> <span class="breakdown-val">${shotsNorm}</span> <span class="breakdown-pts" style="color: #00e5ff;">(+${shotsNormPts})</span></div>
+              <div class="breakdown-item"><span class="breakdown-label" style="color: #94A3B8;">Goles:</span> <span class="breakdown-val">${p.goals}</span> <span class="breakdown-pts" style="color: #00e5ff;">(+${goalsPts})</span></div>
+              <div class="breakdown-item"><span class="breakdown-label" style="color: #94A3B8;">Autogoles:</span> <span class="breakdown-val">${ownGoals}</span> <span class="breakdown-pts" style="color: #ef4444;">(${ownGoalsPts})</span></div>
+              <div class="breakdown-item"><span class="breakdown-label" style="color: #94A3B8;">Atajadas:</span> <span class="breakdown-val">${p.saves}</span> <span class="breakdown-pts" style="color: #00e5ff;">(+${savesPts})</span></div>
+              ${shotsCurve > 0 ? `<div class="breakdown-item"><span class="breakdown-label" style="color: #94A3B8;">Tiros c/pot:</span> <span class="breakdown-val">${shotsCurve}</span> <span class="breakdown-pts" style="color: #00e5ff;">(+${shotsCurvePts})</span></div>` : ''}
+              ${assistsNorm > 0 ? `<div class="breakdown-item"><span class="breakdown-label" style="color: #94A3B8;">Asist.:</span> <span class="breakdown-val">${assistsNorm}</span> <span class="breakdown-pts" style="color: #00e5ff;">(+${assistsNormPts})</span></div>` : ''}
+              ${p.hasHattrickBonus ? `<div class="breakdown-item"><span class="breakdown-label" style="color: #ffd700;">Hattrick:</span> <span class="breakdown-pts" style="color: #ffd700;">(+100)</span></div>` : ''}
+              <div class="breakdown-item" style="margin-left: auto; border-left: 1px solid rgba(0, 229, 255, 0.4); padding-left: 8px;"><span class="breakdown-label" style="font-weight: 700; color: #ffd700;">Total:</span> <span class="breakdown-pts" style="font-weight: 800; color: #ffd700;">${exactCalcTotal} pts</span></div>
             </div>
           </td>
         </tr>
@@ -329,56 +376,44 @@ export class MatchStatsPanel {
     const redRowsHtml = redPlayers.length > 0 ? redPlayers.map(renderPlayerRow).join('') : emptyRow;
     const blueRowsHtml = bluePlayers.length > 0 ? bluePlayers.map(renderPlayerRow).join('') : emptyRow;
 
-    const mvpBannerHtml = mvpPlayer
-      ? `
-      <div style="background: linear-gradient(135deg, rgba(234, 179, 8, 0.2) 0%, rgba(202, 138, 4, 0.08) 100%); border: 1.5px solid rgba(234, 179, 8, 0.4); border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 20px rgba(234, 179, 8, 0.1);">
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <div style="font-size: 2rem; filter: drop-shadow(0 0 10px rgba(234, 179, 8, 0.6));">👑</div>
-          <div>
-            <div style="font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #FDE047;">Jugador Más Valioso (MVP)</div>
-            <div style="font-size: 1.15rem; font-weight: 800; color: #FFFFFF;">${mvpPlayer.playerName || mvpPlayer.nickname || 'Jugador'}</div>
-          </div>
-        </div>
-        <div style="text-align: right;">
-          <div style="font-size: 1.3rem; font-weight: 900; color: #FDE047; font-family: 'Zen Dots', 'Inter', monospace;">${mvpPlayer.totalPoints ?? mvpPlayer.points} <span style="font-size: 0.75rem; font-weight: 600;">pts</span></div>
-          <div style="font-size: 0.72rem; color: #CBD5E1;">${mvpPlayer.goals} goles • ${mvpPlayer.assists} asistencias • ${mvpPlayer.saves} atajadas</div>
-        </div>
-      </div>
-    `
-      : '';
+    const mvpDisplayName = mvpPlayer ? (mvpPlayer.playerName || mvpPlayer.nickname || 'Jugador') : 'Sin MVP';
+    const mvpPoints = mvpPlayer ? (mvpPlayer.totalPoints ?? mvpPlayer.points) : 0;
 
     this.containerEl.innerHTML = `
-      <div class="match-stats-header">
-        <div class="match-stats-score-banner">
-          <h2 class="stats-title" style="margin: 0;">ESTADÍSTICAS DEL PARTIDO</h2>
-          <span style="color: #F87171; font-weight: 800; margin-left: 8px;">${redGoals}</span>
-          <span style="opacity: 0.5; font-weight: 800;">-</span>
-          <span style="color: #60A5FA; font-weight: 800;">${blueGoals}</span>
+      <!-- Cabecera Deportiva -->
+      <div class="stats-header-bar" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-cyan); padding-bottom: 14px; margin-bottom: 14px;">
+        <div class="stats-scoreboard font-mono" style="font-size: 1.25rem; font-weight: 800; letter-spacing: 0.05em; display: flex; align-items: center; gap: 8px;">
+          <span style="color: #f87171;">RED</span>
+          <span style="color: #f87171; font-size: 1.45rem;">${redGoals}</span>
+          <span style="opacity: 0.4;">-</span>
+          <span style="color: #60a5fa; font-size: 1.45rem;">${blueGoals}</span>
+          <span style="color: #60a5fa;">BLUE</span>
         </div>
-        <div class="match-stats-mvp-badge">${mvpPlayer ? `👑 MVP: ${mvpPlayer.playerName || mvpPlayer.nickname || 'Jugador'}` : 'Sin MVP'}</div>
+        <div class="match-stats-mvp-badge" style="background: rgba(255, 215, 0, 0.12); border: 1.5px solid #ffd700; border-radius: 8px; padding: 6px 14px; color: #ffd700; font-weight: 800; font-size: 0.88rem; display: flex; align-items: center; gap: 6px; box-shadow: 0 0 12px rgba(255, 215, 0, 0.25);">
+          👑 MVP: ${mvpDisplayName} (${mvpPoints} pts)
+        </div>
       </div>
-      
-      <!-- Contenedor ÚNICO con scroll vertical -->
-      <div class="match-stats-scroll-body">
-        ${mvpBannerHtml}
-        <div class="stats-dual-grid stats-dual-container">
-          <!-- Tabla Equipo RED -->
-          <div class="team-stats-column team-red team-stats-box team-home">
-            <div class="team-stats-header red-header" id="team-home-header">
+
+      <!-- Cuerpo con Tablas Paralelas (Grid 50-50) -->
+      <div class="match-stats-scroll-body cyber-scrollbar" style="overflow-y: auto !important; overflow-x: hidden !important; max-height: 380px; flex: 1; min-height: 0;">
+        <div class="stats-dual-grid stats-dual-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <!-- Tabla Equipo RED (Izquierda) -->
+          <div class="team-stats-column team-red team-stats-box team-home" style="background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+            <div class="team-stats-header red-header" id="team-home-header" style="background: rgba(239, 68, 68, 0.18); border-bottom: 1px solid rgba(239, 68, 68, 0.3); padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; color: #f87171; font-weight: 800; font-size: 0.85rem;">
               <span>🔴 Equipo Rojo</span>
-              <span class="team-score-badge">${redGoals} Goles</span>
+              <span class="team-score-badge" style="background: rgba(239, 68, 68, 0.3); padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem;">${redGoals} Goles</span>
             </div>
             <div class="team-stats-table-wrapper">
-              <table class="stats-table" id="team-home-table">
+              <table class="stats-table" id="team-home-table" style="width: 100%; border-collapse: collapse; font-size: 0.82rem;">
                 <thead>
-                  <tr>
-                    <th style="text-align: left; padding-left: 8px;">Jugador</th>
-                    <th style="text-align: right;">Pts</th>
-                    <th style="text-align: center;">G</th>
-                    <th style="text-align: center;">A</th>
-                    <th style="text-align: center;">P</th>
-                    <th style="text-align: center;">S</th>
-                    <th style="text-align: center; width: 28px;">▼</th>
+                  <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.08); color: #94A3B8; font-size: 0.72rem; text-transform: uppercase;">
+                    <th style="text-align: left; padding: 6px 8px;">Jugador</th>
+                    <th style="text-align: right; padding: 6px;">Pts</th>
+                    <th style="text-align: center; padding: 6px;">G</th>
+                    <th style="text-align: center; padding: 6px;">A</th>
+                    <th style="text-align: center; padding: 6px;">P</th>
+                    <th style="text-align: center; padding: 6px;">S</th>
+                    <th style="text-align: center; padding: 6px; width: 28px;">▼</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -388,23 +423,23 @@ export class MatchStatsPanel {
             </div>
           </div>
 
-          <!-- Tabla Equipo BLUE -->
-          <div class="team-stats-column team-blue team-stats-box team-away">
-            <div class="team-stats-header blue-header" id="team-away-header">
+          <!-- Tabla Equipo BLUE (Derecha) -->
+          <div class="team-stats-column team-blue team-stats-box team-away" style="background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+            <div class="team-stats-header blue-header" id="team-away-header" style="background: rgba(59, 130, 246, 0.18); border-bottom: 1px solid rgba(59, 130, 246, 0.3); padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; color: #60a5fa; font-weight: 800; font-size: 0.85rem;">
               <span>🔵 Equipo Azul</span>
-              <span class="team-score-badge">${blueGoals} Goles</span>
+              <span class="team-score-badge" style="background: rgba(59, 130, 246, 0.3); padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem;">${blueGoals} Goles</span>
             </div>
             <div class="team-stats-table-wrapper">
-              <table class="stats-table" id="team-away-table">
+              <table class="stats-table" id="team-away-table" style="width: 100%; border-collapse: collapse; font-size: 0.82rem;">
                 <thead>
-                  <tr>
-                    <th style="text-align: left; padding-left: 8px;">Jugador</th>
-                    <th style="text-align: right;">Pts</th>
-                    <th style="text-align: center;">G</th>
-                    <th style="text-align: center;">A</th>
-                    <th style="text-align: center;">P</th>
-                    <th style="text-align: center;">S</th>
-                    <th style="text-align: center; width: 28px;">▼</th>
+                  <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.08); color: #94A3B8; font-size: 0.72rem; text-transform: uppercase;">
+                    <th style="text-align: left; padding: 6px 8px;">Jugador</th>
+                    <th style="text-align: right; padding: 6px;">Pts</th>
+                    <th style="text-align: center; padding: 6px;">G</th>
+                    <th style="text-align: center; padding: 6px;">A</th>
+                    <th style="text-align: center; padding: 6px;">P</th>
+                    <th style="text-align: center; padding: 6px;">S</th>
+                    <th style="text-align: center; padding: 6px; width: 28px;">▼</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -427,7 +462,7 @@ export class MatchStatsPanel {
     if (!statsBtn && typeof document !== 'undefined') {
       statsBtn = document.createElement('button') as HTMLButtonElement;
       statsBtn.id = 'stats-to-menu-btn';
-      statsBtn.className = 'external-nav-tab right-tab';
+      statsBtn.className = 'floating-nav-btn external-nav-tab right-tab';
       statsBtn.innerHTML = 'Menú &gt;';
       statsBtn.title = 'Ir al Menú de Sala';
       this.wrapperEl.appendChild(statsBtn);

@@ -6,40 +6,49 @@
   <title>Haxball Web P2P - Custom Deterministic Physics</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/ui/styles/haxball.css">
 </head>
 <body>
   <div id="app-root" class="game-container u-hidden" style="flex-direction: column; height: 100vh; overflow: hidden; background: #060e18;">
-    <!-- Top HUD Navigation (Classic Haxball Floating Pill & Utilities) -->
-    <header class="hud-container">
-      <div class="brand">
-        <span class="brand-title">HAXBALL</span>
-        <span class="brand-badge">AERO 2D</span>
-        <span id="roomNameBadge" class="room-badge">Lobby</span>
+    <!-- Top HUD Navigation (Cyber-Pitch Perimeter Frame) -->
+    <header class="hud-container hud-top-banner" id="hudTopBanner">
+      <div class="hud-top-left">
+        <div class="hud-room-info" id="hudRoomInfo">
+          <span class="hud-bracket">[</span>
+          <span id="roomNameBadge" class="room-name-text">Lobby</span>
+          <span class="hud-room-sep" id="roomSepId"> - ID: </span>
+          <span id="roomIdBadge" class="room-id-text">LOCAL</span>
+          <span class="hud-bracket">]</span>
+        </div>
       </div>
 
-      <!-- Scoreboard Center Capsule (Classic Haxball Top Pill: [Red] 0 - 0 [Blue] | 00:00) -->
-      <div class="scoreboard-capsule bg-slate-900/10 border-slate-900/15 text-slate-800 backdrop-blur-md dark:bg-slate-950/70 dark:border-cyan-500/20 dark:text-slate-100 dark:shadow-[0_4px_20px_rgba(0,229,255,0.08)]">
-        <span class="hud-team-box hud-team-red">RED</span>
-        <span id="redScore" class="team-score score-red">0</span>
-        <span class="score-divider">-</span>
-        <span id="blueScore" class="team-score score-blue">0</span>
-        <span class="hud-team-box hud-team-blue">BLUE</span>
-        <span class="hud-pipe">|</span>
-        <div class="match-clock-container">
+      <!-- Scoreboard Center Capsule (Marcador continuo con acrónimos coloreados y reloj digital) -->
+      <div class="scoreboard-capsule hud-scoreboard-center bg-slate-900/10 border-slate-900/15 text-slate-800 dark:bg-slate-950/70 dark:border-cyan-500/20 dark:text-slate-100 dark:shadow-[0_4px_20px_rgba(0,229,255,0.08)]">
+        <div class="hud-score-display">
+          <span class="hud-tilde">~</span>
+          <span class="hud-team-tag team-red" id="redTeamTag">[BAR]</span>
+          <span id="redScore" class="team-score score-red">0</span>
+          <span class="score-divider">-</span>
+          <span id="blueScore" class="team-score score-blue">0</span>
+          <span class="hud-team-tag team-blue" id="blueTeamTag">[MAD]</span>
+          <span class="hud-tilde">~</span>
+        </div>
+        <div class="match-clock-container hud-time-pill" id="matchClockContainer">
+          <span class="hud-bracket">[</span>
           <span class="clock-icon" id="clockIconSlot"></span>
           <span id="matchTimer" class="match-clock">00:00</span>
+          <span class="hud-bracket">]</span>
         </div>
         <span id="goldenGoalBadge" class="golden-goal-badge u-hidden">GOL DE ORO</span>
       </div>
 
-      <!-- Compact Utility Buttons in Top-Right Corner -->
-      <div class="top-bar-right">
-        <button id="audio-toggle-btn" class="icon-btn" title="Audio (Mute / Unmute)">🔊</button>
-        <button id="btn-menu" class="icon-btn menu-btn" data-alias="menu-toggle-btn" title="Menú (Esc)">☰ Menu</button>
-        <button id="top-settings-btn" class="icon-btn" title="Opciones (Teclas)">⚙</button>
-        <button id="theme-toggle-btn" class="icon-btn theme-toggle-btn" title="Cambiar Tema (Claro / Oscuro)"></button>
+      <!-- 4 Botones Circulares de 32x32px en la esquina superior derecha -->
+      <div class="hud-top-right top-bar-right">
+        <button id="audio-toggle-btn" class="hud-btn-circle icon-btn" title="Audio (Mute / Unmute)">🔊</button>
+        <button id="btn-menu" class="hud-btn-circle icon-btn menu-btn" data-alias="menu-toggle-btn" title="Menú (Esc)">☰</button>
+        <button id="top-settings-btn" class="hud-btn-circle icon-btn" title="Ajustes (Teclas)">⚙</button>
+        <button id="theme-toggle-btn" class="hud-btn-circle icon-btn theme-toggle-btn" title="Cambiar Tema (Claro / Oscuro)"></button>
       </div>
 
       <!-- Hidden compatibility anchor for legacy store hooks and tests -->
@@ -52,17 +61,32 @@
       </div>
     </header>
 
+    <!-- Carrusel Panorámico Full-Viewport (100vw) -->
+    <div class="carousel-viewport" id="carouselViewport">
+      <div class="carousel-track" id="carouselTrack">
+        <div class="carousel-slide" id="slide-stats">
+          <!-- Diapositiva 1: Estadísticas -->
+        </div>
+        <div class="carousel-slide" id="slide-lobby">
+          <!-- Diapositiva 2: Menú de Sala / RoomLobby -->
+        </div>
+      </div>
+    </div>
+
     <!-- Área Superior: Canvas y HUD -->
     <main id="game-view" style="flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; position: relative;">
       <canvas id="gameCanvas" class="game-canvas"></canvas>
 
       <!-- Widget de Telemetría: Ping, FPS y Sparkline en Tiempo Real (Esquina Inferior Izquierda) -->
-      <div id="statsMonitor" class="stats-monitor-widget fixed bottom-3 left-3 z-30 select-none pointer-events-none">
+      <div id="statsMonitor" class="stats-monitor-widget hud-telemetry select-none pointer-events-none">
         <div id="statsConnText" class="stats-line font-mono text-xs text-cyan-400">Net: Direct (STUN/P2P)</div>
         <div id="statsPingText" class="stats-line font-mono text-xs text-white">Ping: 0ms - 0ms</div>
         <div id="statsFpsText" class="stats-line font-mono text-xs text-white">Fps: 60</div>
         <canvas id="statsSparkline" class="stats-sparkline" width="110" height="28"></canvas>
       </div>
+
+      <!-- Anchor del Radar (Esquina Inferior Derecha) -->
+      <div id="hudRadarAnchor" class="hud-radar-anchor pointer-events-none"></div>
 
       <!-- In-Game Collapsible Room Menu (Classic Haxball Room Window) -->
       <div id="ingame-menu" class="ingame-menu-overlay modal-overlay modal-backdrop room-lobby-container hidden">
@@ -225,7 +249,7 @@
     </main>
 
     <!-- Área Inferior: Chat Flotante Desacoplado Clásico con Drag Handle -->
-    <footer id="chat-section" class="chat-section">
+    <footer id="chat-section" class="chat-section hud-chat-anchor">
       <div id="chat-container" class="chat-box">
         <div id="chat-resize-handle" class="chat-resize-handle" title="Arrastra para redimensionar el chat"></div>
         <div id="chat-messages" class="chat-messages"></div>
@@ -247,163 +271,165 @@
     <button id="ctxBan" class="context-menu-item danger">🚫 Banear (Ban)</button>
   </div>
 
-  <!-- Nickname Gatekeeper Modal (Futurism Aero Floating White Glass) -->
+  <!-- Nickname Gatekeeper Modal [I] (Cyber-Pitch Central Card) -->
   <div id="nicknameGatekeeperModal" class="modal-overlay modal-backdrop modal-nickname u-hidden" style="z-index: 300;">
-    <div class="modal-content modal-container custom-scrollbar" id="gatekeeperModalContent" style="max-width: 390px; text-align: center; position: relative;">
-      <button id="gatekeeperThemeToggleBtn" class="icon-btn theme-toggle-btn" style="position: absolute; top: 14px; right: 14px;" type="button" title="Alternar tema"></button>
-      <div id="gatekeeperAvatar" class="avatar-holo"></div>
-      <h2 class="modal-title" style="margin-top: 2px;">Bienvenido a BallHax</h2>
-      <p style="color: var(--text-secondary); font-size: 0.88rem; font-weight: 500; margin-top: -4px;">
-        Ingresa tu nombre de piloto para unirte a la arena P2P.
-      </p>
-      <div class="form-group" style="text-align: left; margin-top: 8px;">
-        <label class="form-label" for="gatekeeperNicknameInput">Tu Nickname (1 a 15 caracteres)</label>
-        <input id="gatekeeperNicknameInput" class="form-input" type="text" placeholder="Ej. Maradona" maxlength="15" autofocus />
-        <div id="gatekeeperError" style="display: none; color: #ef4444; font-size: 0.75rem; margin-top: 4px; font-weight: 600;"></div>
+    <div class="gatekeeper-card modal-content" id="gatekeeperModalContent">
+      <button id="gatekeeperThemeToggleBtn" class="hud-btn-circle icon-btn theme-toggle-btn" style="position: absolute; top: 16px; right: 16px;" type="button" title="Alternar tema"></button>
+      
+      <div class="gatekeeper-header" style="text-align: center; margin-bottom: 4px;">
+        <h1 class="gatekeeper-title font-sports">
+          LEGACYX-GO
+        </h1>
+        <p class="gatekeeper-subtitle">
+          Simulador de Fútbol Físico P2P WebRTC
+        </p>
       </div>
-      <button id="btnSaveNickname" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 0.95rem; margin-top: 4px; font-weight: 700;">
-        Siguiente ▶
+
+      <div class="gatekeeper-form" style="width: 100%; display: flex; flex-direction: column; gap: 12px;">
+        <label class="form-label" for="gatekeeperNicknameInput" style="font-size: 11px; font-weight: 800; color: var(--neon-cyan); letter-spacing: 1px; text-transform: uppercase; text-align: center; margin: 0;">
+          TU NICKNAME / APODO
+        </label>
+        <input
+          id="gatekeeperNicknameInput"
+          class="form-input gatekeeper-input"
+          type="text"
+          placeholder="Ej. Vitão_10"
+          maxlength="15"
+          autocomplete="off"
+          autofocus
+        />
+        <div id="gatekeeperError" style="display: none; color: #ef4444; font-size: 12px; font-weight: 600; text-align: center;">
+          El nick debe tener entre 2 y 15 caracteres
+        </div>
+      </div>
+
+      <button id="btnSaveNickname" class="btn btn-gatekeeper-cta" type="button">
+        ENTRAR AL JUEGO ▶
       </button>
     </div>
   </div>
 
 
-  <!-- Room Lobby Modal Overlay (Futurism Aero White Glass) -->
+  <!-- Room Lobby Modal Overlay [L] (Cyber-Pitch Server Browser) -->
   <div id="lobbyModal" class="modal-overlay modal-backdrop lobby-container room-lobby-container u-hidden" style="z-index: 250;">
-    <div class="room-lobby-wrapper">
-      <button id="lobby-to-stats-btn" class="external-nav-tab right-tab" style="display: none;" title="Ver estadísticas del partido">Estadísticas &gt;</button>
-      <div class="modal-content room-lobby-modal modal-container custom-scrollbar" style="position: relative; width: 100%; max-width: 860px;">
-      <button id="lobbyThemeToggleBtn" class="icon-btn theme-toggle-btn" style="position: absolute; top: 14px; right: 14px;" type="button" title="Alternar tema"></button>
-      <h2 class="modal-title" style="margin-bottom: 2px;">Haxball P2P Arena</h2>
-
-      <!-- Barra Superior de Usuario y Estado de Señalización -->
-      <div class="lobby-user-bar">
-        <div class="lobby-user-info">
-          <div class="lobby-user-avatar" id="lobbyUserAvatar">⚽</div>
-          <span class="lobby-user-name" id="lobbyCurrentNick">Player</span>
-          <button id="btnEditNickname" class="btn btn-secondary btn-xs" title="Cambiar Nickname" type="button">✏️ Cambiar</button>
+    <div class="lobby-browser-container">
+      <!-- A. Barra Superior del Lobby -->
+      <header class="lobby-browser-topbar">
+        <div class="lobby-top-left" style="display: flex; align-items: center; gap: 14px;">
+          <span class="lobby-brand-logo font-sports" style="font-size: 20px; font-weight: 800; color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,0.6); letter-spacing: 1.5px;">
+            LEGACYX-GO
+          </span>
+          <div class="lobby-user-badge" id="lobbyUserBadge" style="display: flex; align-items: center; gap: 8px; background: rgba(18, 26, 41, 0.85); border: 1px solid var(--border-cyan); border-radius: 20px; padding: 4px 12px;">
+            <span style="font-size: 13px;">👤</span>
+            <span id="lobbyCurrentNick" style="font-size: 13px; font-weight: 700; color: #f0f8ff;">Player</span>
+            <button id="btnEditNickname" class="btn-subtle-edit" title="Editar Nickname" style="background: none; border: none; color: var(--neon-cyan); cursor: pointer; padding: 0 2px; font-size: 12px;">✏️</button>
+          </div>
+          <div class="lobby-signaling-status" id="lobbySignalingStatus" style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary);">
+            <span class="status-dot-connected" id="lobbySignalingDot"></span>
+            <span id="lobbySignalingText">Online</span>
+          </div>
         </div>
-        <div class="lobby-signaling-status" id="lobbySignalingStatus">
-          <span class="status-dot-connecting" id="lobbySignalingDot"></span>
-          <span id="lobbySignalingText">Conectando...</span>
+
+        <div class="lobby-top-center font-mono" id="lobbyCountersBadge" style="font-size: 12px; font-weight: 700; color: #cbd5e1; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(0, 229, 255, 0.2); border-radius: 6px; padding: 6px 14px;">
+          Salas Activas: <span id="lobbyRoomsCount" style="color: var(--neon-cyan);">0</span> | Jugadores Online: <span id="lobbyPlayersCount" style="color: #2ecc71;">0</span>
+        </div>
+
+        <div class="lobby-top-right" style="display: flex; align-items: center; gap: 10px;">
+          <button id="btnPracticeMode" class="btn btn-secondary btn-xs" style="padding: 7px 12px; font-size: 12px; font-weight: 700;" title="Jugar en Solitario / Práctica">
+            ⚽ Práctica
+          </button>
+          <button id="btnLobbySettings" class="hud-btn-circle icon-btn" title="Ajustes (⚙)">
+            ⚙
+          </button>
+          <button id="lobbyThemeToggleBtn" class="hud-btn-circle icon-btn theme-toggle-btn" title="Alternar Tema (☼ / ☾)">
+            ☼
+          </button>
+          <button id="btnOpenCreateRoomModal" class="btn btn-primary btn-cta-create-room" style="background: #2ecc71; color: #05150c; height: 40px; padding: 0 16px; font-weight: 800; font-size: 13px; border-radius: 8px; border: none; cursor: pointer; display: flex; align-items: center; gap: 6px; letter-spacing: 0.5px;">
+            <span>+ CREAR SALA</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- B. Barra de Filtros y Búsqueda -->
+      <div class="lobby-filter-bar">
+        <div style="flex: 1; position: relative; display: flex; align-items: center;">
+          <span style="position: absolute; left: 12px; color: var(--neon-cyan); font-size: 13px;">🔍</span>
+          <input id="lobbySearchInput" type="text" placeholder="Buscar por nombre de sala..." class="form-input" style="width: 100%; padding-left: 34px; height: 38px; background: rgba(10, 16, 26, 0.85); border: 1px solid var(--border-cyan); border-radius: 6px; color: #fff; font-size: 13px;" />
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; font-weight: 600; user-select: none;">
+            <input type="checkbox" id="filterHideFullRooms" />
+            <span>Ocultar salas llenas</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; font-weight: 600; user-select: none;">
+            <input type="checkbox" id="filterHideLockedRooms" />
+            <span>Ocultar salas con contraseña</span>
+          </label>
+          <button id="btnRefreshRooms" class="btn btn-secondary btn-xs" style="height: 38px; padding: 0 14px; display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px;" title="Actualizar lista de salas">
+            <span>⟳ Actualizar</span>
+          </button>
         </div>
       </div>
-      <input id="lobbyNickname" type="hidden" value="Player" />
+
+      <!-- C. Tabla de Servidores / Salas Públicas -->
+      <div class="room-table-container cyber-scrollbar">
+        <table class="room-table">
+          <thead>
+            <tr>
+              <th style="width: 110px;">ESTADO</th>
+              <th>NOMBRE DE LA SALA</th>
+              <th style="width: 180px;">ESTADIO</th>
+              <th style="width: 120px; text-align: center;">JUGADORES</th>
+              <th style="width: 120px; text-align: center;">PING / REGIÓN</th>
+              <th style="width: 110px; text-align: right;">ACCIÓN</th>
+            </tr>
+          </thead>
+          <tbody id="lobbyRoomList">
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Barra Inferior de Conexión Directa -->
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 8px; border-top: 1px solid rgba(0, 229, 255, 0.15); font-size: 12px;">
+        <span style="color: var(--text-secondary);">¿Tienes un ID de sala directo?</span>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input id="lobbyRoomId" type="text" placeholder="ID de sala (ej. ROOM-123)" class="form-input" style="width: 220px; height: 32px; font-size: 12px; font-family: var(--font-mono); text-transform: uppercase;" />
+          <button id="btnJoinRoom" class="btn btn-secondary btn-xs" style="height: 32px; padding: 0 14px; font-weight: 700;">Unirse</button>
+        </div>
+      </div>
+
+      <!-- Mini-Prompt Modal Flotante para Contraseña de Sala -->
+      <div id="roomPasswordPromptModal" class="modal-overlay u-hidden" style="display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.8); z-index: 50; align-items: center; justify-content: center;">
+        <div style="background: rgba(10, 16, 26, 0.98); border: 1px solid var(--border-cyan); border-radius: 10px; padding: 22px; width: 340px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.9);">
+          <h3 style="margin: 0; font-size: 14px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 6px;">
+            <span>🔒 Sala Protegida</span>
+          </h3>
+          <p id="roomPasswordPromptText" style="margin: 0; font-size: 12px; color: var(--text-secondary);">Ingresa la clave para acceder a la sala.</p>
+          <input id="roomPasswordPromptInput" type="password" placeholder="Contraseña..." class="form-input" style="height: 36px; background: rgba(18, 26, 41, 0.9); border: 1px solid var(--border-cyan); border-radius: 6px; color: #fff; padding: 0 10px; font-size: 13px;" />
+          <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <button id="btnCancelRoomPassword" class="btn btn-secondary btn-xs" style="padding: 6px 14px;">Cancelar</button>
+            <button id="btnConfirmRoomPassword" class="btn btn-primary btn-xs" style="padding: 6px 14px; background: var(--neon-cyan); color: #05150c; font-weight: 700;">Entrar</button>
+          </div>
+        </div>
+      </div>
 
       <!-- Overlay Transitorio de Conexión P2P -->
       <div id="lobbyLoadingOverlay" class="lobby-loading-overlay" style="display: none;">
         <div class="loading-spinner"></div>
-        <span id="lobbyLoadingText" class="loading-text">Conectando P2P...</span>
+        <span id="lobbyLoadingText" class="loading-text" style="color: var(--neon-cyan); font-weight: 700;">Conectando P2P...</span>
         <button id="btnCancelConnecting" class="btn btn-danger btn-xs" type="button" style="margin-top: 6px;">Cancelar</button>
-      </div>
-
-      <div style="display: flex; gap: 8px; margin-top: 4px;">
-        <button id="btnPracticeMode" class="btn btn-secondary" style="flex: 1; padding: 10px; font-size: 0.88rem;">
-          ⚽ Modo Práctica
-        </button>
-        <button id="btnOpenCreateRoomModal" class="btn btn-primary" style="flex: 1.3; padding: 10px; font-size: 0.88rem;">
-          <span id="openCreateRoomIconSlot" style="display: inline-flex; align-items: center;"></span>
-          <span>Crear Sala</span>
-        </button>
-      </div>
-
-      <div style="text-align: center; color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 1px; margin: 4px 0;">
-        — EXPLORADOR DE SALAS P2P —
-      </div>
-
-      <!-- Barra de Búsqueda y Filtro de Salas -->
-      <div class="lobby-search-bar">
-        <div class="lobby-search-input-wrap">
-          <span class="lobby-search-icon" id="lobbySearchIconSlot"></span>
-          <input id="lobbySearchInput" class="form-input lobby-search-input" type="text" placeholder="Buscar sala por nombre o ID..." />
-        </div>
-        <button id="btnRefreshRooms" class="btn btn-secondary" title="Actualizar Salas" style="padding: 8px 12px;">
-          <span id="refreshRoomsIconSlot" style="display: inline-flex; align-items: center;"></span>
-        </button>
-      </div>
-
-      <div id="lobbyRoomList" class="room-list"></div>
-
-      <!-- Conexión Directa por ID -->
-      <div style="display: flex; gap: 6px; margin-top: 4px;">
-        <input id="lobbyRoomId" class="form-input" type="text" placeholder="Unirse directo con ID de sala" style="flex: 1; padding: 8px 12px; font-size: 0.85rem;" />
-        <button id="btnJoinRoom" class="btn btn-secondary" style="padding: 8px 14px;">Unirse</button>
       </div>
     </div>
   </div>
-</div>
 
-  <!-- Dedicated Create Room Modal (Pop-up independiente Futurism Aero) -->
+  <!-- Dedicated Create Room Modal [C] (Modal Superpuesto sobre Lobby) -->
   <div id="createRoomModal" class="modal-overlay modal-backdrop u-hidden" style="display: none; z-index: 280;">
-    <div class="create-room-card modal-container custom-scrollbar" id="createRoomCard">
-      <div class="create-room-header">
-        <div class="create-room-header-title">
-          <span id="createRoomModalIconSlot" style="display: inline-flex; align-items: center;"></span>
-          <span>Crear Nueva Sala</span>
-        </div>
-        <button id="btnCloseCreateRoomModal" class="icon-btn-close" type="button" title="Cerrar ventana">✕</button>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="newRoomNameInput">Nombre de la Sala</label>
-        <input id="newRoomNameInput" class="form-input" type="text" placeholder="Ej. Estadio Aero 3v3" maxlength="30" />
-      </div>
-
-      <div class="create-room-grid">
-        <div class="form-group">
-          <label class="form-label" for="newRoomMaxPlayersInput">Máx. Jugadores (2-16)</label>
-          <input id="newRoomMaxPlayersInput" class="form-input" type="number" min="2" max="16" value="12" />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="newRoomTimeLimitInput">Tiempo Límite</label>
-          <select id="newRoomTimeLimitInput" class="form-input">
-            <option value="0">Indefinido</option>
-            <option value="1">1 minuto</option>
-            <option value="2">2 minutos</option>
-            <option value="3" selected>3 minutos</option>
-            <option value="4">4 minutos</option>
-            <option value="5">5 minutos</option>
-            <option value="7">7 minutos</option>
-            <option value="10">10 minutos</option>
-            <option value="15">15 minutos</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="newRoomScoreLimitInput">Límite de Goles</label>
-        <select id="newRoomScoreLimitInput" class="form-input">
-          <option value="0">Indefinido</option>
-          <option value="1">1 gol</option>
-          <option value="2">2 goles</option>
-          <option value="3" selected>3 goles</option>
-          <option value="4">4 goles</option>
-          <option value="5">5 goles</option>
-          <option value="7">7 goles</option>
-          <option value="10">10 goles</option>
-          <option value="15">15 goles</option>
-        </select>
-      </div>
-
-      <div class="form-group" style="margin-top: 2px;">
-        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
-          <input type="checkbox" id="newRoomIsPrivate" />
-          <span id="lockIconSlot" style="display: inline-flex; align-items: center; color: var(--aero-sky-500);"></span>
-          <span>Sala Privada (Requiere Contraseña)</span>
-        </label>
-      </div>
-
-      <div class="form-group" id="newRoomPasswordContainer" style="display: none;">
-        <label class="form-label" for="newRoomPasswordInput">Contraseña de Acceso</label>
-        <input id="newRoomPasswordInput" class="form-input" type="password" placeholder="Ingresa contraseña de la sala" />
-      </div>
-
-      <div style="display: flex; gap: 10px; margin-top: 8px;">
-        <button id="btnCancelCreateRoom" class="btn btn-secondary" type="button" style="flex: 1;">Cancelar</button>
-        <button id="btnCreateRoomSubmit" class="btn btn-primary" type="button" style="flex: 1.5;">
-          🚀 Crear y Abrir Sala
-        </button>
-      </div>
+    <button class="modal-nav-back-btn" id="btnCreateRoomBack" type="button" title="Volver al Lobby">&lt; Volver</button>
+    <button class="modal-nav-theme-btn" id="btnCreateRoomThemeToggle" type="button" title="Alternar Modo Claro / Oscuro">☼ / ☾</button>
+    
+    <div class="create-room-card modal-container cyber-scrollbar" id="createRoomCard">
+      <!-- Contenido renderizado reactivamente por CreateRoomModal -->
     </div>
   </div>
 

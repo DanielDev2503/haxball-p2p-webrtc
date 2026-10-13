@@ -4,15 +4,24 @@ import {
   DEFAULT_GAMEPLAY_CONFIG,
   sanitizeGameplayConfig
 } from '../../core/game/GameConfig';
+import { toggleTheme } from '../stores/gameStore';
 
 type NumericConfigKey = keyof typeof GAMEPLAY_CONFIG_LIMITS;
 
 export class GameplayModifierModal {
-  private modalEl: HTMLElement | null = null;
+  public modalEl: HTMLElement | null = null;
+  public cardEl: HTMLElement | null = null;
+  public backBtn: HTMLButtonElement | null = null;
+  public themeBtn: HTMLButtonElement | null = null;
+  public applyBtn: HTMLButtonElement | null = null;
+  public resetBtn: HTMLButtonElement | null = null;
+
+  public activeCategory: 'player' | 'ball' | 'mechanics' = 'player';
   private currentConfig: GameplayConfig;
   private onChangeCallback: (config: GameplayConfig) => void;
   private isHostCheck: () => boolean;
   private isMatchInProgressCheck: () => boolean;
+
   private valueDisplays: Map<NumericConfigKey, HTMLElement> = new Map();
   private sliderInputs: Map<NumericConfigKey, HTMLInputElement> = new Map();
   private toggleInputs: Map<'turboEnabled' | 'dashEnabled' | 'magnusEnabled', HTMLInputElement> = new Map();
@@ -33,262 +42,390 @@ export class GameplayModifierModal {
   private buildDOM(): void {
     if (typeof document === 'undefined') return;
 
-    const overlay = document.createElement('div');
-    overlay.id = 'gameplay-modifiers-modal';
-    overlay.className = 'ingame-menu-overlay modal-overlay modal-backdrop modifier-modal-overlay hidden';
-    overlay.style.zIndex = '9999';
-
-    const card = document.createElement('div');
-    card.className = 'gameplay-modifier-modal menu-modal-card modal-container custom-scrollbar overflow-y-auto p-4 md:p-5 rounded-2xl w-full max-w-lg md:max-w-2xl';
-    card.style.maxWidth = '780px';
-    card.style.width = '95vw';
-    card.style.maxHeight = 'calc(100vh - var(--chat-height, 180px) - 90px)';
-    card.style.overflowY = 'auto';
-    card.style.boxSizing = 'border-box';
-    card.style.marginBottom = 'auto'; // Flex centrado armónico sin colisiones con chat
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('chat:resize', (e: Event) => {
-        const customEvent = e as CustomEvent<{ height: number }>;
-        const h = customEvent?.detail?.height ?? 180;
-        card.style.maxHeight = `calc(100vh - ${h}px - 90px)`;
-      });
+    let overlay = document.getElementById('gameplay-modifiers-modal');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'gameplay-modifiers-modal';
+      overlay.className = 'ingame-menu-overlay modal-overlay modal-backdrop modifier-modal-overlay hidden';
+      document.body?.appendChild(overlay);
     }
 
-    // Header
-    const header = document.createElement('div');
-    header.className = 'menu-header';
-    header.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="font-size: 1.3rem;">⚡</span>
-        <h3>MODIFICADORES DE FÍSICAS (HOST)</h3>
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.zIndex = '10001';
+    overlay.style.display = 'none';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.background = 'rgba(0, 0, 0, 0.7)';
+    this.modalEl = overlay;
+
+    overlay.innerHTML = `
+      <!-- Botón exterior de navegación "< Volver" (Top-Left) -->
+      <button class="modal-nav-back-btn" id="btnModifiersBack" type="button" title="Volver">
+        &lt; Volver
+      </button>
+
+      <!-- Botón exterior de alternador de tema "[ ☼ / ☾ ]" (Top-Right) -->
+      <button class="modal-nav-theme-btn" id="btnModifiersThemeToggle" type="button" title="Alternar Modo Claro / Oscuro">
+        ☼ / ☾
+      </button>
+
+      <!-- Chasis Central de 2 Columnas -->
+      <div id="modifierModalCard" class="modifier-modal-card">
+        <!-- Sidebar Vertical Izquierdo (230px) -->
+        <aside class="modal-sidebar-left" style="width: 230px;">
+          <div style="padding: 0 18px 14px 18px; border-bottom: 1px solid rgba(0, 229, 255, 0.2);">
+            <h2 style="margin: 0; font-size: 14px; font-weight: 800; color: var(--neon-cyan); letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;">
+              <span>MODIFICADORES</span> <span>⚡</span>
+            </h2>
+          </div>
+
+          <nav style="display: flex; flex-direction: column; gap: 4px; margin-top: 12px; flex: 1;">
+            <button class="modal-sidebar-nav-btn active" data-cat="player" type="button">
+              <span>🏃</span> <span>Físicas de Jugador</span>
+            </button>
+            <button class="modal-sidebar-nav-btn" data-cat="ball" type="button">
+              <span>⚽</span> <span>Físicas de Balón</span>
+            </button>
+            <button class="modal-sidebar-nav-btn" data-cat="mechanics" type="button">
+              <span>⚡</span> <span>Mecánicas y Habilidades</span>
+            </button>
+          </nav>
+
+          <div style="padding: 12px 16px; border-top: 1px solid rgba(0, 229, 255, 0.15); margin-top: auto;">
+            <button id="btn-reset-physics-defaults" class="btn btn-secondary btn-xs" style="width: 100%; font-size: 11px; padding: 6px;" type="button">
+              Restablecer Valores por Defecto
+            </button>
+          </div>
+        </aside>
+
+        <!-- Panel Derecho de Controles -->
+        <main class="modifier-content-right cyber-scrollbar" style="flex: 1; overflow-y: auto !important; max-height: 100%; padding: 22px 26px; box-sizing: border-box; display: flex; flex-direction: column;">
+          
+          <!-- Categoría 1: Físicas de Jugador (7 Controles) -->
+          <div id="catPanelPlayer" class="cat-panel active" style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="border-bottom: 1px solid rgba(0, 229, 255, 0.15); padding-bottom: 8px;">
+              <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #fff;">Físicas y Dinámica de Jugador</h3>
+              <span style="font-size: 11px; color: var(--text-secondary);">Ajusta la velocidad, aceleración, dimensiones y respuesta del disco</span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;" id="playerControlsContainer"></div>
+          </div>
+
+          <!-- Categoría 2: Físicas de Balón (4 Controles) -->
+          <div id="catPanelBall" class="cat-panel" style="display: none; flex-direction: column; gap: 14px;">
+            <div style="border-bottom: 1px solid rgba(0, 229, 255, 0.15); padding-bottom: 8px;">
+              <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #fff;">Físicas y Comportamiento del Balón</h3>
+              <span style="font-size: 11px; color: var(--text-secondary);">Geometría, masa, restitución elástica y fricción de rodamiento</span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;" id="ballControlsContainer"></div>
+          </div>
+
+          <!-- Categoría 3: Mecánicas y Habilidades (8 Controles) -->
+          <div id="catPanelMechanics" class="cat-panel" style="display: none; flex-direction: column; gap: 14px;">
+            <div style="border-bottom: 1px solid rgba(0, 229, 255, 0.15); padding-bottom: 8px;">
+              <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #fff;">Mecánicas Especiales y Habilidades</h3>
+              <span style="font-size: 11px; color: var(--text-secondary);">Turbo, Dash, Efecto Magnus y gestión de estamina</span>
+            </div>
+
+            <!-- Toggles de Mecánicas -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(0, 229, 255, 0.2); border-radius: 8px; padding: 12px;">
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; cursor: pointer;">
+                <input type="checkbox" id="chkToggleDash" ${this.currentConfig.dashEnabled !== false ? 'checked' : ''} style="width: 16px; height: 16px; accent-color: var(--neon-cyan);" />
+                <span>💨 Habilitar Dash</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; cursor: pointer;">
+                <input type="checkbox" id="chkToggleTurbo" ${this.currentConfig.turboEnabled !== false ? 'checked' : ''} style="width: 16px; height: 16px; accent-color: var(--neon-cyan);" />
+                <span>⚡ Habilitar Turbo</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; cursor: pointer;">
+                <input type="checkbox" id="chkToggleMagnus" ${this.currentConfig.magnusEnabled !== false ? 'checked' : ''} style="width: 16px; height: 16px; accent-color: var(--neon-cyan);" />
+                <span>🌀 Efecto Magnus</span>
+              </label>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;" id="mechanicsControlsContainer"></div>
+          </div>
+
+          <!-- Pie del Panel de Modificadores (CTA de Sincronización) -->
+          <div style="margin-top: auto; padding-top: 14px; border-top: 1px solid rgba(0, 229, 255, 0.2);">
+            <button id="btnApplyModifiers" class="btn-cta-green" style="width: 100%; height: 44px;" type="button">
+              <span>⚡</span> <span>APLICAR Y SINCRONIZAR MODIFICADORES</span>
+            </button>
+          </div>
+
+        </main>
       </div>
-      <button class="icon-btn-close" id="btn-close-modifiers-modal" title="Cerrar">✕</button>
     `;
 
-    // Content: Grid balanceado de dos columnas en desktop
-    const content = document.createElement('div');
-    content.className = 'modifiers-grid-container grid grid-cols-1 md:grid-cols-2 gap-4';
-    content.style.marginTop = '10px';
+    this.cardEl = overlay.querySelector('.modifier-modal-card');
+    this.backBtn = overlay.querySelector('#btnModifiersBack');
+    this.themeBtn = overlay.querySelector('#btnModifiersThemeToggle');
+    this.applyBtn = overlay.querySelector('#btnApplyModifiers');
+    this.resetBtn = overlay.querySelector('#btn-reset-physics-defaults');
 
-    // Sección de Toggles para Mecánicas Avanzadas (Turbo, Dash, Magnus)
-    const togglesRow = document.createElement('div');
-    togglesRow.className = 'col-span-1 md:col-span-2 p-3 rounded-xl flex flex-wrap gap-4 items-center justify-around';
-    togglesRow.style.background = 'rgba(255, 255, 255, 0.04)';
-    togglesRow.style.border = '1px solid var(--aero-border, rgba(255, 255, 255, 0.1))';
+    this.buildControls();
+    this.setupListeners();
+  }
 
-    const toggleDefs: Array<{ key: 'turboEnabled' | 'dashEnabled' | 'magnusEnabled'; label: string; icon: string }> = [
-      { key: 'turboEnabled', label: 'Habilitar Turbo', icon: '⚡' },
-      { key: 'dashEnabled', label: 'Habilitar Dash', icon: '💨' },
-      { key: 'magnusEnabled', label: 'Habilitar Magnus', icon: '🌀' }
+  private buildControls(): void {
+    if (!this.modalEl) return;
+
+    const playerContainer = this.modalEl.querySelector('#playerControlsContainer');
+    const ballContainer = this.modalEl.querySelector('#ballControlsContainer');
+    const mechanicsContainer = this.modalEl.querySelector('#mechanicsControlsContainer');
+
+    // 1. Categoría Jugador: 7 controles
+    const playerKeys: NumericConfigKey[] = [
+      'playerMaxSpeed',
+      'playerAcceleration',
+      'kickStrength',
+      'kickMargin',
+      'playerRadius',
+      'playerMass',
+      'playerFriction'
     ];
 
-    for (const tDef of toggleDefs) {
-      const toggleWrap = document.createElement('label');
-      toggleWrap.style.display = 'inline-flex';
-      toggleWrap.style.alignItems = 'center';
-      toggleWrap.style.gap = '8px';
-      toggleWrap.style.cursor = 'pointer';
-      toggleWrap.style.userSelect = 'none';
+    // 2. Categoría Balón: 4 controles
+    const ballKeys: NumericConfigKey[] = [
+      'ballRadius',
+      'ballRestitution',
+      'ballMass',
+      'ballFriction'
+    ];
 
-      const chk = document.createElement('input');
-      chk.type = 'checkbox';
-      chk.checked = this.currentConfig[tDef.key] !== false;
-      chk.style.accentColor = 'var(--aero-sky-500, #38bdf8)';
-      chk.style.width = '16px';
-      chk.style.height = '16px';
-      chk.style.cursor = 'pointer';
+    // 3. Categoría Mecánicas: 5 numéricos
+    const mechanicsKeys: NumericConfigKey[] = [
+      'boostMultiplier',
+      'dashDistance',
+      'staminaRechargeRate',
+      'magnusCurveStrength',
+      'dashesPerFullBar'
+    ];
 
-      chk.addEventListener('change', () => {
-        if (!this.isHostCheck()) return;
-        if (this.isMatchInProgressCheck()) {
-          alert('Los modificadores de físicas solo se pueden ajustar antes de empezar una partida.');
-          this.updateUI();
-          return;
-        }
-        this.currentConfig[tDef.key] = chk.checked;
-        this.notifyChange();
-      });
-
-      this.toggleInputs.set(tDef.key, chk);
-
-      const span = document.createElement('span');
-      span.style.fontSize = '0.88rem';
-      span.style.fontWeight = '600';
-      span.textContent = `${tDef.icon} ${tDef.label}`;
-
-      toggleWrap.appendChild(chk);
-      toggleWrap.appendChild(span);
-      togglesRow.appendChild(toggleWrap);
-    }
-    content.appendChild(togglesRow);
-
-    const keys = Object.keys(GAMEPLAY_CONFIG_LIMITS) as NumericConfigKey[];
-
-    for (const key of keys) {
+    const renderSliderGroup = (key: NumericConfigKey, targetEl: Element | null, isStepper: boolean = false) => {
+      if (!targetEl) return;
       const meta = GAMEPLAY_CONFIG_LIMITS[key];
       const val = this.currentConfig[key];
 
-      const row = document.createElement('div');
-      row.className = 'modifier-row';
-      row.style.borderRadius = '12px';
-      row.style.padding = '12px 14px';
-      row.style.display = 'flex';
-      row.style.flexDirection = 'column';
-      row.style.gap = '6px';
-      row.style.minWidth = '0'; // Evita desbordamiento en el grid
+      const wrap = document.createElement('div');
+      wrap.className = 'modifier-control-row';
+      wrap.style.background = 'rgba(15, 23, 42, 0.55)';
+      wrap.style.border = '1px solid rgba(0, 229, 255, 0.15)';
+      wrap.style.borderRadius = '8px';
+      wrap.style.padding = '10px 14px';
+      wrap.style.display = 'flex';
+      wrap.style.flexDirection = 'column';
+      wrap.style.gap = '6px';
 
-      const topRow = document.createElement('div');
-      topRow.style.display = 'flex';
-      topRow.style.justifyContent = 'space-between';
-      topRow.style.alignItems = 'center';
+      const headerRow = document.createElement('div');
+      headerRow.style.display = 'flex';
+      headerRow.style.justifyContent = 'space-between';
+      headerRow.style.alignItems = 'center';
 
-      const labelWrap = document.createElement('div');
-      labelWrap.style.display = 'flex';
-      labelWrap.style.alignItems = 'center';
-      labelWrap.style.gap = '8px';
+      const label = document.createElement('span');
+      label.style.fontSize = '12px';
+      label.style.fontWeight = '700';
+      label.style.color = '#fff';
+      label.textContent = meta.label;
 
-      const labelText = document.createElement('span');
-      labelText.style.fontWeight = '600';
-      labelText.style.fontSize = '0.9rem';
-      labelText.textContent = meta.label;
+      const badge = document.createElement('span');
+      badge.style.fontSize = '12px';
+      badge.style.fontWeight = '800';
+      badge.style.color = 'var(--neon-cyan)';
+      badge.textContent = `${val}${meta.unit ? ' ' + meta.unit : ''}`;
+      this.valueDisplays.set(key, badge);
 
-      const codeBadge = document.createElement('span');
-      codeBadge.className = 'modifier-code-badge';
-      codeBadge.style.fontSize = '0.72rem';
-      codeBadge.style.padding = '2px 6px';
-      codeBadge.style.borderRadius = '4px';
-      codeBadge.style.fontFamily = 'monospace';
-      codeBadge.textContent = key;
+      headerRow.appendChild(label);
+      headerRow.appendChild(badge);
+      wrap.appendChild(headerRow);
 
-      labelWrap.appendChild(labelText);
-      labelWrap.appendChild(codeBadge);
+      if (isStepper) {
+        // Stepper [-] val [+]
+        const stepperRow = document.createElement('div');
+        stepperRow.style.display = 'flex';
+        stepperRow.style.alignItems = 'center';
+        stepperRow.style.gap = '10px';
 
-      const formatVal = (k: keyof GameplayConfig, v: any) => {
-        if (k === 'dashesPerFullBar') {
-          return `${v} (${(100 / (Number(v) || 4)).toFixed(0)}% coste)`;
-        }
-        return `${v}${meta.unit ? ' ' + meta.unit : ''}`;
-      };
+        const decBtn = document.createElement('button');
+        decBtn.type = 'button';
+        decBtn.className = 'btn btn-secondary btn-xs';
+        decBtn.textContent = '-';
+        decBtn.style.width = '28px';
+        decBtn.style.height = '28px';
 
-      const valBadge = document.createElement('span');
-      valBadge.className = 'modifier-val-badge';
-      valBadge.style.fontWeight = '700';
-      valBadge.style.fontSize = '0.9rem';
-      valBadge.style.minWidth = '65px';
-      valBadge.style.textAlign = 'right';
-      valBadge.style.fontVariantNumeric = 'tabular-nums';
-      valBadge.textContent = formatVal(key, val);
-      this.valueDisplays.set(key, valBadge);
+        const incBtn = document.createElement('button');
+        incBtn.type = 'button';
+        incBtn.className = 'btn btn-secondary btn-xs';
+        incBtn.textContent = '+';
+        incBtn.style.width = '28px';
+        incBtn.style.height = '28px';
 
-      topRow.appendChild(labelWrap);
-      topRow.appendChild(valBadge);
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = meta.min.toString();
+        slider.max = meta.max.toString();
+        slider.step = meta.step.toString();
+        slider.value = val.toString();
+        slider.style.flex = '1';
+        this.sliderInputs.set(key, slider);
 
-      const sliderRow = document.createElement('div');
-      sliderRow.style.display = 'flex';
-      sliderRow.style.alignItems = 'center';
-      sliderRow.style.gap = '10px';
+        slider.addEventListener('input', () => {
+          const num = parseFloat(slider.value);
+          this.currentConfig[key] = num;
+          badge.textContent = `${num}${meta.unit ? ' ' + meta.unit : ''}`;
+        });
 
-      const minLabel = document.createElement('span');
-      minLabel.style.fontSize = '0.72rem';
-      minLabel.style.color = 'var(--text-muted)';
-      minLabel.textContent = `${meta.min}`;
+        decBtn.addEventListener('click', () => {
+          const num = Math.max(meta.min, Math.round((this.currentConfig[key] - meta.step) * 100) / 100);
+          this.currentConfig[key] = num;
+          slider.value = num.toString();
+          badge.textContent = `${num}${meta.unit ? ' ' + meta.unit : ''}`;
+        });
 
-      const slider = document.createElement('input');
-      slider.type = 'range';
-      slider.min = meta.min.toString();
-      slider.max = meta.max.toString();
-      slider.step = meta.step.toString();
-      slider.value = val.toString();
-      slider.className = 'physics-slider';
-      slider.style.flex = '1';
-      slider.style.accentColor = 'var(--aero-sky-500)';
-      slider.style.cursor = 'pointer';
+        incBtn.addEventListener('click', () => {
+          const num = Math.min(meta.max, Math.round((this.currentConfig[key] + meta.step) * 100) / 100);
+          this.currentConfig[key] = num;
+          slider.value = num.toString();
+          badge.textContent = `${num}${meta.unit ? ' ' + meta.unit : ''}`;
+        });
 
-      slider.addEventListener('input', () => {
-        if (!this.isHostCheck()) return;
-        if (this.isMatchInProgressCheck()) {
-          alert('Los modificadores de físicas solo se pueden ajustar antes de empezar una partida.');
-          this.updateUI();
-          return;
-        }
-        const parsed = parseFloat(slider.value);
-        this.currentConfig[key] = parsed;
-        if (key === 'dashesPerFullBar') {
-          valBadge.textContent = `${parsed} (${(100 / (parsed || 4)).toFixed(0)}% coste)`;
-        } else {
-          valBadge.textContent = `${parsed}${meta.unit ? ' ' + meta.unit : ''}`;
-        }
-        this.notifyChange();
+        stepperRow.appendChild(decBtn);
+        stepperRow.appendChild(slider);
+        stepperRow.appendChild(incBtn);
+        wrap.appendChild(stepperRow);
+      } else {
+        // Slider normal
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = meta.min.toString();
+        slider.max = meta.max.toString();
+        slider.step = meta.step.toString();
+        slider.value = val.toString();
+        slider.style.width = '100%';
+        this.sliderInputs.set(key, slider);
+
+        slider.addEventListener('input', () => {
+          const num = parseFloat(slider.value);
+          this.currentConfig[key] = num;
+          badge.textContent = `${num}${meta.unit ? ' ' + meta.unit : ''}`;
+        });
+
+        wrap.appendChild(slider);
+      }
+
+      targetEl.appendChild(wrap);
+    };
+
+    playerKeys.forEach(k => renderSliderGroup(k, playerContainer, k === 'playerRadius'));
+    ballKeys.forEach(k => renderSliderGroup(k, ballContainer, k === 'ballRadius'));
+    mechanicsKeys.forEach(k => renderSliderGroup(k, mechanicsContainer, k === 'dashesPerFullBar'));
+
+    // Toggles de mecánicas
+    const chkDash = this.modalEl.querySelector('#chkToggleDash') as HTMLInputElement | null;
+    const chkTurbo = this.modalEl.querySelector('#chkToggleTurbo') as HTMLInputElement | null;
+    const chkMagnus = this.modalEl.querySelector('#chkToggleMagnus') as HTMLInputElement | null;
+
+    if (chkDash) {
+      this.toggleInputs.set('dashEnabled', chkDash);
+      chkDash.addEventListener('change', () => {
+        this.currentConfig.dashEnabled = chkDash.checked;
       });
-
-      this.sliderInputs.set(key, slider);
-
-      const maxLabel = document.createElement('span');
-      maxLabel.style.fontSize = '0.72rem';
-      maxLabel.style.color = 'var(--text-muted)';
-      maxLabel.textContent = `${meta.max}`;
-
-      sliderRow.appendChild(minLabel);
-      sliderRow.appendChild(slider);
-      sliderRow.appendChild(maxLabel);
-
-      const desc = document.createElement('div');
-      desc.style.fontSize = '0.75rem';
-      desc.style.color = 'var(--text-muted)';
-      desc.textContent = meta.description;
-
-      row.appendChild(topRow);
-      row.appendChild(sliderRow);
-      row.appendChild(desc);
-      content.appendChild(row);
     }
 
-    // Footer
-    const footer = document.createElement('div');
-    footer.style.display = 'flex';
-    footer.style.justifyContent = 'space-between';
-    footer.style.alignItems = 'center';
-    footer.style.marginTop = '10px';
-    footer.style.paddingTop = '12px';
-    footer.style.borderTop = '1px solid var(--aero-border)';
+    if (chkTurbo) {
+      this.toggleInputs.set('turboEnabled', chkTurbo);
+      chkTurbo.addEventListener('change', () => {
+        this.currentConfig.turboEnabled = chkTurbo.checked;
+      });
+    }
 
-    const resetBtn = document.createElement('button');
-    resetBtn.id = 'btn-reset-physics-defaults';
-    resetBtn.className = 'btn btn-secondary btn-sm';
-    resetBtn.textContent = '↺ Restablecer Valores por Defecto';
-    resetBtn.addEventListener('click', () => {
-      if (!this.isHostCheck()) return;
-      if (this.isMatchInProgressCheck()) {
-        alert('Los modificadores de físicas solo se pueden ajustar antes de empezar una partida.');
-        return;
-      }
-      this.resetToDefaults();
+    if (chkMagnus) {
+      this.toggleInputs.set('magnusEnabled', chkMagnus);
+      chkMagnus.addEventListener('change', () => {
+        this.currentConfig.magnusEnabled = chkMagnus.checked;
+      });
+    }
+  }
+
+  private setupListeners(): void {
+    if (!this.modalEl) return;
+
+    // 1. Botón < Volver
+    this.backBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.hide();
     });
 
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'btn btn-primary btn-sm';
-    closeBtn.textContent = 'Guardar y Cerrar';
-    closeBtn.addEventListener('click', () => this.hide());
+    // 2. Botón [ ☼ / ☾ ]
+    this.themeBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleTheme();
+    });
 
-    footer.appendChild(resetBtn);
-    footer.appendChild(closeBtn);
-
-    card.appendChild(header);
-    card.appendChild(content);
-    card.appendChild(footer);
-    overlay.appendChild(card);
-
-    header.querySelector('#btn-close-modifiers-modal')?.addEventListener('click', () => this.hide());
-
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) {
+    // Cerrar al click fuera
+    this.modalEl.addEventListener('click', (e) => {
+      if (e.target === this.modalEl) {
         this.hide();
       }
     });
 
-    document.body.appendChild(overlay);
-    this.modalEl = overlay;
+    // 3. Navegación por categorías en Sidebar
+    const navBtns = typeof this.modalEl.querySelectorAll === 'function' ? this.modalEl.querySelectorAll<HTMLButtonElement>('.modal-sidebar-nav-btn') : [];
+    navBtns.forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cat = btn.getAttribute('data-cat') as any;
+        if (cat) {
+          this.switchCategory(cat);
+        }
+      });
+    });
+
+    // 4. Botón Restablecer valores por defecto
+    this.resetBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.resetToDefaults();
+    });
+
+    // 5. Botón CTA Aplicar y Sincronizar
+    this.applyBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.notifyChange();
+      this.hide();
+    });
+  }
+
+  public switchCategory(catName: 'player' | 'ball' | 'mechanics'): void {
+    this.activeCategory = catName;
+    if (!this.modalEl) return;
+
+    // Actualizar botones de sidebar
+    const navBtns = typeof this.modalEl.querySelectorAll === 'function' ? this.modalEl.querySelectorAll('.modal-sidebar-nav-btn') : [];
+    navBtns.forEach((btn) => {
+      const c = btn.getAttribute('data-cat');
+      if (c === catName) btn.classList.add('active');
+      else btn.classList.remove('active');
+    });
+
+    // Actualizar paneles
+    const panels = {
+      player: this.modalEl.querySelector('#catPanelPlayer') as HTMLElement | null,
+      ball: this.modalEl.querySelector('#catPanelBall') as HTMLElement | null,
+      mechanics: this.modalEl.querySelector('#catPanelMechanics') as HTMLElement | null
+    };
+
+    Object.entries(panels).forEach(([key, panel]) => {
+      if (!panel) return;
+      if (key === catName) {
+        panel.style.display = 'flex';
+        panel.classList.add('active');
+      } else {
+        panel.style.display = 'none';
+        panel.classList.remove('active');
+      }
+    });
   }
 
   private notifyChange(): void {
@@ -324,11 +461,7 @@ export class GameplayModifierModal {
       const meta = GAMEPLAY_CONFIG_LIMITS[key];
       const badge = this.valueDisplays.get(key);
       if (badge) {
-        if (key === 'dashesPerFullBar') {
-          badge.textContent = `${val} (${(100 / (Number(val) || 4)).toFixed(0)}% coste)`;
-        } else {
-          badge.textContent = `${val}${meta?.unit ? ' ' + meta.unit : ''}`;
-        }
+        badge.textContent = `${val}${meta?.unit ? ' ' + meta.unit : ''}`;
       }
     }
 
@@ -337,9 +470,11 @@ export class GameplayModifierModal {
       toggle.disabled = !canEdit;
     }
 
-    const resetBtn = this.modalEl?.querySelector('#btn-reset-physics-defaults') as HTMLButtonElement | null;
-    if (resetBtn) {
-      resetBtn.disabled = !canEdit;
+    if (this.resetBtn) {
+      this.resetBtn.disabled = !canEdit;
+    }
+    if (this.applyBtn) {
+      this.applyBtn.disabled = !canEdit;
     }
   }
 
@@ -352,13 +487,19 @@ export class GameplayModifierModal {
     for (const toggle of this.toggleInputs.values()) {
       toggle.disabled = !canEdit;
     }
-    const resetBtn = this.modalEl?.querySelector('#btn-reset-physics-defaults') as HTMLButtonElement | null;
-    if (resetBtn) {
-      resetBtn.disabled = !canEdit;
+    if (this.resetBtn) {
+      this.resetBtn.disabled = !canEdit;
+    }
+    if (this.applyBtn) {
+      this.applyBtn.disabled = !canEdit;
     }
     if (isMatchInProgress && this.isOpen()) {
       this.hide();
     }
+  }
+
+  public open(): void {
+    this.show();
   }
 
   public show(): void {
@@ -372,15 +513,26 @@ export class GameplayModifierModal {
       return;
     }
     this.updateUI();
-    this.modalEl.classList.remove('hidden');
+    this.modalEl.classList.remove('hidden', 'u-hidden');
+    this.modalEl.style.display = 'flex';
+  }
+
+  public close(): void {
+    this.hide();
   }
 
   public hide(): void {
     if (!this.modalEl) return;
-    this.modalEl.classList.add('hidden');
+    this.modalEl.classList.add('hidden', 'u-hidden');
+    this.modalEl.style.display = 'none';
   }
 
   public isOpen(): boolean {
-    return this.modalEl ? !this.modalEl.classList.contains('hidden') : false;
+    if (!this.modalEl) return false;
+    return !this.modalEl.classList.contains('hidden') && this.modalEl.style.display !== 'none';
+  }
+
+  public destroy(): void {
+    // Limpieza
   }
 }
